@@ -1,0 +1,42 @@
+plugins {
+    id 'java'
+    id 'java-library'
+    id 'maven-publish'
+}
+repositories {
+    mavenCentral()
+    maven{
+        url 'http://nexus.aethernet.io/repository/maven-releases/'
+        allowInsecureProtocol = true
+    }
+}
+dependencies {
+    api 'io.aether:core:0.0.3'
+}
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            groupId 'io.aether'
+            artifactId 'client'
+            version project.version.toString()
+        }
+    }
+
+    repositories {
+        maven {
+            def releasesUrl = uri("http://nexus.aethernet.io/repository/maven-releases/")
+            def snapshotsUrl = uri("http://nexus.aethernet.io/repository/maven-snapshots/")
+            if (version.toString().endsWith("SNAPSHOT")) {
+                url(snapshotsUrl)
+            } else {
+                url(releasesUrl)
+            }
+            allowInsecureProtocol = true
+            credentials {
+                username 'admin'
+                password 'admin21930'
+            }
+        }
+    }
+}
