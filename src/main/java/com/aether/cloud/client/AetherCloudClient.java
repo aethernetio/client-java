@@ -67,6 +67,9 @@ public final class AetherCloudClient {
 		this.name = name;
 	}
 	volatile long pingTime = -1;
+	public AetherCloudClient() {
+		this(new StoreDefault());
+	}
 	public AetherCloudClient(Store store) {
 //		this.store = store;
 		this.storeWrap = new StoreWrap(store);
