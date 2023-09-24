@@ -1,20 +1,20 @@
-package com.aether.cloud.client;
+package io.aether.cloud.client;
 
-import com.aether.api.clientApi.ClientApiSafe;
-import com.aether.api.clientApi.ClientApiUnsafe;
-import com.aether.api.serverApi.AuthorizedApi;
-import com.aether.api.serverApi.ServerUnsafeApi;
-import com.aether.client.AetherClientFactory;
-import com.aether.common.AetherCodec;
-import com.aether.common.Message;
-import com.aether.common.ServerDescriptor;
-import com.aether.net.*;
-import com.aether.net.coders.CmdInvoke;
-import com.aether.sodium.AsymCrypt;
-import com.aether.sodium.ChaCha20Poly1305;
-import com.aether.utils.DataInOutStatic;
-import com.aether.utils.futures.AFuture;
-import com.aether.utils.futures.ARFuture;
+import io.aether.api.clientApi.ClientApiSafe;
+import io.aether.api.clientApi.ClientApiUnsafe;
+import io.aether.api.serverApi.AuthorizedApi;
+import io.aether.api.serverApi.ServerUnsafeApi;
+import io.aether.client.AetherClientFactory;
+import io.aether.common.AetherCodec;
+import io.aether.common.Message;
+import io.aether.common.ServerDescriptor;
+import io.aether.net.*;
+import io.aether.net.coders.CmdInvoke;
+import io.aether.sodium.AsymCrypt;
+import io.aether.sodium.ChaCha20Poly1305;
+import io.aether.utils.DataInOutStatic;
+import io.aether.utils.futures.AFuture;
+import io.aether.utils.futures.ARFuture;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import it.unimi.dsi.fastutil.objects.ObjectCollection;
 import org.jetbrains.annotations.NotNull;
@@ -28,7 +28,7 @@ import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
-import static com.aether.utils.streams.AStream.streamOf;
+import static io.aether.utils.streams.AStream.streamOf;
 
 public class Connection implements ClientApiUnsafe, AetherApiLocal {
 	private static final Logger log= LoggerFactory.getLogger(Connection.class);

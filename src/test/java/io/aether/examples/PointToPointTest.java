@@ -1,7 +1,7 @@
-package com.aether.examples;
+package io.aether.examples;
 
-import com.aether.cloud.client.AetherCloudClient;
-import com.aether.utils.futures.AFuture;
+import io.aether.cloud.client.AetherCloudClient;
+import io.aether.utils.futures.AFuture;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 

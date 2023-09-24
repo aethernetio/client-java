@@ -1,10 +1,10 @@
-package com.aether.cloud.client;
+package io.aether.cloud.client;
 
-import com.aether.common.AetherCodec;
-import com.aether.common.CoderAndPort;
-import com.aether.common.IPAddress;
-import com.aether.common.Key;
-import com.aether.sodium.ChaCha20Poly1305;
+import io.aether.common.AetherCodec;
+import io.aether.common.CoderAndPort;
+import io.aether.common.IPAddress;
+import io.aether.common.Key;
+import io.aether.sodium.ChaCha20Poly1305;
 
 import java.net.InetSocketAddress;
 import java.util.List;

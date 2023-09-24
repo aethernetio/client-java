@@ -1,9 +1,9 @@
-package com.aether.cloud.client;
+package io.aether.cloud.client;
 
-import com.aether.common.Message;
-import com.aether.utils.ConcurrentHashSet;
-import com.aether.utils.interfaces.AConsumer;
-import com.aether.utils.slots.EventSourceConsumer;
+import io.aether.common.Message;
+import io.aether.utils.ConcurrentHashSet;
+import io.aether.utils.interfaces.AConsumer;
+import io.aether.utils.slots.EventSourceConsumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

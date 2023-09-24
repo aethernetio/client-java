@@ -1,13 +1,13 @@
-package com.aether.cloud.client;
+package io.aether.cloud.client;
 
-import com.aether.common.*;
-import com.aether.sodium.ChaCha20Poly1305;
-import com.aether.utils.*;
-import com.aether.utils.futures.AFuture;
-import com.aether.utils.futures.ARFuture;
-import com.aether.utils.interfaces.AConsumer;
-import com.aether.utils.slots.EventSourceConsumer;
-import com.aether.utils.slots.SlotConsumer;
+import io.aether.common.*;
+import io.aether.sodium.ChaCha20Poly1305;
+import io.aether.utils.*;
+import io.aether.utils.futures.AFuture;
+import io.aether.utils.futures.ARFuture;
+import io.aether.utils.interfaces.AConsumer;
+import io.aether.utils.slots.EventSourceConsumer;
+import io.aether.utils.slots.SlotConsumer;
 import it.unimi.dsi.fastutil.objects.ObjectList;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
@@ -22,7 +22,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static com.aether.utils.streams.AStream.streamOf;
+import static io.aether.utils.streams.AStream.streamOf;
 
 public final class AetherCloudClient {
 	private static final Logger log= LoggerFactory.getLogger(AetherCloudClient.class);

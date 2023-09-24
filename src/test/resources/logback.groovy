@@ -52,4 +52,4 @@ appender("SystemError", ConsoleAppender) {
 }
 
 root(ERROR)
-logger("com.aether", DEBUG, ["SystemInfo", 'SystemDebug', 'SystemError', 'SystemWarn'])
+logger("io.aether", DEBUG, ["SystemInfo", 'SystemDebug', 'SystemError', 'SystemWarn'])

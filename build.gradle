@@ -1,29 +1,40 @@
 plugins {
-    id 'java'
     id 'java-library'
     id 'maven-publish'
 }
 repositories {
     mavenCentral()
-    maven{
+    maven {
         url 'http://nexus.aethernet.io/repository/maven-releases/'
         allowInsecureProtocol = true
     }
 }
-sourceCompatibility = JavaVersion.VERSION_20
-targetCompatibility = JavaVersion.VERSION_20
+java{
+    sourceCompatibility = JavaVersion.VERSION_20
+    targetCompatibility = JavaVersion.VERSION_20
+}
+group 'io.aether'
+version '0.0.2'
 dependencies {
-    api 'io.aether:core:0.0.3'
-    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.6.0'
+    api 'io.aether:core:0.0.13'
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.9.2'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine'
 }
 publishing {
     publications {
         mavenJava(MavenPublication) {
             from components.java
-            groupId 'io.aether'
-            artifactId 'client'
-            version project.version.toString()
+            pom {
+                name = "Aether Client"
+                description = "Aether Client"
+                url = "https://github.com/aethernet-io/aether-client-java"
+                licenses {
+                    license {
+                        name = "The Apache License, Version 2.0"
+                        url = "http://www.apache.org/licenses/LICENSE-2.0.txt"
+                    }
+                }
+            }
         }
     }
 
@@ -44,7 +55,7 @@ publishing {
         }
     }
 }
-test  {
+test {
     useJUnitPlatform()
     testLogging.showStandardStreams = true
     enableAssertions = true
