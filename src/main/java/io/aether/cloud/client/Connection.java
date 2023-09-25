@@ -3,13 +3,16 @@ package io.aether.cloud.client;
 import io.aether.api.clientApi.ClientApiSafe;
 import io.aether.api.clientApi.ClientApiUnsafe;
 import io.aether.api.serverApi.AuthorizedApi;
-import io.aether.api.serverApi.ServerUnsafeApi;
+import io.aether.api.serverApi.ServerApiUnsafe;
 import io.aether.client.AetherClientFactory;
 import io.aether.common.AetherCodec;
 import io.aether.common.Message;
 import io.aether.common.ServerDescriptor;
-import io.aether.net.*;
-import io.aether.net.coders.CmdInvoke;
+import io.aether.net.ApiProcessorConsumer;
+import io.aether.net.Protocol;
+import io.aether.net.ProtocolConfig;
+import io.aether.net.RemoteApi;
+import io.aether.net.impl.bin.ApiProcessor;
 import io.aether.sodium.AsymCrypt;
 import io.aether.sodium.ChaCha20Poly1305;
 import io.aether.utils.DataInOutStatic;
@@ -30,28 +33,22 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static io.aether.utils.streams.AStream.streamOf;
 
-public class Connection implements ClientApiUnsafe, AetherApiLocal {
-	private static final Logger log= LoggerFactory.getLogger(Connection.class);
+public class Connection implements ClientApiUnsafe, ApiProcessorConsumer {
+	private static final Logger log = LoggerFactory.getLogger(Connection.class);
 	//region counters
 	public final AtomicLong lastBackPing = new AtomicLong(Long.MAX_VALUE);
 	public final AetherCloudClient client;
-	public final ARFuture<Protocol<ClientApiUnsafe, ServerUnsafeApi>> conFuture = new ARFuture<>();
+	public final ARFuture<Protocol<ClientApiUnsafe, ServerApiUnsafe>> conFuture = new ARFuture<>();
 	final ClientApiSafe clientApiSafe = new MyClientApiSafe();
 	private final Set<UUID> requestClientCloudOld = new ConcurrentSkipListSet<>();
 	private final Set<Integer> requestServerOld = new ConcurrentSkipListSet<>();
 	private final ServerDescriptorOnClient serverDescriptor;
-	public ServerDescriptorOnClient getServerDescriptor() {
-		return serverDescriptor;
-	}
 	private final Queue<MessageRequest> newMessages = new ConcurrentLinkedQueue<>();
-	public Queue<MessageRequest> getNewMessages() {
-		return newMessages;
-	}
 	private final Map<Integer, MessageRequest> messages = new ConcurrentHashMap<>();
 	final private AtomicBoolean inProcess = new AtomicBoolean();
 	boolean basicStatus;
 	long lastWorkTime;
-	private volatile Protocol<ClientApiUnsafe, ServerUnsafeApi> protocol;
+	private volatile Protocol<ClientApiUnsafe, ServerApiUnsafe> protocol;
 	private volatile AsymCrypt asymCryptByServerCrypt;
 	private volatile ChaCha20Poly1305 chaCha20Poly1305;
 	public Connection(AetherCloudClient aetherCloudClient, ServerDescriptorOnClient s) {
@@ -60,7 +57,7 @@ public class Connection implements ClientApiUnsafe, AetherApiLocal {
 		serverDescriptor = s;
 		var codec = AetherCodec.BINARY;
 		var con = AetherClientFactory.make(s.getInetSocketAddress(codec),
-				ProtocolConfig.of(ClientApiUnsafe.class, ServerUnsafeApi.class, codec),
+				ProtocolConfig.of(ClientApiUnsafe.class, ServerApiUnsafe.class, codec),
 				(p) -> {
 					protocol = p;
 					((RemoteApi) protocol.getRemoteApi()).setOnSubApi(a -> {
@@ -81,41 +78,45 @@ public class Connection implements ClientApiUnsafe, AetherApiLocal {
 				});
 		con.to(conFuture);
 	}
-	@Override
-	public void sendExceptionToRemote(ExceptionUnit unit) {
-		var p = protocol;
-		var uid = client.getUid();
-		if (p == null || !p.isActive() || uid == null) {
-			log.debug("Ignore exception unit to server");
-			return;
-		}
-		p.getRemoteApi().chacha20poly1305(uid).sendException(unit);
+	public ServerDescriptorOnClient getServerDescriptor() {
+		return serverDescriptor;
+	}
+	public Queue<MessageRequest> getNewMessages() {
+		return newMessages;
 	}
 	@Override
-	public void sendResultToRemote(ResultUnit unit) {
-		var p = protocol;
-		var uid = client.getUid();
-		if (p == null || !p.isActive() || uid == null) {
-			log.debug("Ignore exception unit to server");
-			return;
-		}
-		p.getRemoteApi().chacha20poly1305(uid).sendResult(unit);
+	public void setApiProcessor(ApiProcessor apiProcessor) {
+		Protocol<ClientApiUnsafe, ServerApiUnsafe> p = apiProcessor.getProtocol();
+		apiProcessor.onSendException = unit -> {
+			var uid = client.getUid();
+			if (p == null || !p.isActive() || uid == null) {
+				log.debug("Ignore exception unit to server");
+				return;
+			}
+			p.getRemoteApi().chacha20poly1305(uid).sendException(unit);
+		};
+		apiProcessor.onSendResult = unit -> {
+			var uid = client.getUid();
+			if (p == null || !p.isActive() || uid == null) {
+				log.debug("Ignore exception unit to server");
+				return;
+			}
+			p.getRemoteApi().chacha20poly1305(uid).sendResult(unit);
+		};
+		apiProcessor.onExecuteCmdFromRemote = cmd -> {
+			if (cmd.getMethod().getName().equals("chacha20poly1305")) {
+				if (chaCha20Poly1305 == null) {
+					assert serverDescriptor.id != 0;
+					serverDescriptor.initClientKeyAndNonce(client.getMasterKey());
+					chaCha20Poly1305 = new ChaCha20Poly1305(serverDescriptor.keyAndNonce);
+				}
+				cmd.setSubApiBody(chaCha20Poly1305.decode(cmd.getSubApiBody()));
+			}
+		};
 	}
 	@Override
 	public ClientApiSafe chacha20poly1305() {
 		return clientApiSafe;
-	}
-	@Override
-	public Object executeCmdFromRemote(CmdInvoke cmd) {
-		if (cmd.getMethod().getName().equals("chacha20poly1305")) {
-			if (chaCha20Poly1305 == null) {
-				assert serverDescriptor.id != 0;
-				serverDescriptor.initClientKeyAndNonce(client.getMasterKey());
-				chaCha20Poly1305 = new ChaCha20Poly1305(serverDescriptor.keyAndNonce);
-			}
-			cmd.setSubApiBody(chaCha20Poly1305.decode(cmd.getSubApiBody()));
-		}
-		return AetherApiLocal.super.executeCmdFromRemote(cmd);
 	}
 	@Override
 	public String toString() {
@@ -276,9 +277,7 @@ public class Connection implements ClientApiUnsafe, AetherApiLocal {
 				res = true;
 			}
 		}
-		api.messages().select().to(list -> {
-			client.receiveMessages(list);
-		});
+		api.messages().select().to(client::receiveMessages);
 		return res;
 	}
 	private class MyClientApiSafe implements ClientApiSafe {

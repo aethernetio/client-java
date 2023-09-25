@@ -54,15 +54,15 @@ public final class AetherCloudClient {
 	
 	final Map<Integer, ARFuture<ServerDescriptorOnClient>> resolvedServers = new ConcurrentHashMap<>();
 	private final Map<UUID, AtomicInteger> idCounters = new ConcurrentHashMap<>();
-	
 	final AFuture registrationFuture = new AFuture();
-	
 	private final StoreWrap storeWrap;
 	private final Collection<ScheduledFuture<?>> scheduledFutures = new HashSet<>();
 	public SlotConsumer<Collection<UUID>> onNewChildren = new SlotConsumer<>();
 	volatile Connection currentConnection;
-	
 	private String name;
+	public String getName() {
+		return name;
+	}
 	public void setName(String name) {
 		this.name = name;
 	}
