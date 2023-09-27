@@ -1,23 +1,57 @@
 package io.aether.examples.plainChat;
 
 import io.aether.cloud.client.AetherCloudClient;
-import io.aether.cloud.client.ProtocolOverMsg;
-import io.aether.common.AetherCodec;
-import io.aether.net.ProtocolConfig;
+import io.aether.cloud.client.ServerOverMessages;
+import io.aether.net.ApiProcessorConsumer;
+import io.aether.net.RemoteApi;
+import io.aether.net.impl.bin.ApiProcessor;
+import io.aether.utils.futures.ARFuture;
+import io.aether.utils.streams.AStream;
 
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class ChatService {
-	public UUID uid;
+	public static ARFuture<UUID> uid = new ARFuture<>();
+	private final Map<UUID, UserDescriptor> users = new ConcurrentHashMap<>();
+	private final ServerOverMessages<ServiceServerApi, ServiceClientApi> serverOverMessages;
 	public ChatService() {
 		var client = new AetherCloudClient();
 		client.startFuture.waitDone();
-		uid = client.getUid();
-		ProtocolConfig<ServiceServerApi, ServiceClientApi> pc = ProtocolConfig.of(ServiceServerApi.class, ServiceClientApi.class, AetherCodec.BINARY);
-		client.onMessage(m -> {
-			ProtocolOverMsg<ServiceServerApi, ServiceClientApi> protocol =
-					new ProtocolOverMsg<>(pc, client, new ServiceServerApi() {
-					}, m.uid());
-		});
+		uid.done(client.getUid());
+		serverOverMessages = new ServerOverMessages<>(client, ServiceServerApi.class, ServiceClientApi.class, (uid, message) -> new MyServiceServerApi(uid));
+	}
+	private class MyServiceServerApi implements ServiceServerApi, ApiProcessorConsumer {
+		private final UUID uid;
+		ServiceClientApi remoteApi;
+		public MyServiceServerApi(UUID uid) {
+			this.uid = uid;
+		}
+		@Override
+		public void setApiProcessor(ApiProcessor apiProcessor) {
+			remoteApi = apiProcessor.getRemoteApi();
+		}
+		@Override
+		public void registration(String name) {
+			var u = new UserDescriptor(uid, name);
+			for (var uu : users.values()) {
+				var r = serverOverMessages.getRemoteApiBy(uu.uid());
+				r.addNewUsers(new UserDescriptor[]{u});
+				((RemoteApi) r).flush();
+			}
+			remoteApi.addNewUsers(AStream.streamOf(users.values()).toArray(UserDescriptor.class));
+			users.put(uid, u);
+			((RemoteApi) remoteApi).flush();
+		}
+		@Override
+		public void sendMessage(String msg) {
+			var md = new MessageDescriptor(uid, msg);
+			for (var u : users.values()) {
+				var r = serverOverMessages.getRemoteApiBy(u.uid());
+				r.newMessages(new MessageDescriptor[]{md});
+				((RemoteApi) r).flush();
+			}
+		}
 	}
 }

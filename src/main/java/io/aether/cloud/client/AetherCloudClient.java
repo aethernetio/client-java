@@ -71,7 +71,6 @@ public final class AetherCloudClient {
 		this(new StoreDefault());
 	}
 	public AetherCloudClient(Store store) {
-//		this.store = store;
 		this.storeWrap = new StoreWrap(store);
 		connect();
 	}

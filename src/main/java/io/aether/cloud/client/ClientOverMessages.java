@@ -2,7 +2,6 @@ package io.aether.cloud.client;
 
 import io.aether.common.AetherCodec;
 import io.aether.common.Message;
-import io.aether.net.AetherApi;
 import io.aether.net.Protocol;
 import io.aether.net.ProtocolConfig;
 import io.aether.utils.DataIn;
@@ -12,7 +11,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class ClientOverMessages<LT extends AetherApi, RT extends AetherApi> {
+public class ClientOverMessages<LT, RT> {
 	final LT localApi;
 	private final AetherCloudClient aetherClient;
 	private final Map<UUID, Connection> connections = new ConcurrentHashMap<>();
@@ -43,7 +42,7 @@ public class ClientOverMessages<LT extends AetherApi, RT extends AetherApi> {
 	public LT getApiBy(UUID uid) {
 		return getConnectionApiBy(uid).protocol.getLocalApi();
 	}
-	public interface ApiFactory<LT extends AetherApi> {
+	public interface ApiFactory<LT> {
 		LT get(UUID uid, Message message);
 	}
 

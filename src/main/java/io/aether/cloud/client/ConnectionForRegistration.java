@@ -3,13 +3,16 @@ package io.aether.cloud.client;
 import io.aether.api.clientApi.ClientApiSafe;
 import io.aether.api.clientApi.ClientApiUnsafe;
 import io.aether.api.serverApi.RegistrationRequest;
-import io.aether.api.serverApi.ServerUnsafeApi;
+import io.aether.api.serverApi.ServerApiUnsafe;
 import io.aether.client.AetherClientFactory;
 import io.aether.common.AetherCodec;
 import io.aether.common.Message;
 import io.aether.common.ServerDescriptor;
-import io.aether.net.*;
-import io.aether.net.coders.CmdInvoke;
+import io.aether.net.ApiProcessorConsumer;
+import io.aether.net.Protocol;
+import io.aether.net.ProtocolConfig;
+import io.aether.net.RemoteApi;
+import io.aether.net.impl.bin.ApiProcessor;
 import io.aether.sodium.AsymCrypt;
 import io.aether.sodium.ChaCha20Poly1305;
 import io.aether.utils.DataInOutStatic;
@@ -24,20 +27,20 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
-public class ConnectionForRegistration implements ClientApiUnsafe, AetherApiLocal {
-	private static final Logger log= LoggerFactory.getLogger(ConnectionForRegistration.class);
+public class ConnectionForRegistration implements ClientApiUnsafe, ApiProcessorConsumer {
+	private static final Logger log = LoggerFactory.getLogger(ConnectionForRegistration.class);
 	private final ServerDescriptorOnClient serverDescriptor;
 	private final AetherCloudClient client;
 	private volatile AsymCrypt asymCryptByServerCrypt;
 	private volatile ChaCha20Poly1305 chaCha20Poly1305;
-	private Protocol<ClientApiUnsafe, ServerUnsafeApi> protocol;
+	private Protocol<ClientApiUnsafe, ServerApiUnsafe> protocol;
 	public ConnectionForRegistration(AetherCloudClient client, ServerDescriptorOnClient serverDescriptor) {
 		this.client = client;
 		this.serverDescriptor = serverDescriptor;
 		short randomValue = (short) RU.RND.nextInt(Short.MIN_VALUE, Short.MAX_VALUE);
 		var address = serverDescriptor.ipAddress.get(0).toInetSocketAddress(AetherCodec.BINARY.getNetworkConfigurator().getDefaultPort());
 		var con = AetherClientFactory.make(address,
-				ProtocolConfig.of(ClientApiUnsafe.class, ServerUnsafeApi.class, AetherCodec.BINARY),
+				ProtocolConfig.of(ClientApiUnsafe.class, ServerApiUnsafe.class, AetherCodec.BINARY),
 				(p) -> {
 					protocol = p;
 					((RemoteApi) protocol.getRemoteApi()).setOnSubApi(a -> {
@@ -82,51 +85,34 @@ public class ConnectionForRegistration implements ClientApiUnsafe, AetherApiLoca
 		});
 	}
 	@Override
-	public Object executeCmdFromRemote(CmdInvoke cmd) {
-		if (cmd.getMethod().getName().equals("chacha20poly1305")) {
-			if (chaCha20Poly1305 == null) {
-				assert serverDescriptor.id != 0;
-				serverDescriptor.initClientKeyAndNonce(client.getMasterKey());
-				chaCha20Poly1305 = new ChaCha20Poly1305(serverDescriptor.keyAndNonce);
+	public void setApiProcessor(ApiProcessor apiProcessor) {
+		apiProcessor.onExecuteCmdFromRemote = cmd -> {
+			if (cmd.getMethod().getName().equals("chacha20poly1305")) {
+				if (chaCha20Poly1305 == null) {
+					assert serverDescriptor.id != 0;
+					serverDescriptor.initClientKeyAndNonce(client.getMasterKey());
+					chaCha20Poly1305 = new ChaCha20Poly1305(serverDescriptor.keyAndNonce);
+				}
+				cmd.setSubApiBody(chaCha20Poly1305.decode(cmd.getSubApiBody()));
 			}
-			cmd.setSubApiBody(chaCha20Poly1305.decode(cmd.getSubApiBody()));
-		}
-		return AetherApiLocal.super.executeCmdFromRemote(cmd);
-	}
-	@Override
-	public void sendExceptionToRemote(ExceptionUnit unit) {
-	}
-	@Override
-	public void sendResultToRemote(ResultUnit unit) {
+		};
 	}
 	@Override
 	public ClientApiSafe chacha20poly1305() {
 		return new MyClientApiSafe();
 	}
-	private class MyClientApiSafe implements ClientApiSafe, AetherApiLocal {
+	private class MyClientApiSafe implements ClientApiSafe, ApiProcessorConsumer {
 		@Override
-		public void sendExceptionToRemote(ExceptionUnit unit) {
-			if (client.isRegistered()) {
-				protocol.getRemoteApi().chacha20poly1305(client.getUid())
-						.sendException(unit);
-			} else if (serverDescriptor.serverAsymPublicKey != null) {
-				protocol.getRemoteApi().cryptBoxByServerKey()
-						.sendException(unit);
-			} else {
-				throw unit.exception();
-			}
-		}
-		@Override
-		public void sendResultToRemote(ResultUnit unit) {
-			if (client.isRegistered()) {
-				protocol.getRemoteApi().chacha20poly1305(client.getUid())
-						.sendResult(unit);
-			} else if (serverDescriptor.serverAsymPublicKey != null) {
-				protocol.getRemoteApi().cryptBoxByServerKey()
-						.sendResult(unit);
-			} else {
-				throw new UnsupportedOperationException();
-			}
+		public void setApiProcessor(ApiProcessor apiProcessor) {
+			apiProcessor.apiResultConsumer = () -> {
+				if (client.isRegistered()) {
+					return protocol.getRemoteApi().chacha20poly1305(client.getUid());
+				} else if (serverDescriptor.serverAsymPublicKey != null) {
+					return protocol.getRemoteApi().cryptBoxByServerKey();
+				} else {
+					throw new UnsupportedOperationException();
+				}
+			};
 		}
 		@Override
 		public void pushMessage(@NotNull Message message) {

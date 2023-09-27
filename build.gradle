@@ -16,7 +16,7 @@ java{
 group 'io.aether'
 version '0.0.2'
 dependencies {
-    api 'io.aether:core:0.0.17'
+    api 'io.aether:core:0.0.19'
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.9.2'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine'
 }

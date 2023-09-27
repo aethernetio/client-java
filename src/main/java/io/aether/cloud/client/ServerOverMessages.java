@@ -2,7 +2,6 @@ package io.aether.cloud.client;
 
 import io.aether.common.AetherCodec;
 import io.aether.common.Message;
-import io.aether.net.AetherApi;
 import io.aether.net.Protocol;
 import io.aether.net.ProtocolConfig;
 import io.aether.utils.DataIn;
@@ -12,7 +11,9 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class ServerOverMessages<LT extends AetherApi, RT extends AetherApi> {
+import static java.util.Objects.requireNonNull;
+
+public class ServerOverMessages<LT, RT> {
 	final ApiFactory<LT> apiFactory;
 	private final AetherCloudClient aetherClient;
 	private final Map<UUID, Connection> connections = new ConcurrentHashMap<>();
@@ -21,9 +22,11 @@ public class ServerOverMessages<LT extends AetherApi, RT extends AetherApi> {
 	                          Class<LT> localApiClass,
 	                          Class<RT> remoteApiClass,
 	                          ApiFactory<LT> apiFactory) {
+		if (!localApiClass.isInterface()) throw new RuntimeException("localApiClass is not interface");
+		if (!remoteApiClass.isInterface()) throw new RuntimeException("remoteApiClass is not interface");
 		protocolConfig = ProtocolConfig.of(localApiClass, remoteApiClass, AetherCodec.BINARY);
-		this.apiFactory = apiFactory;
-		this.aetherClient = aetherClient;
+		this.apiFactory = requireNonNull(apiFactory);
+		this.aetherClient = requireNonNull(aetherClient);
 		aetherClient.startFuture.to(() -> {
 			aetherClient.onMessage.add(v -> getConnectionApiBy(v.uid()).protocol.putFromRemote(v.data()));
 		});
@@ -34,10 +37,13 @@ public class ServerOverMessages<LT extends AetherApi, RT extends AetherApi> {
 	private Connection getConnectionApiBy(UUID uid) {
 		return connections.computeIfAbsent(uid, Connection::new);
 	}
-	public LT getApiBy(UUID uid) {
+	public LT getLocalApiBy(UUID uid) {
 		return getConnectionApiBy(uid).protocol.getLocalApi();
 	}
-	public interface ApiFactory<LT extends AetherApi> {
+	public RT getRemoteApiBy(UUID uid) {
+		return getConnectionApiBy(uid).protocol.getRemoteApi();
+	}
+	public interface ApiFactory<LT> {
 		LT get(UUID uid, Message message);
 	}
 
