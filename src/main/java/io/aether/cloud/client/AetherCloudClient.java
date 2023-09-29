@@ -25,57 +25,58 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static io.aether.utils.streams.AStream.streamOf;
 
 public final class AetherCloudClient {
-	private static final Logger log= LoggerFactory.getLogger(AetherCloudClient.class);
 	public static final ADebug.Counter getConnectionBegin = ADebug.key("getConnectionBegin");
 	public static final ADebug.Counter getConnectionEnd = ADebug.key("getConnectionEnd");
 	public static final ADebug.Counter getUserPositionBegin = ADebug.key("getUserPositionBegin");
 	public static final ADebug.Counter getUserPositionEnd = ADebug.key("getUserPositionEnd");
 	public static final ADebug.Counter requestPositionBegin = ADebug.key("requestPositionBegin");
 	public static final ADebug.Counter requestPositionEnd = ADebug.key("requestPositionEnd");
+	private static final Logger log = LoggerFactory.getLogger(AetherCloudClient.class);
 	public final AtomicBoolean beginCreateUser = new AtomicBoolean();
 	public final SlotConsumer<Message> onMessage = new SlotConsumer<>();
 	public final AFuture startFuture = new AFuture();
 	final Map<Integer, Connection> connections = new ConcurrentHashMap<>();
 	final Map<UUID, EventSourceConsumer<int[]>> clouds = new ConcurrentHashMap<>();
 	final AtomicBoolean tryReg = new AtomicBoolean();
-	
 	final Set<UUID> requestClientClouds = new ConcurrentHashSet<>();
+	final Set<Integer> requestsResolveServers = new ConcurrentHashSet<>();
+	final AtomicBoolean successfulAuthorization = new AtomicBoolean();
+	final Map<Integer, ARFuture<ServerDescriptorOnClient>> resolvedServers = new ConcurrentHashMap<>();
+	final AFuture registrationFuture = new AFuture();
+	private final Map<UUID, AtomicInteger> idCounters = new ConcurrentHashMap<>();
+	private final StoreWrap storeWrap;
+	private final Collection<ScheduledFuture<?>> scheduledFutures = new HashSet<>();
+	public SlotConsumer<Collection<UUID>> onNewChildren = new SlotConsumer<>();
+	volatile Connection currentConnection;
+	volatile long pingTime = -1;
+	private String name;
+	public AetherCloudClient(UUID parent) {
+		this(new StoreWrap(new StoreDefault()));
+	}
+	public AetherCloudClient(StoreWrap store) {
+		this.storeWrap = store;
+		connect();
+	}
+	public AetherCloudClient(Store store) {
+		this(new StoreWrap(store));
+	}
+	public static AetherCloudClient start(@NotNull Store store) {
+		return new AetherCloudClient(store);
+	}
 	public Map<Integer, ARFuture<ServerDescriptorOnClient>> getResolvedServers() {
 		return resolvedServers;
 	}
 	public Set<UUID> getRequestClientClouds() {
 		return requestClientClouds;
 	}
-	final Set<Integer> requestsResolveServers = new ConcurrentHashSet<>();
 	public Set<Integer> getRequestsResolveServers() {
 		return requestsResolveServers;
 	}
-	final AtomicBoolean successfulAuthorization = new AtomicBoolean();
-	
-	final Map<Integer, ARFuture<ServerDescriptorOnClient>> resolvedServers = new ConcurrentHashMap<>();
-	private final Map<UUID, AtomicInteger> idCounters = new ConcurrentHashMap<>();
-	final AFuture registrationFuture = new AFuture();
-	private final StoreWrap storeWrap;
-	private final Collection<ScheduledFuture<?>> scheduledFutures = new HashSet<>();
-	public SlotConsumer<Collection<UUID>> onNewChildren = new SlotConsumer<>();
-	volatile Connection currentConnection;
-	private String name;
 	public String getName() {
 		return name;
 	}
 	public void setName(String name) {
 		this.name = name;
-	}
-	volatile long pingTime = -1;
-	public AetherCloudClient() {
-		this(new StoreDefault());
-	}
-	public AetherCloudClient(Store store) {
-		this.storeWrap = new StoreWrap(store);
-		connect();
-	}
-	public static AetherCloudClient start(@NotNull Store store) {
-		return new AetherCloudClient(store);
 	}
 	public ARFuture<ServerDescriptorOnClient> resolveServer(int serverId) {
 		return resolvedServers.computeIfAbsent(serverId, i -> {
@@ -303,11 +304,15 @@ public final class AetherCloudClient {
 		public final Store.PropertyInt countServersForRegistration;
 		private final Store store;
 		public StoreWrap(Store store) {
+			this(store, null);
+		}
+		public StoreWrap(Store store, UUID parent) {
 			this.store = store;
 			pingDuration = store.getPropertyLong("settings.ping.duration");
 			countServersForRegistration = store.getPropertyInt("settings.countServersForRegistration");
 			uid = store.getProperty("main.uid", UUID::fromString);
 			parentUid = store.getProperty("main.parentUid", UUID::fromString);
+			if (parent != null) parentUid.set(parent);
 			masterKey = store.getProperty("main.masterKey", Key::of);
 			cloudFactoryUrl = store.getProperty("main.url.cloud");
 		}

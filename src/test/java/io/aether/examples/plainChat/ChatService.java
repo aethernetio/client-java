@@ -1,5 +1,6 @@
 package io.aether.examples.plainChat;
 
+import io.aether.Aether;
 import io.aether.cloud.client.AetherCloudClient;
 import io.aether.cloud.client.ServerOverMessages;
 import io.aether.net.ApiProcessorConsumer;
@@ -17,10 +18,10 @@ public class ChatService {
 	private final Map<UUID, UserDescriptor> users = new ConcurrentHashMap<>();
 	private final ServerOverMessages<ServiceServerApi, ServiceClientApi> serverOverMessages;
 	public ChatService() {
-		var client = new AetherCloudClient();
-		client.startFuture.waitDone();
-		uid.done(client.getUid());
-		serverOverMessages = new ServerOverMessages<>(client, ServiceServerApi.class, ServiceClientApi.class, (uid, message) -> new MyServiceServerApi(uid));
+		var aether = new AetherCloudClient(Aether.TEST_UID);
+		aether.startFuture.waitDone();
+		uid.done(aether.getUid());
+		serverOverMessages = new ServerOverMessages<>(aether, ServiceServerApi.class, ServiceClientApi.class, (uid, message) -> new MyServiceServerApi(uid));
 	}
 	private class MyServiceServerApi implements ServiceServerApi, ApiProcessorConsumer {
 		private final UUID uid;

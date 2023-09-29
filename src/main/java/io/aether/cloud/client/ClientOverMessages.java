@@ -39,8 +39,11 @@ public class ClientOverMessages<LT, RT> {
 	private Connection getConnectionApiBy(UUID uid) {
 		return connections.computeIfAbsent(uid, Connection::new);
 	}
-	public LT getApiBy(UUID uid) {
+	public LT getLocalApiBy(UUID uid) {
 		return getConnectionApiBy(uid).protocol.getLocalApi();
+	}
+	public RT getRemoteApiBy(UUID uid) {
+		return getConnectionApiBy(uid).protocol.getRemoteApi();
 	}
 	public interface ApiFactory<LT> {
 		LT get(UUID uid, Message message);
