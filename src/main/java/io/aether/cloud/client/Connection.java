@@ -87,21 +87,13 @@ public class Connection implements ClientApiUnsafe, ApiProcessorConsumer {
 	@Override
 	public void setApiProcessor(ApiProcessor apiProcessor) {
 		Protocol<ClientApiUnsafe, ServerApiUnsafe> p = apiProcessor.getProtocol();
-		apiProcessor.onSendException = unit -> {
+		apiProcessor.apiResultConsumer = () -> {
 			var uid = client.getUid();
 			if (p == null || !p.isActive() || uid == null) {
 				log.debug("Ignore exception unit to server");
-				return;
+				return null;
 			}
-			p.getRemoteApi().chacha20poly1305(uid).sendException(unit);
-		};
-		apiProcessor.onSendResult = unit -> {
-			var uid = client.getUid();
-			if (p == null || !p.isActive() || uid == null) {
-				log.debug("Ignore exception unit to server");
-				return;
-			}
-			p.getRemoteApi().chacha20poly1305(uid).sendResult(unit);
+			return p.getRemoteApi().chacha20poly1305(uid);
 		};
 		apiProcessor.onExecuteCmdFromRemote = cmd -> {
 			if (cmd.getMethod().getName().equals("chacha20poly1305")) {

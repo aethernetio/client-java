@@ -13,8 +13,8 @@ public class ChatClient implements ServiceClientApi {
 	private final Map<UUID, UserDescriptor> users = new ConcurrentHashMap<>();
 	private final ServiceServerApi service;
 	public ChatClient(UUID chatService, String name) {
-		var aether = new AetherCloudClient(Aether.TEST_UID);
-		aether.startFuture.waitDoneSeconds(10);
+		var aether = new AetherCloudClient(Aether.TEST_UID)
+				.waitStart(10);
 		var clientOverMessages = new ClientOverMessages<>(aether, ServiceClientApi.class, ServiceServerApi.class, this);
 		service = clientOverMessages.getRemoteApiBy(chatService);
 		service.registration(name);

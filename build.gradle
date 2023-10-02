@@ -14,7 +14,7 @@ java{
     targetCompatibility = JavaVersion.VERSION_20
 }
 group 'io.aether'
-version '0.0.2'
+version '0.0.3'
 dependencies {
     api 'io.aether:core:0.0.20'
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.9.2'

@@ -18,8 +18,8 @@ public class ChatService {
 	private final Map<UUID, UserDescriptor> users = new ConcurrentHashMap<>();
 	private final ServerOverMessages<ServiceServerApi, ServiceClientApi> serverOverMessages;
 	public ChatService() {
-		var aether = new AetherCloudClient(Aether.TEST_UID);
-		aether.startFuture.waitDone();
+		var aether = new AetherCloudClient(Aether.TEST_UID)
+				.waitStart(10);
 		uid.done(aether.getUid());
 		serverOverMessages = new ServerOverMessages<>(aether, ServiceServerApi.class, ServiceClientApi.class, (uid, message) -> new MyServiceServerApi(uid));
 	}
