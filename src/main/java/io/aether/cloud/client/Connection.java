@@ -64,7 +64,7 @@ public class Connection implements ClientApiUnsafe, ApiProcessorConsumer {
 						if (Objects.equals(a.methodName, "cryptBoxByServerKey")) {
 							a.setDataPreparer(d -> {
 								if (asymCryptByServerCrypt == null) {
-									asymCryptByServerCrypt = new AsymCrypt(serverDescriptor.getServerAsymPublicKey());
+									asymCryptByServerCrypt = new AsymCrypt(serverDescriptor.getServerAsymPublicKey().publicKey());
 								}
 								var v = d.toArray();
 								var encoded = asymCryptByServerCrypt.encode(v);
@@ -228,6 +228,7 @@ public class Connection implements ClientApiUnsafe, ApiProcessorConsumer {
 			if (data.length > 0) {
 				api.getServerDescriptor(data).to(sdd -> {
 					for (var sd : sdd) {
+						assert sd.id() > 0;
 						client.getRequestsResolveServers().remove(sd.id());
 						client.getResolvedServers().computeIfAbsent(sd.id(), k -> new ARFuture<>())
 								.done(new ServerDescriptorOnClient(sd.id(), sd.ipAddress(), sd.codersAndPorts()));

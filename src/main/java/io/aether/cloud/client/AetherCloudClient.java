@@ -1,6 +1,7 @@
 package io.aether.cloud.client;
 
 import io.aether.common.*;
+import io.aether.sodium.ChaCha20Poly1305;
 import io.aether.utils.*;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
@@ -13,6 +14,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.InetAddress;
+import java.net.URI;
 import java.net.UnknownHostException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -48,6 +50,7 @@ public final class AetherCloudClient {
 	public SlotConsumer<Collection<UUID>> onNewChildren = new SlotConsumer<>();
 	volatile Connection currentConnection;
 	volatile long pingTime = -1;
+	Key masterKey;
 	private String name;
 	public AetherCloudClient(UUID parent) {
 		this(new StoreWrap(new StoreDefault()));
@@ -61,6 +64,36 @@ public final class AetherCloudClient {
 	}
 	public static AetherCloudClient start(@NotNull Store store) {
 		return new AetherCloudClient(store);
+	}
+	private static void putURI(Collection<ServerDescriptorOnClient> servers, URI uri) {
+		log.info("put uri: " + uri);
+		var host = uri.getHost();
+		byte[] a;
+		try {
+			a = InetAddress.getByName(host).getAddress();
+		} catch (UnknownHostException e) {
+			throw new RuntimeException(e);
+		}
+		ServerDescriptorOnClient targetServer = null;
+		la:
+		for (var s : servers) {
+			for (var ip : s.ipAddress) {
+				if (Arrays.equals(ip.data(), a)) {
+					targetServer = s;
+					break la;
+				}
+			}
+		}
+		if (targetServer == null) {
+			targetServer = new ServerDescriptorOnClient(0, List.of(IPAddress.of(a)), new ArrayList<>());
+			servers.add(targetServer);
+		}
+		log.debug("get protocol by: " + uri.getScheme());
+		var codec = AetherCodec.valueof(uri.getScheme());
+		for (var cp : targetServer.codersAndPorts) {
+			if (cp.codec() == codec) return;
+		}
+		targetServer.codersAndPorts.add(new CoderAndPort(codec, uri.getPort()));
 	}
 	public Map<Integer, ARFuture<ServerDescriptorOnClient>> getResolvedServers() {
 		return resolvedServers;
@@ -149,30 +182,13 @@ public final class AetherCloudClient {
 	}
 	public void connect() {
 		startScheduledTask();
-		if (!isRegistered()) {
-			try {
-				var defaultPortBinary = storeWrap.getDefaultPortForCodec(AetherCodec.BINARY);
-				var defaultPortWebsocket = storeWrap.getDefaultPortForCodec(AetherCodec.WEBSOCKET);
-				var addresses = InetAddress.getAllByName(storeWrap.cloudFactoryUrl.get());
-				var countServersForRegistration = storeWrap.countServersForRegistration.get(2);
-				streamOf(addresses)
-						.map(a -> new ServerDescriptorOnClient(
-								0,
-								List.of(IPAddress.of(a.getAddress())),
-								List.of(new CoderAndPort(AetherCodec.BINARY, defaultPortBinary),
-										new CoderAndPort(AetherCodec.WEBSOCKET, defaultPortWebsocket))
-						))
-						.ifEmpty(() -> {
-							throw new RuntimeException(new UnknownHostException(storeWrap.cloudFactoryUrl.get()));
-						})
-						.shuffle()
-						.limit(countServersForRegistration)
-						.to(sd -> {
-							new ConnectionForRegistration(this, sd);
-						});
-			} catch (UnknownHostException e) {
-				throw new RuntimeException(e);
+		if (tryFirstConnection()) {
+			List<ServerDescriptorOnClient> servers = new ArrayList<>();
+			for (var a : storeWrap.cloudFactoryUrl.get()) {
+				putURI(servers, a);
 			}
+			var countServersForRegistration = storeWrap.countServersForRegistration.get(2);
+			streamOf(servers).shuffle().limit(countServersForRegistration).to(sd -> new ConnectionForRegistration(this, sd));
 		} else {
 			var cloud = storeWrap.getCloud(getUid());
 			if (cloud == null || cloud.length == 0) throw new UnsupportedOperationException();
@@ -228,7 +244,7 @@ public final class AetherCloudClient {
 		return pingTime;
 	}
 	public boolean isRegistered() {
-		return getUid() != null;
+		return storeWrap.uid.get(null) != null;
 	}
 	public void setCurrentConnection(@NotNull Connection connection) {
 		currentConnection = connection;
@@ -249,10 +265,7 @@ public final class AetherCloudClient {
 		for (var s : cloud) {
 			resolveServer(s.id).tryDone(s);
 		}
-		getCloud(uid)
-				.set(streamOf(cloud)
-						.mapToInt(ServerDescriptorOnClient::getId)
-						.toArray());
+		getCloud(uid).set(streamOf(cloud).mapToInt(ServerDescriptorOnClient::getId).toArray());
 	}
 	public AFuture sendMessage(@NotNull UUID address, byte[] data) {
 		assert address != null;
@@ -272,9 +285,7 @@ public final class AetherCloudClient {
 	}
 	public AFuture stop(int secondsTimeOut) {
 		streamOf(scheduledFutures).foreach(f -> f.cancel(true));
-		return streamOf(connections.values())
-				.map(c -> c.close(secondsTimeOut))
-				.allMap(AFuture::all);
+		return streamOf(connections.values()).map(c -> c.close(secondsTimeOut)).allMap(AFuture::all);
 	}
 	public int nextMsgId(UUID uid) {
 		return idCounters.computeIfAbsent(uid, k -> new AtomicInteger()).incrementAndGet();
@@ -292,7 +303,16 @@ public final class AetherCloudClient {
 		return storeWrap.parentUid.get();
 	}
 	public Key getMasterKey() {
-		return storeWrap.masterKey.get();
+		Key res;
+		res = masterKey;
+		if (res != null) return res;
+		res = storeWrap.masterKey.get(null);
+		if (res == null) {
+			res = ChaCha20Poly1305.generateSyncKey();
+			storeWrap.masterKey.set(res);
+		}
+		masterKey = res;
+		return res;
 	}
 	public AetherCloudClient waitStart(int timeout) {
 		startFuture.waitDoneSeconds(timeout);

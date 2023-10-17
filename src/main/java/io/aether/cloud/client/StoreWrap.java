@@ -1,12 +1,11 @@
 package io.aether.cloud.client;
 
-import io.aether.common.AetherCodec;
-import io.aether.common.CoderAndPort;
-import io.aether.common.IPAddress;
-import io.aether.common.Key;
+import io.aether.common.*;
 import io.aether.sodium.ChaCha20Poly1305;
 import io.aether.utils.Store;
+import io.aether.utils.streams.AStream;
 
+import java.net.URI;
 import java.util.List;
 import java.util.UUID;
 
@@ -17,7 +16,8 @@ public class StoreWrap {
 	public final Store.Property<UUID> uid;
 	public final Store.Property<UUID> parentUid;
 	public final Store.Property<Key> masterKey;
-	public final Store.Property<String> cloudFactoryUrl;
+	public final Store.Property<Signer> globalSigner;
+	public final Store.Property<List<URI>> cloudFactoryUrl;
 	public final Store.PropertyInt countServersForRegistration;
 	private final Store store;
 	public StoreWrap(Store store) {
@@ -31,24 +31,26 @@ public class StoreWrap {
 		parentUid = store.getProperty("main.parentUid", UUID::fromString);
 		if (parent != null) parentUid.set(parent);
 		masterKey = store.getProperty("main.masterKey", Key::of);
-		cloudFactoryUrl = store.getProperty("main.url.cloud");
+		globalSigner = store.getProperty("main.globalSigner", Signer::of);
+		cloudFactoryUrl = store.getProperty("main.url.cloud", s -> AStream.streamOf(s.split(";")).map(URI::create).toList(), d -> streamOf(d).join(";"));
 	}
 	public void setServerDescriptor(ServerDescriptorOnClient serverDescriptor) {
 		var prefix = "main.servers." + serverDescriptor.getId() + ".";
 		store.set(prefix + "clientKey", serverDescriptor.clientKey.toHexString());
 		store.set(prefix + "clientNonce", serverDescriptor.nonce.toHexString());
 		store.set(prefix + "serverKey", serverDescriptor.serverKey.toHexString());
-		store.set(prefix + "serverAsymPublicKey", serverDescriptor.serverAsymPublicKey.toHexString());
+		store.set(prefix + "serverAsymPublicKey", serverDescriptor.serverAsymPublicKey.toString());
 		store.set(prefix + "ipAddresses", streamOf(serverDescriptor.ipAddress).joinD());
 		store.set(prefix + "codersAndPorts", streamOf(serverDescriptor.codersAndPorts).joinD());
 	}
 	public ServerDescriptorOnClient getServerDescriptor(int serverId) {
+		assert serverId > 0;
 		var prefix = "main.servers." + serverId + ".";
 		var res = new ServerDescriptorOnClient();
 		res.id = serverId;
 		res.clientKey = store.get(prefix + "clientKey", null, Key::of);
 		res.serverKey = store.get(prefix + "serverKey", null, Key::of);
-		res.serverAsymPublicKey = store.get(prefix + "serverAsymPublicKey", null, Key::of);
+		res.serverAsymPublicKey = store.get(prefix + "serverAsymPublicKey", null, SignedPublicKey::of);
 		res.nonce = store.get(prefix + "clientNonce", null, ChaCha20Poly1305.Nonce::of);
 		res.keyAndNonce = new ChaCha20Poly1305.KeyAndNonce(res.clientKey, res.nonce);
 		var ipAddresses = streamOf(store.get(prefix + "ipAddresses", "").split(",")).map(IPAddress::of).toList();

@@ -23,22 +23,23 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.invoke.VarHandle;
+import java.net.URI;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
 public class ConnectionForRegistration implements ClientApiUnsafe, ApiProcessorConsumer {
 	private static final Logger log = LoggerFactory.getLogger(ConnectionForRegistration.class);
-	private final ServerDescriptorOnClient serverDescriptor;
+	private final URI uri;
 	private final AetherCloudClient client;
 	private volatile AsymCrypt asymCryptByServerCrypt;
 	private volatile ChaCha20Poly1305 chaCha20Poly1305;
 	private Protocol<ClientApiUnsafe, ServerApiUnsafe> protocol;
-	public ConnectionForRegistration(AetherCloudClient client, ServerDescriptorOnClient serverDescriptor) {
+	public ConnectionForRegistration(AetherCloudClient client, URI uri) {
 		this.client = client;
-		this.serverDescriptor = serverDescriptor;
+		this.uri = uri;
 		short randomValue = (short) RU.RND.nextInt(Short.MIN_VALUE, Short.MAX_VALUE);
-		var address = serverDescriptor.ipAddress.get(0).toInetSocketAddress(AetherCodec.BINARY.getNetworkConfigurator().getDefaultPort());
+		var address = uri.ipAddress.get(0).toInetSocketAddress(AetherCodec.BINARY.getNetworkConfigurator().getDefaultPort());
 		var con = AetherClientFactory.make(address,
 				ProtocolConfig.of(ClientApiUnsafe.class, ServerApiUnsafe.class, AetherCodec.BINARY),
 				(p) -> {
@@ -47,7 +48,7 @@ public class ConnectionForRegistration implements ClientApiUnsafe, ApiProcessorC
 						if (Objects.equals(a.methodName, "cryptBoxByServerKey")) {
 							a.setDataPreparer(d -> {
 								if (asymCryptByServerCrypt == null) {
-									asymCryptByServerCrypt = new AsymCrypt(serverDescriptor.getServerAsymPublicKey());
+									asymCryptByServerCrypt = new AsymCrypt(serverDescriptor.getServerAsymPublicKey().publicKey());
 								}
 								var v = d.toArray();
 								var encoded = asymCryptByServerCrypt.encode(v);
