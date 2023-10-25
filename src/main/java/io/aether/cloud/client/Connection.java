@@ -14,7 +14,6 @@ import io.aether.net.ProtocolConfig;
 import io.aether.net.RemoteApi;
 import io.aether.net.impl.bin.ApiProcessor;
 import io.aether.sodium.AsymCrypt;
-import io.aether.sodium.ChaCha20Poly1305;
 import io.aether.utils.DataInOutStatic;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
@@ -50,13 +49,12 @@ public class Connection implements ClientApiUnsafe, ApiProcessorConsumer {
 	long lastWorkTime;
 	private volatile Protocol<ClientApiUnsafe, ServerApiUnsafe> protocol;
 	private volatile AsymCrypt asymCryptByServerCrypt;
-	private volatile ChaCha20Poly1305 chaCha20Poly1305;
 	public Connection(AetherCloudClient aetherCloudClient, ServerDescriptorOnClient s) {
 		this.client = aetherCloudClient;
 		this.basicStatus = false;
 		serverDescriptor = s;
 		var codec = AetherCodec.BINARY;
-		var con = AetherClientFactory.make(s.getInetSocketAddress(codec),
+		var con = AetherClientFactory.make(s.getURI(codec),
 				ProtocolConfig.of(ClientApiUnsafe.class, ServerApiUnsafe.class, codec),
 				(p) -> {
 					protocol = p;
@@ -64,7 +62,7 @@ public class Connection implements ClientApiUnsafe, ApiProcessorConsumer {
 						if (Objects.equals(a.methodName, "cryptBoxByServerKey")) {
 							a.setDataPreparer(d -> {
 								if (asymCryptByServerCrypt == null) {
-									asymCryptByServerCrypt = new AsymCrypt(serverDescriptor.getServerAsymPublicKey().publicKey());
+									asymCryptByServerCrypt = new AsymCrypt(serverDescriptor.getServerAsymPublicKey().key());
 								}
 								var v = d.toArray();
 								var encoded = asymCryptByServerCrypt.encode(v);
@@ -87,22 +85,17 @@ public class Connection implements ClientApiUnsafe, ApiProcessorConsumer {
 	@Override
 	public void setApiProcessor(ApiProcessor apiProcessor) {
 		Protocol<ClientApiUnsafe, ServerApiUnsafe> p = apiProcessor.getProtocol();
-		apiProcessor.apiResultConsumer = () -> {
+		apiProcessor.setApiResultConsumer(() -> {
 			var uid = client.getUid();
 			if (p == null || !p.isActive() || uid == null) {
 				log.debug("Ignore exception unit to server");
 				return null;
 			}
 			return p.getRemoteApi().chacha20poly1305(uid);
-		};
+		});
 		apiProcessor.onExecuteCmdFromRemote = cmd -> {
 			if (cmd.getMethod().getName().equals("chacha20poly1305")) {
-				if (chaCha20Poly1305 == null) {
-					assert serverDescriptor.id != 0;
-					serverDescriptor.initClientKeyAndNonce(client.getMasterKey());
-					chaCha20Poly1305 = new ChaCha20Poly1305(serverDescriptor.keyAndNonce);
-				}
-				cmd.setSubApiBody(chaCha20Poly1305.decode(cmd.getSubApiBody()));
+				cmd.setSubApiBody(serverDescriptor.chaCha20Poly1305Pair.decode(cmd.getSubApiBody()));
 			}
 		};
 	}
@@ -231,7 +224,7 @@ public class Connection implements ClientApiUnsafe, ApiProcessorConsumer {
 						assert sd.id() > 0;
 						client.getRequestsResolveServers().remove(sd.id());
 						client.getResolvedServers().computeIfAbsent(sd.id(), k -> new ARFuture<>())
-								.done(new ServerDescriptorOnClient(sd.id(), sd.ipAddress(), sd.codersAndPorts()));
+								.done(ServerDescriptorOnClient.of(sd));
 					}
 				});
 				res = true;

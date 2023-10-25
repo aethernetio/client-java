@@ -1,65 +1,40 @@
 package io.aether.cloud.client;
 
-import io.aether.common.*;
-import io.aether.sodium.ChaCha20Poly1305;
+import io.aether.common.AetherCodec;
+import io.aether.common.Key;
+import io.aether.common.ServerDescriptor;
+import io.aether.common.SignedKey;
+import io.aether.sodium.ChaCha20Poly1305Pair;
+import io.aether.sodium.Nonce;
 
 import java.net.InetSocketAddress;
-import java.util.List;
+import java.net.URI;
 
 public class ServerDescriptorOnClient {
-	int id = 0;
-	List<IPAddress> ipAddress;
-	List<CoderAndPort> codersAndPorts;
-	Key clientKey;
-	Key serverKey;
-	SignedPublicKey serverAsymPublicKey;
-	ChaCha20Poly1305.Nonce nonce;
-	ChaCha20Poly1305.KeyAndNonce keyAndNonce;
-	public ServerDescriptorOnClient() {
+	final ServerDescriptor serverDescriptor;
+	ChaCha20Poly1305Pair chaCha20Poly1305Pair;
+	public ServerDescriptorOnClient(ServerDescriptor serverDescriptor) {
+		this.serverDescriptor = serverDescriptor;
 	}
-	public ServerDescriptorOnClient(int serverId, List<IPAddress> ipAddress, List<CoderAndPort> codersAndPorts) {
-		assert serverId > 0;
-		this.id = serverId;
-		this.ipAddress = ipAddress;
-		this.codersAndPorts = codersAndPorts;
+	public static ServerDescriptorOnClient of(ServerDescriptor sd) {
+		return new ServerDescriptorOnClient(sd);
 	}
 	public int getId() {
-		return id;
+		return serverDescriptor.id();
 	}
-	public List<IPAddress> getIpAddress() {
-		return ipAddress;
+	public SignedKey getServerAsymPublicKey() {
+		return serverDescriptor.publicKey();
 	}
-	public List<CoderAndPort> getCodersAndPorts() {
-		return codersAndPorts;
+	public void initClientKeyAndNonce(Key masterKey, Nonce nonce) {
+		chaCha20Poly1305Pair = ChaCha20Poly1305Pair.forClient(masterKey, getId(), nonce);
 	}
-	public Key getClientKey() {
-		return clientKey;
-	}
-	public Key getServerKey() {
-		return serverKey;
-	}
-	public SignedPublicKey getServerAsymPublicKey() {
-		return serverAsymPublicKey;
-	}
-	public ChaCha20Poly1305.Nonce getNonce() {
-		return nonce;
-	}
-	public ChaCha20Poly1305.KeyAndNonce getKeyAndNonce() {
-		return keyAndNonce;
-	}
-	public void initClientKeyAndNonce(Key masterKey) {
-		clientKey = ChaCha20Poly1305.generateSyncClientKeyByMasterKey(masterKey, id);
-		serverKey = ChaCha20Poly1305.generateSyncServerKeyByMasterKey(masterKey, id);
-		nonce = ChaCha20Poly1305.Nonce.of();
-		keyAndNonce = new ChaCha20Poly1305.KeyAndNonce(clientKey, nonce);
-	}
-	public int getPortByCodec(AetherCodec codec) {
-		for (var p : codersAndPorts) {
-			if (p.codec() == codec) return p.port();
-		}
-		return 0;
+	public int getPort(AetherCodec codec) {
+		return serverDescriptor.getPort(codec);
 	}
 	public InetSocketAddress getInetSocketAddress(AetherCodec codec) {
-		return ipAddress.get(0).toInetSocketAddress(getPortByCodec(codec));
+		return serverDescriptor.getInetSocketAddress(codec);
+	}
+	public URI getURI(AetherCodec codec) {
+		return serverDescriptor.getURI(codec);
 	}
 }

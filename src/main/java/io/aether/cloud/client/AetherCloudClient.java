@@ -1,6 +1,9 @@
 package io.aether.cloud.client;
 
-import io.aether.common.*;
+import io.aether.common.ClientDescriptorForReg;
+import io.aether.common.Key;
+import io.aether.common.Message;
+import io.aether.common.ServerDescriptor;
 import io.aether.sodium.ChaCha20Poly1305;
 import io.aether.utils.*;
 import io.aether.utils.futures.AFuture;
@@ -13,9 +16,6 @@ import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.net.InetAddress;
-import java.net.URI;
-import java.net.UnknownHostException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
@@ -64,36 +64,6 @@ public final class AetherCloudClient {
 	}
 	public static AetherCloudClient start(@NotNull Store store) {
 		return new AetherCloudClient(store);
-	}
-	private static void putURI(Collection<ServerDescriptorOnClient> servers, URI uri) {
-		log.info("put uri: " + uri);
-		var host = uri.getHost();
-		byte[] a;
-		try {
-			a = InetAddress.getByName(host).getAddress();
-		} catch (UnknownHostException e) {
-			throw new RuntimeException(e);
-		}
-		ServerDescriptorOnClient targetServer = null;
-		la:
-		for (var s : servers) {
-			for (var ip : s.ipAddress) {
-				if (Arrays.equals(ip.data(), a)) {
-					targetServer = s;
-					break la;
-				}
-			}
-		}
-		if (targetServer == null) {
-			targetServer = new ServerDescriptorOnClient(0, List.of(IPAddress.of(a)), new ArrayList<>());
-			servers.add(targetServer);
-		}
-		log.debug("get protocol by: " + uri.getScheme());
-		var codec = AetherCodec.valueof(uri.getScheme());
-		for (var cp : targetServer.codersAndPorts) {
-			if (cp.codec() == codec) return;
-		}
-		targetServer.codersAndPorts.add(new CoderAndPort(codec, uri.getPort()));
 	}
 	public Map<Integer, ARFuture<ServerDescriptorOnClient>> getResolvedServers() {
 		return resolvedServers;
@@ -151,9 +121,9 @@ public final class AetherCloudClient {
 		}
 	}
 	Connection getConnection(@NotNull ServerDescriptorOnClient serverDescriptor) {
-		var c = connections.get(serverDescriptor.id);
+		var c = connections.get(serverDescriptor.getId());
 		if (c == null) {
-			c = connections.computeIfAbsent(serverDescriptor.id, s -> new Connection(this, serverDescriptor));
+			c = connections.computeIfAbsent(serverDescriptor.getId(), s -> new Connection(this, serverDescriptor));
 		}
 		return c;
 	}
@@ -183,17 +153,14 @@ public final class AetherCloudClient {
 	public void connect() {
 		startScheduledTask();
 		if (tryFirstConnection()) {
-			List<ServerDescriptorOnClient> servers = new ArrayList<>();
-			for (var a : storeWrap.cloudFactoryUrl.get()) {
-				putURI(servers, a);
-			}
+			var uris = storeWrap.cloudFactoryUrl.get();
 			var countServersForRegistration = storeWrap.countServersForRegistration.get(2);
-			streamOf(servers).shuffle().limit(countServersForRegistration).to(sd -> new ConnectionForRegistration(this, sd));
+			streamOf(uris).shuffle().limit(countServersForRegistration).to(sd -> new ConnectionForRegistration(this, sd));
 		} else {
 			var cloud = storeWrap.getCloud(getUid());
 			if (cloud == null || cloud.length == 0) throw new UnsupportedOperationException();
 			for (var serverId : cloud) {
-				getConnection(storeWrap.getServerDescriptor(serverId));
+				getConnection(storeWrap.getServerDescriptor(serverId, getMasterKey()));
 			}
 		}
 	}
@@ -248,7 +215,7 @@ public final class AetherCloudClient {
 	}
 	public void setCurrentConnection(@NotNull Connection connection) {
 		currentConnection = connection;
-		connections.put(connection.getServerDescriptor().id, connection);
+		connections.put(connection.getServerDescriptor().getId(), connection);
 	}
 	public void confirmRegistration(@NotNull ClientDescriptorForReg cd) {
 		if (!successfulAuthorization.compareAndSet(false, true)) return;
@@ -263,7 +230,7 @@ public final class AetherCloudClient {
 			currentConnection = null;
 		}
 		for (var s : cloud) {
-			resolveServer(s.id).tryDone(s);
+			resolveServer(s.getId()).tryDone(s);
 		}
 		getCloud(uid).set(streamOf(cloud).mapToInt(ServerDescriptorOnClient::getId).toArray());
 	}
@@ -317,5 +284,10 @@ public final class AetherCloudClient {
 	public AetherCloudClient waitStart(int timeout) {
 		startFuture.waitDoneSeconds(timeout);
 		return this;
+	}
+	public void putDescriptor(ServerDescriptor sd) {
+		resolvedServers.computeIfAbsent(sd.id(), k -> new ARFuture<>())
+				.done(ServerDescriptorOnClient.of(sd));
+		requestsResolveServers.remove(sd.id());
 	}
 }

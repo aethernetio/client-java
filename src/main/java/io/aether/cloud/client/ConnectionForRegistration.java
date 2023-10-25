@@ -8,13 +8,15 @@ import io.aether.client.AetherClientFactory;
 import io.aether.common.AetherCodec;
 import io.aether.common.Message;
 import io.aether.common.ServerDescriptor;
+import io.aether.common.SignedKey;
 import io.aether.net.ApiProcessorConsumer;
 import io.aether.net.Protocol;
 import io.aether.net.ProtocolConfig;
 import io.aether.net.RemoteApi;
 import io.aether.net.impl.bin.ApiProcessor;
 import io.aether.sodium.AsymCrypt;
-import io.aether.sodium.ChaCha20Poly1305;
+import io.aether.sodium.ChaCha20Poly1305Pair;
+import io.aether.sodium.Nonce;
 import io.aether.utils.DataInOutStatic;
 import io.aether.utils.RU;
 import io.aether.utils.futures.AFuture;
@@ -32,15 +34,16 @@ public class ConnectionForRegistration implements ClientApiUnsafe, ApiProcessorC
 	private static final Logger log = LoggerFactory.getLogger(ConnectionForRegistration.class);
 	private final URI uri;
 	private final AetherCloudClient client;
+	int serverId;
 	private volatile AsymCrypt asymCryptByServerCrypt;
-	private volatile ChaCha20Poly1305 chaCha20Poly1305;
+	private volatile ChaCha20Poly1305Pair chaCha20Poly1305;
 	private Protocol<ClientApiUnsafe, ServerApiUnsafe> protocol;
+	private SignedKey serverAsymPublicKey;
 	public ConnectionForRegistration(AetherCloudClient client, URI uri) {
 		this.client = client;
 		this.uri = uri;
 		short randomValue = (short) RU.RND.nextInt(Short.MIN_VALUE, Short.MAX_VALUE);
-		var address = uri.ipAddress.get(0).toInetSocketAddress(AetherCodec.BINARY.getNetworkConfigurator().getDefaultPort());
-		var con = AetherClientFactory.make(address,
+		var con = AetherClientFactory.make(uri,
 				ProtocolConfig.of(ClientApiUnsafe.class, ServerApiUnsafe.class, AetherCodec.BINARY),
 				(p) -> {
 					protocol = p;
@@ -48,7 +51,7 @@ public class ConnectionForRegistration implements ClientApiUnsafe, ApiProcessorC
 						if (Objects.equals(a.methodName, "cryptBoxByServerKey")) {
 							a.setDataPreparer(d -> {
 								if (asymCryptByServerCrypt == null) {
-									asymCryptByServerCrypt = new AsymCrypt(serverDescriptor.getServerAsymPublicKey().publicKey());
+									asymCryptByServerCrypt = new AsymCrypt(serverAsymPublicKey.key());
 								}
 								var v = d.toArray();
 								var encoded = asymCryptByServerCrypt.encode(v);
@@ -62,12 +65,13 @@ public class ConnectionForRegistration implements ClientApiUnsafe, ApiProcessorC
 				});
 		con.to((p) -> {
 			AFuture checkPublicAsymKey;
-			if (serverDescriptor.serverAsymPublicKey == null || serverDescriptor.id == 0) {
+			if (serverAsymPublicKey == null) {
 				checkPublicAsymKey = new AFuture();
 				p.getRemoteApi().info(randomValue).to(info -> {
 					if (info.clientRandomValue() != randomValue) throw new RuntimeException("Bad return random value");
 //					info.randomProof();//TODO
-					serverDescriptor.serverAsymPublicKey = info.serverPublicKey();
+					client.putDescriptor(info.serverDescriptor());
+					serverAsymPublicKey = info.serverDescriptor().publicKey();
 					VarHandle.fullFence();
 					checkPublicAsymKey.done();
 				}).onError((e) -> {
@@ -90,9 +94,7 @@ public class ConnectionForRegistration implements ClientApiUnsafe, ApiProcessorC
 		apiProcessor.onExecuteCmdFromRemote = cmd -> {
 			if (cmd.getMethod().getName().equals("chacha20poly1305")) {
 				if (chaCha20Poly1305 == null) {
-					assert serverDescriptor.id != 0;
-					serverDescriptor.initClientKeyAndNonce(client.getMasterKey());
-					chaCha20Poly1305 = new ChaCha20Poly1305(serverDescriptor.keyAndNonce);
+					chaCha20Poly1305 = ChaCha20Poly1305Pair.forClient(client.getMasterKey(), serverId, Nonce.of());
 				}
 				cmd.setSubApiBody(chaCha20Poly1305.decode(cmd.getSubApiBody()));
 			}
@@ -105,15 +107,15 @@ public class ConnectionForRegistration implements ClientApiUnsafe, ApiProcessorC
 	private class MyClientApiSafe implements ClientApiSafe, ApiProcessorConsumer {
 		@Override
 		public void setApiProcessor(ApiProcessor apiProcessor) {
-			apiProcessor.apiResultConsumer = () -> {
+			apiProcessor.setApiResultConsumer(() -> {
 				if (client.isRegistered()) {
 					return protocol.getRemoteApi().chacha20poly1305(client.getUid());
-				} else if (serverDescriptor.serverAsymPublicKey != null) {
+				} else if (serverAsymPublicKey != null) {
 					return protocol.getRemoteApi().cryptBoxByServerKey();
 				} else {
 					throw new UnsupportedOperationException();
 				}
-			};
+			});
 		}
 		@Override
 		public void pushMessage(@NotNull Message message) {
