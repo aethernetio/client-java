@@ -129,6 +129,7 @@ public final class AetherCloudClient {
 	}
 	void startScheduledTask() {
 		RU.scheduleAtFixedRate(scheduledFutures, getPingTime(), TimeUnit.MILLISECONDS, () -> {
+//			getConnection(Connection::scheduledWork);
 			for (Connection connection : getConnections()) {
 				connection.scheduledWork();
 			}
@@ -193,7 +194,6 @@ public final class AetherCloudClient {
 		return clouds.computeIfAbsent(uid, k -> {
 			if (requestClientClouds.add(uid)) {
 				if (!Objects.equals(uid, getUid())) requestPositionBegin.add();
-				getConnection(Connection::scheduledWork);
 			}
 			return new EventSourceConsumer<>();
 		});
@@ -224,7 +224,9 @@ public final class AetherCloudClient {
 		storeWrap.uid.set(cd.uid());
 		beginCreateUser.set(false);
 		assert isRegistered();
+		cd.cloud().forEach(sd -> getConnection(ServerDescriptorOnClient.of(sd)));
 		registrationFuture.done();
+		startFuture.tryDone();
 	}
 	public void updateCloud(@NotNull UUID uid, @NotNull ServerDescriptorOnClient @NotNull [] cloud) {
 		if (uid.equals(getUid())) {

@@ -14,6 +14,8 @@ import io.aether.net.ProtocolConfig;
 import io.aether.net.RemoteApi;
 import io.aether.net.impl.bin.ApiProcessor;
 import io.aether.sodium.AsymCrypt;
+import io.aether.sodium.ChaCha20Poly1305Pair;
+import io.aether.sodium.Nonce;
 import io.aether.utils.DataInOutStatic;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
@@ -45,6 +47,7 @@ public class Connection implements ClientApiUnsafe, ApiProcessorConsumer {
 	private final Queue<MessageRequest> newMessages = new ConcurrentLinkedQueue<>();
 	private final Map<Integer, MessageRequest> messages = new ConcurrentHashMap<>();
 	final private AtomicBoolean inProcess = new AtomicBoolean();
+	private final ChaCha20Poly1305Pair chaCha20Poly1305Pair;
 	boolean basicStatus;
 	long lastWorkTime;
 	private volatile Protocol<ClientApiUnsafe, ServerApiUnsafe> protocol;
@@ -53,6 +56,7 @@ public class Connection implements ClientApiUnsafe, ApiProcessorConsumer {
 		this.client = aetherCloudClient;
 		this.basicStatus = false;
 		serverDescriptor = s;
+		chaCha20Poly1305Pair = ChaCha20Poly1305Pair.forClient(client.getMasterKey(), s.getId(), Nonce.of());
 		var codec = AetherCodec.BINARY;
 		var con = AetherClientFactory.make(s.getURI(codec),
 				ProtocolConfig.of(ClientApiUnsafe.class, ServerApiUnsafe.class, codec),
@@ -68,6 +72,16 @@ public class Connection implements ClientApiUnsafe, ApiProcessorConsumer {
 								var encoded = asymCryptByServerCrypt.encode(v);
 								return new DataInOutStatic(encoded);
 							});
+						} else if (Objects.equals(a.methodName, "chacha20poly1305")) {
+							a.setDataPreparer(d -> {
+								if (d.isReadable()) {
+									var v = d.toArray();
+									var encoded = chaCha20Poly1305Pair.encode(v);
+									d.clear();
+									d.write(new DataInOutStatic(encoded));
+								}
+								return d;
+							});
 						} else {
 							throw new UnsupportedOperationException();
 						}
@@ -81,6 +95,7 @@ public class Connection implements ClientApiUnsafe, ApiProcessorConsumer {
 	}
 	@Override
 	public void setApiProcessor(ApiProcessor apiProcessor) {
+		this.protocol = apiProcessor.getProtocol();
 		Protocol<ClientApiUnsafe, ServerApiUnsafe> p = apiProcessor.getProtocol();
 		apiProcessor.setApiResultConsumer(() -> {
 			var uid = client.getUid();
@@ -92,6 +107,9 @@ public class Connection implements ClientApiUnsafe, ApiProcessorConsumer {
 		});
 		apiProcessor.onExecuteCmdFromRemote = cmd -> {
 			if (cmd.getMethod().getName().equals("chacha20poly1305")) {
+				if (serverDescriptor.chaCha20Poly1305Pair == null) {
+					serverDescriptor.chaCha20Poly1305Pair = ChaCha20Poly1305Pair.forClient(client.getMasterKey(), serverDescriptor.getId(), Nonce.of());
+				}
 				cmd.setSubApiBody(serverDescriptor.chaCha20Poly1305Pair.decode(cmd.getSubApiBody()));
 			}
 		};
@@ -165,7 +183,6 @@ public class Connection implements ClientApiUnsafe, ApiProcessorConsumer {
 		try {
 			lastWorkTime = t;
 			scheduledWork0();
-			client.startFuture.tryDone();
 		} finally {
 			inProcess.set(false);
 		}
