@@ -79,9 +79,6 @@ public class Connection implements ClientApiUnsafe, ApiProcessorConsumer {
 	public ServerDescriptorOnClient getServerDescriptor() {
 		return serverDescriptor;
 	}
-	public Queue<MessageRequest> getNewMessages() {
-		return newMessages;
-	}
 	@Override
 	public void setApiProcessor(ApiProcessor apiProcessor) {
 		Protocol<ClientApiUnsafe, ServerApiUnsafe> p = apiProcessor.getProtocol();

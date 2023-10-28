@@ -154,7 +154,8 @@ public final class AetherCloudClient {
 		startScheduledTask();
 		if (tryFirstConnection()) {
 			var uris = storeWrap.cloudFactoryUrl.get();
-			var countServersForRegistration = storeWrap.countServersForRegistration.get(2);
+			var countServersForRegistration = storeWrap.countServersForRegistration.get(1);
+			log.info("try registration by: {}", uris);
 			streamOf(uris).shuffle().limit(countServersForRegistration).to(sd -> new ConnectionForRegistration(this, sd));
 		} else {
 			var cloud = storeWrap.getCloud(getUid());
@@ -219,7 +220,7 @@ public final class AetherCloudClient {
 	}
 	public void confirmRegistration(@NotNull ClientDescriptorForReg cd) {
 		if (!successfulAuthorization.compareAndSet(false, true)) return;
-		if (log.isTraceEnabled()) log.trace("confirmRegistration");
+		log.trace("confirmRegistration: " + cd);
 		storeWrap.uid.set(cd.uid());
 		beginCreateUser.set(false);
 		assert isRegistered();

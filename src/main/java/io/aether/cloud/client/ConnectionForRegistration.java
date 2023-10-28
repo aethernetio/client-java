@@ -24,6 +24,7 @@ import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.net.URI;
 import java.util.List;
@@ -31,7 +32,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 public class ConnectionForRegistration implements ClientApiUnsafe, ApiProcessorConsumer {
-	private static final Logger log = LoggerFactory.getLogger(ConnectionForRegistration.class);
+	private static final Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 	private final URI uri;
 	private final AetherCloudClient client;
 	int serverId;
