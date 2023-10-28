@@ -37,7 +37,7 @@ public class ConnectionForRegistration implements ClientApiUnsafe, ApiProcessorC
 	private final AetherCloudClient client;
 	int serverId;
 	private volatile AsymCrypt asymCryptByServerCrypt;
-	private volatile ChaCha20Poly1305Pair chaCha20Poly1305;
+	private volatile ChaCha20Poly1305Pair chaCha20Poly1305Pair;
 	private Protocol<ClientApiUnsafe, ServerApiUnsafe> protocol;
 	private SignedKey serverAsymPublicKey;
 	public ConnectionForRegistration(AetherCloudClient client, URI uri) {
@@ -94,10 +94,10 @@ public class ConnectionForRegistration implements ClientApiUnsafe, ApiProcessorC
 	public void setApiProcessor(ApiProcessor apiProcessor) {
 		apiProcessor.onExecuteCmdFromRemote = cmd -> {
 			if (cmd.getMethod().getName().equals("chacha20poly1305")) {
-				if (chaCha20Poly1305 == null) {
-					chaCha20Poly1305 = ChaCha20Poly1305Pair.forClient(client.getMasterKey(), serverId, Nonce.of());
+				if (chaCha20Poly1305Pair == null) {
+					chaCha20Poly1305Pair = ChaCha20Poly1305Pair.forClient(client.getMasterKey(), serverId, Nonce.of());
 				}
-				cmd.setSubApiBody(chaCha20Poly1305.decode(cmd.getSubApiBody()));
+				cmd.setSubApiBody(chaCha20Poly1305Pair.decode(cmd.getSubApiBody()));
 			}
 		};
 	}
