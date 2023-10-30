@@ -6,9 +6,9 @@ import io.aether.utils.futures.AFuture;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-class PointToPointTest {
+public class PointToPointTest {
 	@Test
-	void main() {
+	public void main() {
 		AetherCloudClient client1 = new AetherCloudClient(Aether.TEST_UID);
 		AetherCloudClient client2 = new AetherCloudClient(Aether.TEST_UID);
 		AFuture.all(client1.startFuture, client2.startFuture).waitDoneSeconds(10);
@@ -16,8 +16,12 @@ class PointToPointTest {
 		client1.sendMessage(client2.getUid(), message);
 		AFuture checkReceiveMessage = new AFuture();
 		client2.onMessage(newMessage -> {
-			Assertions.assertEquals(newMessage.data(), message);
-			checkReceiveMessage.done();
+			Assertions.assertArrayEquals(newMessage.data(), message);
+			try {
+				checkReceiveMessage.done();
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
 		});
 		checkReceiveMessage.waitDoneSeconds(5);
 		client1.stop(5);

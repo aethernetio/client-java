@@ -125,16 +125,6 @@ public class Connection implements ClientApiUnsafe, ApiProcessorConsumer {
 	public void sendMessage(MessageRequest msgRequest) {
 		assert msgRequest != null;
 		newMessages.add(msgRequest);
-		conFuture.to((p) -> {
-			p.getRemoteApi().chacha20poly1305(client.getUid()).sendMessage(msgRequest.getBody()).to(r -> {
-				if (r) {
-					msgRequest.fire(serverDescriptor, MessageRequest.Status.DONE);
-				} else {
-					msgRequest.fire(serverDescriptor, MessageRequest.Status.BAD_SERVER);
-				}
-			});
-			p.flush();
-		});
 	}
 	public AFuture close(int time) {
 		var res = new AFuture();

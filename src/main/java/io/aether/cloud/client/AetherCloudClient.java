@@ -53,7 +53,11 @@ public final class AetherCloudClient {
 	Key masterKey;
 	private String name;
 	public AetherCloudClient(UUID parent) {
-		this(new StoreWrap(new StoreDefault()));
+		this(new StoreWrap(new StoreDefault()) {
+			{
+				parentUid.set(parent);
+			}
+		});
 	}
 	public AetherCloudClient(StoreWrap store) {
 		this.storeWrap = store;
@@ -247,7 +251,7 @@ public final class AetherCloudClient {
 		AFuture res = new AFuture();
 		msgr.onEvent(e -> {
 			if (e.status() == MessageRequest.Status.DONE) {
-				res.done();
+				res.tryDone();
 			}
 		});
 		msgr.requestByDefaultStrategy();
