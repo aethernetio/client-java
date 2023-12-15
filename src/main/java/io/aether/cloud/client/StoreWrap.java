@@ -1,9 +1,6 @@
 package io.aether.cloud.client;
 
-import io.aether.common.AetherCodec;
-import io.aether.common.Key;
-import io.aether.common.ServerDescriptor;
-import io.aether.common.Signer;
+import io.aether.common.*;
 import io.aether.sodium.ChaCha20Poly1305Pair;
 import io.aether.sodium.Nonce;
 import io.aether.utils.Store;
@@ -45,7 +42,7 @@ public class StoreWrap {
 	public void setServerDescriptor(ServerDescriptorOnClient serverDescriptor) {
 		var prefix = "client.servers." + serverDescriptor.getId() + ".";
 		store.set(prefix + "descriptor", serverDescriptor.serverDescriptor);
-		store.set(prefix + "nonce", serverDescriptor.chaCha20Poly1305Pair.getNonce());
+		store.set(prefix + "nonce", serverDescriptor.chaCha20Poly1305Pair.getNonceLocal());
 	}
 	public ServerDescriptorOnClient getServerDescriptor(int serverId, Key masterKey) {
 		assert serverId > 0;
@@ -61,11 +58,11 @@ public class StoreWrap {
 	public int getDefaultPortForCodec(AetherCodec codec) {
 		return store.get("client.protocol." + codec.getName() + ".defaultPort", codec.getNetworkConfigurator().getDefaultPort());
 	}
-	public void setCloud(UUID uid, int[] cloud) {
+	public void setCloud(UUID uid, Cloud cloud) {
 		if (cloud == null) {
 			store.delete("client.clouds." + uid);
 		} else {
-			store.set("client.clouds." + uid, streamOf(cloud).join(","));
+			store.set("client.clouds." + uid, streamOf(cloud.data()).join(","));
 		}
 	}
 	public int[] getCloud(UUID uid) {

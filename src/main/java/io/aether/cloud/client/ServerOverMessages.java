@@ -6,6 +6,7 @@ import io.aether.net.Protocol;
 import io.aether.net.ProtocolConfig;
 import io.aether.utils.DataIn;
 import io.aether.utils.DataInOut;
+import io.aether.utils.RU;
 
 import java.util.Map;
 import java.util.UUID;
@@ -59,7 +60,7 @@ public class ServerOverMessages<LT, RT> {
 				protected void flush0() {
 					var data = current.toArrayCopy();
 					current.clear();
-					aetherClient.sendMessage(new Message(aetherClient.nextMsgId(uid), uid, System.currentTimeMillis(), data));
+					aetherClient.sendMessage(new Message(aetherClient.nextMsgId(uid), uid, RU.time(), data));
 				}
 				@Override
 				public boolean isActive() {

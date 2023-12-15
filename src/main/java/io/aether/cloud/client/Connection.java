@@ -1,22 +1,18 @@
 package io.aether.cloud.client;
 
+import io.aether.api.DataPrepareApiImpl;
 import io.aether.api.clientApi.ClientApiSafe;
 import io.aether.api.clientApi.ClientApiUnsafe;
 import io.aether.api.serverApi.AuthorizedApi;
-import io.aether.api.serverApi.ServerApiUnsafe;
+import io.aether.api.serverApi.LoginApi;
+import io.aether.api.serverRegistryApi.WorkProofDTO;
 import io.aether.client.AetherClientFactory;
-import io.aether.common.AetherCodec;
-import io.aether.common.Message;
-import io.aether.common.ServerDescriptor;
+import io.aether.common.*;
 import io.aether.net.ApiProcessorConsumer;
 import io.aether.net.Protocol;
 import io.aether.net.ProtocolConfig;
-import io.aether.net.RemoteApi;
-import io.aether.net.impl.bin.ApiProcessor;
 import io.aether.sodium.AsymCrypt;
-import io.aether.sodium.ChaCha20Poly1305Pair;
-import io.aether.sodium.Nonce;
-import io.aether.utils.DataInOutStatic;
+import io.aether.utils.RU;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
@@ -34,12 +30,12 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static io.aether.utils.streams.AStream.streamOf;
 
-public class Connection implements ClientApiUnsafe, ApiProcessorConsumer {
+public class Connection extends DataPrepareApiImpl<ClientApiSafe> implements ClientApiUnsafe, ApiProcessorConsumer {
 	private static final Logger log = LoggerFactory.getLogger(Connection.class);
 	//region counters
 	public final AtomicLong lastBackPing = new AtomicLong(Long.MAX_VALUE);
 	public final AetherCloudClient client;
-	public final ARFuture<Protocol<ClientApiUnsafe, ServerApiUnsafe>> conFuture = new ARFuture<>();
+	public final ARFuture<Protocol<ClientApiUnsafe, LoginApi>> conFuture = new ARFuture<>();
 	final ClientApiSafe clientApiSafe = new MyClientApiSafe();
 	private final Set<UUID> requestClientCloudOld = new ConcurrentSkipListSet<>();
 	private final Set<Integer> requestServerOld = new ConcurrentSkipListSet<>();
@@ -47,72 +43,26 @@ public class Connection implements ClientApiUnsafe, ApiProcessorConsumer {
 	private final Queue<MessageRequest> newMessages = new ConcurrentLinkedQueue<>();
 	private final Map<Integer, MessageRequest> messages = new ConcurrentHashMap<>();
 	final private AtomicBoolean inProcess = new AtomicBoolean();
-	private final ChaCha20Poly1305Pair chaCha20Poly1305Pair;
 	boolean basicStatus;
 	long lastWorkTime;
-	private volatile Protocol<ClientApiUnsafe, ServerApiUnsafe> protocol;
-	private volatile AsymCrypt asymCryptByServerCrypt;
 	public Connection(AetherCloudClient aetherCloudClient, ServerDescriptorOnClient s) {
+		super();
 		this.client = aetherCloudClient;
 		this.basicStatus = false;
 		serverDescriptor = s;
-		chaCha20Poly1305Pair = ChaCha20Poly1305Pair.forClient(client.getMasterKey(), s.getId(), Nonce.of());
 		var codec = AetherCodec.BINARY;
 		var con = AetherClientFactory.make(s.getURI(codec),
-				ProtocolConfig.of(ClientApiUnsafe.class, ServerApiUnsafe.class, codec),
-				(p) -> {
-					protocol = p;
-					((RemoteApi) protocol.getRemoteApi()).setOnSubApi(a -> {
-						if (Objects.equals(a.methodName, "cryptBoxByServerKey")) {
-							a.setDataPreparer(d -> {
-								if (asymCryptByServerCrypt == null) {
-									asymCryptByServerCrypt = new AsymCrypt(serverDescriptor.getServerAsymPublicKey().key());
-								}
-								var v = d.toArray();
-								var encoded = asymCryptByServerCrypt.encode(v);
-								return new DataInOutStatic(encoded);
-							});
-						} else if (Objects.equals(a.methodName, "chacha20poly1305")) {
-							a.setDataPreparer(d -> {
-								if (d.isReadable()) {
-									var v = d.toArray();
-									var encoded = chaCha20Poly1305Pair.encode(v);
-									d.clear();
-									d.write(new DataInOutStatic(encoded));
-								}
-								return d;
-							});
-						} else {
-							throw new UnsupportedOperationException();
-						}
-					});
-					return this;
-				});
+				ProtocolConfig.of(ClientApiUnsafe.class, LoginApi.class, codec),
+				(p) -> this);
 		con.to(conFuture);
+	}
+	@Override
+	public void sendServerKeys(SignedKey asymPublicKey, SignedKey signKey) {
+		this.getConfig().signer = new SignChecker(signKey.key());
+		this.getConfig().asymCrypt = new AsymCrypt(asymPublicKey.key());
 	}
 	public ServerDescriptorOnClient getServerDescriptor() {
 		return serverDescriptor;
-	}
-	@Override
-	public void setApiProcessor(ApiProcessor apiProcessor) {
-		this.protocol = apiProcessor.getProtocol();
-		Protocol<ClientApiUnsafe, ServerApiUnsafe> p = apiProcessor.getProtocol();
-		apiProcessor.setApiResultConsumer(() -> {
-			var uid = client.getUid();
-			if (p == null || !p.isActive() || uid == null) {
-				log.debug("Ignore exception unit to server");
-				return null;
-			}
-			return p.getRemoteApi().chacha20poly1305(uid);
-		});
-		apiProcessor.onExecuteCmdFromRemote = cmd -> {
-			if (cmd.getMethod().getName().equals("chacha20poly1305")) {
-				if (serverDescriptor.chaCha20Poly1305Pair == null) {
-					serverDescriptor.chaCha20Poly1305Pair = ChaCha20Poly1305Pair.forClient(client.getMasterKey(), serverDescriptor.getId(), Nonce.of());
-				}
-				cmd.setSubApiBody(serverDescriptor.chaCha20Poly1305Pair.decode(cmd.getSubApiBody()));
-			}
-		};
 	}
 	@Override
 	public ClientApiSafe chacha20poly1305() {
@@ -159,16 +109,12 @@ public class Connection implements ClientApiUnsafe, ApiProcessorConsumer {
 		client.receiveMessage(msg);
 	}
 	public long lifeTime() {
-		return System.currentTimeMillis() - lastBackPing.get();
+		return RU.time() - lastBackPing.get();
 	}
 	public void onWritable() {
 	}
-	public boolean isConnected() {
-		var p = protocol;
-		return p != null && p.isActive();
-	}
 	public void scheduledWork() {
-		var t = System.currentTimeMillis();
+		var t = RU.time();
 		if ((t - lastWorkTime < client.getPingTime() || !inProcess.compareAndSet(false, true))) return;
 		try {
 			lastWorkTime = t;
@@ -177,24 +123,21 @@ public class Connection implements ClientApiUnsafe, ApiProcessorConsumer {
 			inProcess.set(false);
 		}
 	}
-	public void updateUserPosition(UUID uid, int[] serverIds) {
-		client.updateCloud(uid, serverIds);
-	}
 	public void deliveryReport(long msgId) {
 		var m = messages.remove((int) msgId);
 		if (m != null) {
 			m.fire(serverDescriptor, MessageRequest.Status.DELIVERY);
 		}
 	}
-	public void changeCloud(int[] cloud) {
+	public void changeCloud(Cloud cloud) {
 		client.changeCloud(cloud);
 	}
 	private void scheduledWork0() {
 		try {
 			var uid = client.getUid();
-			var p = protocol;
+			Protocol<?, LoginApi> p = getApiProcessor().getProtocol();
 			if (uid == null || p == null || !p.isActive()) return;
-			sendRequests(uid, p.getRemoteApi().chacha20poly1305(uid));
+			sendRequests(uid, p.getRemoteApi().loginByUID(uid).chacha20poly1305());
 			p.flush();
 		} catch (Exception e) {
 			log.error("", e);
@@ -226,8 +169,8 @@ public class Connection implements ClientApiUnsafe, ApiProcessorConsumer {
 				api.getServerDescriptor(data).to(sdd -> {
 					for (var sd : sdd) {
 						assert sd.id() > 0;
-						client.getRequestsResolveServers().remove(sd.id());
-						client.getResolvedServers().computeIfAbsent(sd.id(), k -> new ARFuture<>())
+						client.getRequestsResolveServers().remove((int) sd.id());
+						client.getResolvedServers().computeIfAbsent((int) sd.id(), k -> new ARFuture<>())
 								.done(ServerDescriptorOnClient.of(sd));
 					}
 				});
@@ -272,16 +215,21 @@ public class Connection implements ClientApiUnsafe, ApiProcessorConsumer {
 	}
 	private class MyClientApiSafe implements ClientApiSafe {
 		@Override
+		public void sendWorkProofData(WorkProofDTO workProofDTO) {
+		}
+		@Override
 		public void pushMessage(@NotNull Message message) {
 			client.receiveMessage(message);
 		}
 		@Override
-		public void updatePosition(@NotNull UUID uid, int @NotNull [] cloud) {
+		public void updateCloud(@NotNull UUID uid, @NotNull Cloud cloud) {
 			client.updateCloud(uid, cloud);
 		}
 		@Override
 		public void updateServers(@NotNull ServerDescriptor @NotNull [] serverDescriptors) {
-			throw new UnsupportedOperationException();
+			for (var sd : serverDescriptors) {
+				client.putServerDescriptor(sd);
+			}
 		}
 		@Override
 		public void newChildren(@NotNull List<UUID> newChildren) {

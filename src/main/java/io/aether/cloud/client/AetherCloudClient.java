@@ -1,6 +1,7 @@
 package io.aether.cloud.client;
 
-import io.aether.common.ClientDescriptorForReg;
+import io.aether.api.serverRegistryApi.RegistrationResponse;
+import io.aether.common.Cloud;
 import io.aether.common.Key;
 import io.aether.common.Message;
 import io.aether.common.ServerDescriptor;
@@ -37,7 +38,7 @@ public final class AetherCloudClient {
 	public final SlotConsumer<Message> onMessage = new SlotConsumer<>();
 	public final AFuture startFuture = new AFuture();
 	final Map<Integer, Connection> connections = new ConcurrentHashMap<>();
-	final Map<UUID, EventSourceConsumer<int[]>> clouds = new ConcurrentHashMap<>();
+	final Map<UUID, EventSourceConsumer<Cloud>> clouds = new ConcurrentHashMap<>();
 	final AtomicBoolean tryReg = new AtomicBoolean();
 	final Set<UUID> requestClientClouds = new ConcurrentHashSet<>();
 	final Set<Integer> requestsResolveServers = new ConcurrentHashSet<>();
@@ -125,9 +126,11 @@ public final class AetherCloudClient {
 		}
 	}
 	Connection getConnection(@NotNull ServerDescriptorOnClient serverDescriptor) {
+		putDescriptor(serverDescriptor);
 		var c = connections.get(serverDescriptor.getId());
 		if (c == null) {
-			c = connections.computeIfAbsent(serverDescriptor.getId(), s -> new Connection(this, serverDescriptor));
+			c = connections.computeIfAbsent(serverDescriptor.getId(),
+					s -> new Connection(this, serverDescriptor));
 		}
 		return c;
 	}
@@ -147,21 +150,19 @@ public final class AetherCloudClient {
 	public void ping() {
 		getConnection(Connection::scheduledWork);
 	}
-	public void changeCloud(int[] cloud) {
+	public void changeCloud(Cloud cloud) {
 		var uid = getUid();
 		assert uid != null;
 		updateCloud(uid, cloud);
 	}
-	public boolean tryFirstConnection() {
-		return !isRegistered() && tryReg.compareAndSet(false, true);
-	}
 	public void connect() {
 		startScheduledTask();
-		if (tryFirstConnection()) {
+		if (!isRegistered() && tryReg.compareAndSet(false, true)) {
 			var uris = storeWrap.cloudFactoryUrl.get();
 			var countServersForRegistration = storeWrap.countServersForRegistration.get(1);
 			log.info("try registration by: {}", uris);
-			streamOf(uris).shuffle().limit(countServersForRegistration).to(sd -> new ConnectionForRegistration(this, sd));
+			streamOf(uris).shuffle().limit(countServersForRegistration)
+					.to(sd -> new ConnectionForRegistration(this, sd));
 		} else {
 			var cloud = storeWrap.getCloud(getUid());
 			if (cloud == null || cloud.length == 0) throw new UnsupportedOperationException();
@@ -194,7 +195,7 @@ public final class AetherCloudClient {
 	public Collection<Connection> getConnections() {
 		return connections.values();
 	}
-	EventSourceConsumer<int[]> getCloud(@NotNull UUID uid) {
+	EventSourceConsumer<Cloud> getCloud(@NotNull UUID uid) {
 		return clouds.computeIfAbsent(uid, k -> {
 			if (requestClientClouds.add(uid)) {
 				if (!Objects.equals(uid, getUid())) requestPositionBegin.add();
@@ -202,7 +203,7 @@ public final class AetherCloudClient {
 			return new EventSourceConsumer<>();
 		});
 	}
-	public void updateCloud(@NotNull UUID uid, int @NotNull [] serverIds) {
+	public void updateCloud(@NotNull UUID uid, @NotNull Cloud serverIds) {
 		storeWrap.setCloud(uid, serverIds);
 		if (uid.equals(getUid())) {
 			currentConnection = null;
@@ -222,15 +223,14 @@ public final class AetherCloudClient {
 		currentConnection = connection;
 		connections.put(connection.getServerDescriptor().getId(), connection);
 	}
-	public void confirmRegistration(@NotNull ClientDescriptorForReg cd) {
+	public void confirmRegistration(RegistrationResponse cd) {
 		if (!successfulAuthorization.compareAndSet(false, true)) return;
 		log.trace("confirmRegistration: " + cd);
 		storeWrap.uid.set(cd.uid());
 		beginCreateUser.set(false);
-		assert isRegistered();
-		cd.cloud().forEach(sd -> getConnection(ServerDescriptorOnClient.of(sd)));
 		registrationFuture.done();
-		startFuture.tryDone();
+		assert isRegistered();
+		streamOf(cd.cloud()).map(sd -> getConnection(ServerDescriptorOnClient.of(sd)).conFuture.toFuture()).allMap(AFuture::all).to(startFuture::tryDone);
 	}
 	public void updateCloud(@NotNull UUID uid, @NotNull ServerDescriptorOnClient @NotNull [] cloud) {
 		if (uid.equals(getUid())) {
@@ -239,12 +239,12 @@ public final class AetherCloudClient {
 		for (var s : cloud) {
 			resolveServer(s.getId()).tryDone(s);
 		}
-		getCloud(uid).set(streamOf(cloud).mapToInt(ServerDescriptorOnClient::getId).toArray());
+		getCloud(uid).set(Cloud.of(streamOf(cloud).mapToInt(ServerDescriptorOnClient::getId).toShortArray()));
 	}
 	public AFuture sendMessage(@NotNull UUID address, byte[] data) {
 		assert address != null;
 		assert data != null;
-		return sendMessage(new Message(nextMsgId(address), address, System.currentTimeMillis(), data));
+		return sendMessage(new Message(nextMsgId(address), address, RU.time(), data));
 	}
 	public AFuture sendMessage(@NotNull Message message) {
 		MessageRequest msgr = new MessageRequest(this, message);
@@ -270,7 +270,7 @@ public final class AetherCloudClient {
 	public void onMessage(AConsumer<Message> consumer) {
 		onMessage.add(consumer);
 	}
-	public void removeOnMessage(AConsumer<Message> listener) {
+	public void onMessageRemove(AConsumer<Message> listener) {
 		onMessage.remove(listener);
 	}
 	public UUID getParent() {
@@ -292,9 +292,16 @@ public final class AetherCloudClient {
 		startFuture.waitDoneSeconds(timeout);
 		return this;
 	}
-	public void putDescriptor(ServerDescriptor sd) {
-		resolvedServers.computeIfAbsent(sd.id(), k -> new ARFuture<>())
-				.done(ServerDescriptorOnClient.of(sd));
-		requestsResolveServers.remove(sd.id());
+	private void putDescriptor(ServerDescriptorOnClient sd) {
+		resolvedServers.computeIfAbsent(sd.getId(), k -> new ARFuture<>())
+				.done(sd);
+		requestsResolveServers.remove(sd.getId());
+	}
+	public void putServerDescriptor(ServerDescriptor sd) {
+		var f = resolvedServers.computeIfAbsent((int) sd.id(), k -> new ARFuture<>());
+		if (!f.tryDone(ServerDescriptorOnClient.of(sd, getMasterKey()))) {
+			var sdc = f.get();
+			sdc.setServerDescriptor(sd, getMasterKey());
+		}
 	}
 }

@@ -2,6 +2,7 @@ package io.aether.cloud.client;
 
 import io.aether.common.Message;
 import io.aether.utils.ConcurrentHashSet;
+import io.aether.utils.RU;
 import io.aether.utils.interfaces.AConsumer;
 import io.aether.utils.slots.EventSourceConsumer;
 import org.slf4j.Logger;
@@ -29,7 +30,7 @@ public class MessageRequest {
 	private final AtomicReference<Status> totalStatus = new AtomicReference<>(Status.NEW);
 	private final AetherCloudClient client;
 	public MessageRequest(AetherCloudClient client, UUID to, byte[] body) {
-		this(client, new Message(client.nextMsgId(to), to, System.currentTimeMillis(), body));
+		this(client, new Message(client.nextMsgId(to), to, RU.time(), body));
 	}
 	public MessageRequest(AetherCloudClient client, Message body) {
 		this.client = client;
