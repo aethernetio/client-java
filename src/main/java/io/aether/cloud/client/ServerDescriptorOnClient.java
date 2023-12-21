@@ -12,6 +12,9 @@ import java.net.URI;
 public class ServerDescriptorOnClient {
 	DataPreparerConfig dataPreparerConfig;
 	private ServerDescriptor serverDescriptor;
+	public ServerDescriptor getServerDescriptor() {
+		return serverDescriptor;
+	}
 	public static ServerDescriptorOnClient of(ServerDescriptor sd, Key masterKey) {
 		var r = of(sd);
 		r.initChaChaKeys(masterKey);
@@ -31,6 +34,9 @@ public class ServerDescriptorOnClient {
 		return serverDescriptor.id();
 	}
 	public DataPreparerConfig getDataPreparerConfig() {
+		if (dataPreparerConfig == null) {
+			dataPreparerConfig = new DataPreparerConfig();
+		}
 		return dataPreparerConfig;
 	}
 	public void setAsymKey(SignedKey key) {

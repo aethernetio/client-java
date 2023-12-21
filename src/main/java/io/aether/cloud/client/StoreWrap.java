@@ -41,15 +41,15 @@ public class StoreWrap {
 	}
 	public void setServerDescriptor(ServerDescriptorOnClient serverDescriptor) {
 		var prefix = "client.servers." + serverDescriptor.getId() + ".";
-		store.set(prefix + "descriptor", serverDescriptor.serverDescriptor);
-		store.set(prefix + "nonce", serverDescriptor.chaCha20Poly1305Pair.getNonceLocal());
+		store.set(prefix + "descriptor", serverDescriptor.getServerDescriptor());
+		store.set(prefix + "nonce", serverDescriptor.getDataPreparerConfig().chaCha20Poly1305Pair.getNonceLocal());
 	}
 	public ServerDescriptorOnClient getServerDescriptor(int serverId, Key masterKey) {
 		assert serverId > 0;
 		var prefix = "client.servers." + serverId + ".";
 		var res = new ServerDescriptorOnClient(store.get(prefix + "descriptor", ServerDescriptor::of));
 		var nonce = store.get(prefix + "nonce", null, Nonce::of);
-		res.chaCha20Poly1305Pair = ChaCha20Poly1305Pair.forClient(masterKey, serverId, nonce);
+		res.getDataPreparerConfig().chaCha20Poly1305Pair = ChaCha20Poly1305Pair.forClient(masterKey, serverId, nonce);
 		return res;
 	}
 	public void setDefaultPortForCodec(AetherCodec codec, int port) {
