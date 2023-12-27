@@ -72,11 +72,11 @@
         <appender-ref ref="FileLog"/>
     </logger>
     <root level="error">
-        <appender-ref ref="SystemTrace"/>
-        <appender-ref ref="SystemInfo"/>
-        <appender-ref ref="SystemDebug"/>
-        <appender-ref ref="SystemWarn"/>
-        <appender-ref ref="SystemError"/>
-        <appender-ref ref="FileLog"/>
+        <!--        <appender-ref ref="SystemTrace"/>-->
+        <!--        <appender-ref ref="SystemInfo"/>-->
+        <!--        <appender-ref ref="SystemDebug"/>-->
+        <!--        <appender-ref ref="SystemWarn"/>-->
+        <!--        <appender-ref ref="SystemError"/>-->
+        <!--        <appender-ref ref="FileLog"/>-->
     </root>
 </configuration>

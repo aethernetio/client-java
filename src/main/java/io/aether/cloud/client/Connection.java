@@ -1,5 +1,6 @@
 package io.aether.cloud.client;
 
+import io.aether.api.DataPrepareApi;
 import io.aether.api.DataPrepareApiImpl;
 import io.aether.api.clientApi.ClientApiSafe;
 import io.aether.api.clientApi.ClientApiUnsafe;
@@ -11,6 +12,8 @@ import io.aether.common.*;
 import io.aether.net.ApiProcessorConsumer;
 import io.aether.net.Protocol;
 import io.aether.net.ProtocolConfig;
+import io.aether.net.RemoteApi;
+import io.aether.net.impl.bin.ApiProcessor;
 import io.aether.sodium.AsymCrypt;
 import io.aether.utils.RU;
 import io.aether.utils.futures.AFuture;
@@ -45,8 +48,17 @@ public class Connection extends DataPrepareApiImpl<ClientApiSafe> implements Cli
 	final private AtomicBoolean inProcess = new AtomicBoolean();
 	boolean basicStatus;
 	long lastWorkTime;
+	@Override
+	public void setApiProcessor(ApiProcessor apiProcessor) {
+		super.setApiProcessor(apiProcessor);
+		var remoteApi = (LoginApi) apiProcessor.getRemoteApi();
+		((RemoteApi) remoteApi).setOnSubApi(a -> {
+			switch (a.methodName) {
+				case "loginByUID", "loginByAlias" -> DataPrepareApi.prepareRemote((DataPrepareApi<?>) a, getConfig());
+			}
+		});
+	}
 	public Connection(AetherCloudClient aetherCloudClient, ServerDescriptorOnClient s) {
-		super();
 		this.client = aetherCloudClient;
 		this.basicStatus = false;
 		serverDescriptor = s;

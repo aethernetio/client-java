@@ -49,6 +49,7 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 			workProofDTOFuture.to(d -> {
 				var listPasswords = workProof(d);
 				protocol.getRemoteApi().byTokenDone(token, listPasswords)
+						.curve25519()
 						.registration(new RegistrationRequest(
 								client.getParent(),
 								client.getMasterKey()
