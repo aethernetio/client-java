@@ -1,5 +1,6 @@
 package io.aether.cloud.client;
 
+import io.aether.api.DataPrepareApi;
 import io.aether.api.DataPrepareApiImpl;
 import io.aether.api.clientApi.ClientApiSafe;
 import io.aether.api.clientApi.ClientApiUnsafe;
@@ -12,6 +13,8 @@ import io.aether.common.*;
 import io.aether.net.ApiProcessorConsumer;
 import io.aether.net.Protocol;
 import io.aether.net.ProtocolConfig;
+import io.aether.net.RemoteApi;
+import io.aether.net.impl.bin.ApiProcessor;
 import io.aether.sodium.AsymCrypt;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
@@ -47,7 +50,7 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 			p.getRemoteApi().byToken(token);
 			p.flush();
 			workProofDTOFuture.to(d -> {
-				var listPasswords = workProof(d);
+				List<byte[]> listPasswords = List.of();//workProof(d);
 				protocol.getRemoteApi().byTokenDone(token, listPasswords)
 						.curve25519()
 						.registration(new RegistrationRequest(
@@ -56,6 +59,18 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 						)).to(client::confirmRegistration);
 				protocol.flush();
 			});
+		});
+	}
+	@Override
+	public void setApiProcessor(ApiProcessor apiProcessor) {
+		super.setApiProcessor(apiProcessor);
+		var remoteApi = (WorkProofApi) apiProcessor.getRemoteApi();
+		((RemoteApi) remoteApi).setOnSubApi(a -> {
+			switch (a.methodName) {
+				case "byTokenDone" -> {
+					DataPrepareApi.prepareRemote((DataPrepareApi<?>) a, getConfig());
+				}
+			}
 		});
 	}
 	public ClientApiSafe getClientApiSafe() {
