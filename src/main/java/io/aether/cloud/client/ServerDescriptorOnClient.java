@@ -12,23 +12,22 @@ import java.net.URI;
 public class ServerDescriptorOnClient {
 	DataPreparerConfig dataPreparerConfig;
 	private ServerDescriptor serverDescriptor;
-	public ServerDescriptor getServerDescriptor() {
-		return serverDescriptor;
+	public ServerDescriptorOnClient(ServerDescriptor serverDescriptor, Key masterKey) {
+		this.dataPreparerConfig = new DataPreparerConfig();
+		this.serverDescriptor = serverDescriptor;
+		dataPreparerConfig.signer = SignChecker.of(serverDescriptor.publicSignKey().key());
+		dataPreparerConfig.chaCha20Poly1305Pair = ChaCha20Poly1305Pair.forClient(masterKey, serverDescriptor.id(), Nonce.of());
+		dataPreparerConfig.asymCrypt = new AsymCrypt(serverDescriptor.publicKey().key());
 	}
 	public static ServerDescriptorOnClient of(ServerDescriptor sd, Key masterKey) {
-		var r = of(sd);
-		r.initChaChaKeys(masterKey);
-		return r;
+		return new ServerDescriptorOnClient(sd, masterKey);
 	}
-	public ServerDescriptorOnClient(ServerDescriptor serverDescriptor) {
-		this.serverDescriptor = serverDescriptor;
+	public ServerDescriptor getServerDescriptor() {
+		return serverDescriptor;
 	}
 	public void setServerDescriptor(ServerDescriptor serverDescriptor, Key masterKey) {
 		this.serverDescriptor = serverDescriptor;
 		initChaChaKeys(masterKey);
-	}
-	public static ServerDescriptorOnClient of(ServerDescriptor sd) {
-		return new ServerDescriptorOnClient(sd);
 	}
 	public int getId() {
 		return serverDescriptor.id();

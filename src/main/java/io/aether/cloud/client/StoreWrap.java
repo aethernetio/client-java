@@ -47,7 +47,7 @@ public class StoreWrap {
 	public ServerDescriptorOnClient getServerDescriptor(int serverId, Key masterKey) {
 		assert serverId > 0;
 		var prefix = "client.servers." + serverId + ".";
-		var res = new ServerDescriptorOnClient(store.get(prefix + "descriptor", ServerDescriptor::of));
+		var res = new ServerDescriptorOnClient(store.get(prefix + "descriptor", ServerDescriptor::of), masterKey);
 		var nonce = store.get(prefix + "nonce", null, Nonce::of);
 		res.getDataPreparerConfig().chaCha20Poly1305Pair = ChaCha20Poly1305Pair.forClient(masterKey, serverId, nonce);
 		return res;

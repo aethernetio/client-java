@@ -48,6 +48,17 @@ public class Connection extends DataPrepareApiImpl<ClientApiSafe> implements Cli
 	final private AtomicBoolean inProcess = new AtomicBoolean();
 	boolean basicStatus;
 	long lastWorkTime;
+	public Connection(AetherCloudClient aetherCloudClient, ServerDescriptorOnClient s) {
+		this.client = aetherCloudClient;
+		this.basicStatus = false;
+		serverDescriptor = s;
+		var codec = AetherCodec.BINARY;
+		config = s.dataPreparerConfig;
+		var con = AetherClientFactory.make(s.getURI(codec),
+				ProtocolConfig.of(ClientApiUnsafe.class, LoginApi.class, codec),
+				(p) -> this);
+		con.to(conFuture);
+	}
 	@Override
 	public void setApiProcessor(ApiProcessor apiProcessor) {
 		super.setApiProcessor(apiProcessor);
@@ -57,16 +68,6 @@ public class Connection extends DataPrepareApiImpl<ClientApiSafe> implements Cli
 				case "loginByUID", "loginByAlias" -> DataPrepareApi.prepareRemote((DataPrepareApi<?>) a, getConfig());
 			}
 		});
-	}
-	public Connection(AetherCloudClient aetherCloudClient, ServerDescriptorOnClient s) {
-		this.client = aetherCloudClient;
-		this.basicStatus = false;
-		serverDescriptor = s;
-		var codec = AetherCodec.BINARY;
-		var con = AetherClientFactory.make(s.getURI(codec),
-				ProtocolConfig.of(ClientApiUnsafe.class, LoginApi.class, codec),
-				(p) -> this);
-		con.to(conFuture);
 	}
 	@Override
 	public void sendServerKeys(SignedKey asymPublicKey, SignedKey signKey) {
@@ -149,6 +150,9 @@ public class Connection extends DataPrepareApiImpl<ClientApiSafe> implements Cli
 			var uid = client.getUid();
 			Protocol<?, LoginApi> p = getApiProcessor().getProtocol();
 			if (uid == null || p == null || !p.isActive()) return;
+			if (getConfig().chaCha20Poly1305Pair == null) {
+				return;
+			}
 			sendRequests(uid, p.getRemoteApi().loginByUID(uid).chacha20poly1305());
 			p.flush();
 		} catch (Exception e) {
@@ -183,7 +187,7 @@ public class Connection extends DataPrepareApiImpl<ClientApiSafe> implements Cli
 						assert sd.id() > 0;
 						client.getRequestsResolveServers().remove((int) sd.id());
 						client.getResolvedServers().computeIfAbsent((int) sd.id(), k -> new ARFuture<>())
-								.done(ServerDescriptorOnClient.of(sd));
+								.done(ServerDescriptorOnClient.of(sd, client.getMasterKey()));
 					}
 				});
 				res = true;

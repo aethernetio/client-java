@@ -40,6 +40,7 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 		setSubApiFactory(this::getClientApiSafe);
 		this.client = client;
 		token = UUID.randomUUID();
+		log.debug("try reg to: " + uri);
 		var con = AetherClientFactory.make(uri,
 				ProtocolConfig.of(ClientApiUnsafe.class, WorkProofApi.class, AetherCodec.BINARY),
 				(p) -> {
@@ -52,7 +53,7 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 			workProofDTOFuture.to(d -> {
 				List<byte[]> listPasswords = List.of();//workProof(d);
 				protocol.getRemoteApi().byTokenDone(token, listPasswords)
-						.curve25519()
+						.backdoor()
 						.registration(new RegistrationRequest(
 								client.getParent(),
 								client.getMasterKey()
@@ -80,7 +81,7 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 	@Override
 	public void sendServerKeys(SignedKey asymPublicKey, SignedKey signKey) {
 		//TODO check
-		this.getConfig().signer = SignChecker.of(signKey.key(), null);
+		this.getConfig().signer = SignChecker.of(signKey.key());
 		this.getConfig().asymCrypt = new AsymCrypt(asymPublicKey.key());
 		keysFuture.done();
 	}

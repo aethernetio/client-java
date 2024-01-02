@@ -230,7 +230,9 @@ public final class AetherCloudClient {
 		beginCreateUser.set(false);
 		registrationFuture.done();
 		assert isRegistered();
-		streamOf(cd.cloud()).map(sd -> getConnection(ServerDescriptorOnClient.of(sd)).conFuture.toFuture()).allMap(AFuture::all).to(startFuture::tryDone);
+		streamOf(cd.cloud())
+				.map(sd -> getConnection(ServerDescriptorOnClient.of(sd, getMasterKey())).conFuture.toFuture())
+				.allMap(AFuture::all).to(startFuture::tryDone);
 	}
 	public void updateCloud(@NotNull UUID uid, @NotNull ServerDescriptorOnClient @NotNull [] cloud) {
 		if (uid.equals(getUid())) {
