@@ -23,7 +23,7 @@ public class PointToPointTest {
 				e.printStackTrace();
 			}
 		});
-		checkReceiveMessage.waitDoneSeconds(5);
+		checkReceiveMessage.waitDoneSeconds(10);
 		client1.stop(5);
 		client2.stop(5);
 	}

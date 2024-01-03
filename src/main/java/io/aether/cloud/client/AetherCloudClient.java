@@ -296,7 +296,7 @@ public final class AetherCloudClient {
 	}
 	private void putDescriptor(ServerDescriptorOnClient sd) {
 		resolvedServers.computeIfAbsent(sd.getId(), k -> new ARFuture<>())
-				.done(sd);
+				.tryDone(sd);
 		requestsResolveServers.remove(sd.getId());
 	}
 	public void putServerDescriptor(ServerDescriptor sd) {
