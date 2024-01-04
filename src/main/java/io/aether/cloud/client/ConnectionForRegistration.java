@@ -51,7 +51,7 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 			p.getRemoteApi().byToken(token);
 			p.flush();
 			workProofDTOFuture.to(d -> {
-				List<byte[]> listPasswords = List.of();//workProof(d);
+				List<byte[]> listPasswords = workProof(d);
 				protocol.getRemoteApi().byTokenDone(token, listPasswords)
 						.backdoor()
 						.registration(new RegistrationRequest(
