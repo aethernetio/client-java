@@ -18,6 +18,7 @@ import io.aether.net.impl.bin.ApiProcessor;
 import io.aether.sodium.AsymCrypt;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
+import io.aether.utils.streams.AStream;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,6 +26,7 @@ import org.slf4j.LoggerFactory;
 import java.lang.invoke.MethodHandles;
 import java.net.URI;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeoutException;
 
@@ -48,18 +50,25 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 					return this;
 				});
 		con.to((p) -> {
-			p.getRemoteApi().byToken(token);
-			p.flush();
-			workProofDTOFuture.to(d -> {
-				List<byte[]> listPasswords = workProof(d);
-				protocol.getRemoteApi().byTokenDone(token, listPasswords)
-						.backdoor()
-						.registration(new RegistrationRequest(
-								client.getParent(),
-								client.getMasterKey()
-						)).to(client::confirmRegistration);
+			ARFuture<List<KeyRecord>> keys = p.getRemoteApi().getKeys(Set.of(KeyType.CURVE25519, KeyType.SIGN));
+			keys.to((kk) -> {
+				var mapKey = AStream.streamOf(kk).toMap(KeyRecord::type, k -> k);
+				var c = getConfig();
+				c.asymCrypt = new AsymCrypt(mapKey.get(KeyType.CURVE25519).signedKey().key());
+				c.signer = SignChecker.of(mapKey.get(KeyType.SIGN).signedKey().key());
+				var safeApi = protocol.getRemoteApi().enter().curve25519();
+				safeApi.requestWorkProofData(client.getParent())
+						.to(wpd -> {
+							var passwords = WorkProofUtil.generateProofOfWorkPool(wpd.proofSalt(), wpd.config().maxHashVal(), (int) wpd.config().poolSize(), (int) wpd.config().costBCrypt(),
+									5000);
+							protocol.getRemoteApi().enter().curve25519()
+									.registration(passwords, new RegistrationRequest(client.getMasterKey()))
+									.to(client::confirmRegistration);
+							protocol.flush();
+						});
 				protocol.flush();
 			});
+			p.flush();
 		});
 	}
 	@Override
@@ -68,7 +77,7 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 		var remoteApi = (WorkProofApi) apiProcessor.getRemoteApi();
 		((RemoteApi) remoteApi).setOnSubApi(a -> {
 			switch (a.methodName) {
-				case "byTokenDone" -> {
+				case "enter" -> {
 					DataPrepareApi.prepareRemote((DataPrepareApi<?>) a, getConfig());
 				}
 			}
@@ -87,7 +96,7 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 	}
 	private List<byte[]> workProof(WorkProofDTO d) {
 		try {
-			return WorkProofUtil.generateProofOfWorkPool(d.proofSalt(), d.maxHashVal(), d.poolSize(), 3000);
+			return WorkProofUtil.generateProofOfWorkPool(d.proofSalt(), d.config().maxHashVal(), d.config().poolSize(), d.config().costBCrypt(), 3000);
 		} catch (TimeoutException e) {
 			throw new RuntimeException(e);
 		}
