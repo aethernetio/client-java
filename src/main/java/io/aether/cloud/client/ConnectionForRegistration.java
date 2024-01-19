@@ -5,7 +5,7 @@ import io.aether.api.DataPrepareApiImpl;
 import io.aether.api.clientApi.ClientApiSafe;
 import io.aether.api.clientApi.ClientApiUnsafe;
 import io.aether.api.serverRegistryApi.RegistrationRequest;
-import io.aether.api.serverRegistryApi.WorkProofApi;
+import io.aether.api.serverRegistryApi.RootApi;
 import io.aether.api.serverRegistryApi.WorkProofDTO;
 import io.aether.api.serverRegistryApi.WorkProofUtil;
 import io.aether.client.AetherClientFactory;
@@ -17,7 +17,6 @@ import io.aether.net.RemoteApi;
 import io.aether.net.impl.bin.ApiProcessor;
 import io.aether.sodium.AsymCrypt;
 import io.aether.utils.futures.AFuture;
-import io.aether.utils.futures.ARFuture;
 import io.aether.utils.streams.AStream;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
@@ -34,28 +33,25 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 	private static final Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 	private final AetherCloudClient client;
 	private final AFuture keysFuture = new AFuture();
-	private final UUID token;
-	private Protocol<ClientApiUnsafe, WorkProofApi> protocol;
-	private ARFuture<WorkProofDTO> workProofDTOFuture = new ARFuture<>();
+	private Protocol<ClientApiUnsafe, RootApi> protocol;
 	private ClientApiSafe clientApiSafe;
 	public ConnectionForRegistration(AetherCloudClient client, URI uri) {
 		setSubApiFactory(this::getClientApiSafe);
 		this.client = client;
-		token = UUID.randomUUID();
 		log.debug("try reg to: " + uri);
 		var con = AetherClientFactory.make(uri,
-				ProtocolConfig.of(ClientApiUnsafe.class, WorkProofApi.class, AetherCodec.BINARY),
+				ProtocolConfig.of(ClientApiUnsafe.class, RootApi.class, AetherCodec.BINARY),
 				(p) -> {
 					protocol = p;
 					return this;
 				});
 		con.to((p) -> {
-			ARFuture<List<KeyRecord>> keys = p.getRemoteApi().getKeys(Set.of(KeyType.CURVE25519, KeyType.SIGN));
+			var keys = p.getRemoteApi().getKeys(Set.of(KeyType.CURVE25519, KeyType.SODIUM_SIGN), Set.of(KeyType.SODIUM_SIGN));
 			keys.to((kk) -> {
-				var mapKey = AStream.streamOf(kk).toMap(KeyRecord::type, k -> k);
+				var mapKey = AStream.streamOf(kk.keys()).toMap(KeyRecord::type, k -> k);
 				var c = getConfig();
 				c.asymCrypt = new AsymCrypt(mapKey.get(KeyType.CURVE25519).signedKey().key());
-				c.signer = SignChecker.of(mapKey.get(KeyType.SIGN).signedKey().key());
+				c.signer = SignChecker.of(mapKey.get(KeyType.SODIUM_SIGN).signedKey().key());
 				var safeApi = protocol.getRemoteApi().enter().curve25519();
 				safeApi.requestWorkProofData(client.getParent())
 						.to(wpd -> {
@@ -74,12 +70,10 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 	@Override
 	public void setApiProcessor(ApiProcessor apiProcessor) {
 		super.setApiProcessor(apiProcessor);
-		var remoteApi = (WorkProofApi) apiProcessor.getRemoteApi();
+		var remoteApi = (RootApi) apiProcessor.getRemoteApi();
 		((RemoteApi) remoteApi).setOnSubApi(a -> {
 			switch (a.methodName) {
-				case "enter" -> {
-					DataPrepareApi.prepareRemote((DataPrepareApi<?>) a, getConfig());
-				}
+				case "enter" -> DataPrepareApi.prepareRemote((DataPrepareApi<?>) a, getConfig());
 			}
 		});
 	}
@@ -101,11 +95,7 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 			throw new RuntimeException(e);
 		}
 	}
-	private class MyClientApiSafe implements ClientApiSafe {
-		@Override
-		public void sendWorkProofData(WorkProofDTO workProofDTO) {
-			workProofDTOFuture.done(workProofDTO);
-		}
+	private static class MyClientApiSafe implements ClientApiSafe {
 		@Override
 		public void pushMessage(@NotNull Message message) {
 			throw new UnsupportedOperationException();
