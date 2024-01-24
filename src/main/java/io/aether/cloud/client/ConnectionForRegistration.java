@@ -6,7 +6,6 @@ import io.aether.api.clientApi.ClientApiSafe;
 import io.aether.api.clientApi.ClientApiUnsafe;
 import io.aether.api.serverRegistryApi.RegistrationRequest;
 import io.aether.api.serverRegistryApi.RootApi;
-import io.aether.api.serverRegistryApi.WorkProofDTO;
 import io.aether.api.serverRegistryApi.WorkProofUtil;
 import io.aether.client.AetherClientFactory;
 import io.aether.common.*;
@@ -27,12 +26,12 @@ import java.net.URI;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.TimeoutException;
 
 public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe> implements ClientApiUnsafe, ApiProcessorConsumer {
 	private static final Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 	private final AetherCloudClient client;
 	private final AFuture keysFuture = new AFuture();
+	AFuture connectFuture;
 	private Protocol<ClientApiUnsafe, RootApi> protocol;
 	private ClientApiSafe clientApiSafe;
 	public ConnectionForRegistration(AetherCloudClient client, URI uri) {
@@ -45,7 +44,7 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 					protocol = p;
 					return this;
 				});
-		con.to((p) -> {
+		connectFuture = con.to((p) -> {
 			var keys = p.getRemoteApi().getKeys(Set.of(KeyType.CURVE25519, KeyType.SODIUM_SIGN), Set.of(KeyType.SODIUM_SIGN));
 			keys.to((kk) -> {
 				var mapKey = AStream.streamOf(kk.keys()).toMap(KeyRecord::type, k -> k);
@@ -55,17 +54,16 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 				var safeApi = protocol.getRemoteApi().enter().curve25519();
 				safeApi.requestWorkProofData(client.getParent())
 						.to(wpd -> {
-							var passwords = WorkProofUtil.generateProofOfWorkPool(wpd.proofSalt(), wpd.config().maxHashVal(), (int) wpd.config().poolSize(), (int) wpd.config().costBCrypt(),
-									5000);
+							var passwords = WorkProofUtil.generateProofOfWorkPool(wpd.salt(), wpd.suffix(), wpd.config().maxHashVal(), wpd.config().poolSize(), 5000);
 							protocol.getRemoteApi().enter().curve25519()
-									.registration(passwords, new RegistrationRequest(client.getMasterKey()))
+									.registration(wpd.salt(), wpd.suffix(), passwords, new RegistrationRequest(client.getMasterKey()))
 									.to(client::confirmRegistration);
 							protocol.flush();
 						});
 				protocol.flush();
 			});
 			p.flush();
-		});
+		}).toFuture();
 	}
 	@Override
 	public void setApiProcessor(ApiProcessor apiProcessor) {
@@ -87,13 +85,6 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 		this.getConfig().signer = SignChecker.of(signKey.key());
 		this.getConfig().asymCrypt = new AsymCrypt(asymPublicKey.key());
 		keysFuture.done();
-	}
-	private List<byte[]> workProof(WorkProofDTO d) {
-		try {
-			return WorkProofUtil.generateProofOfWorkPool(d.proofSalt(), d.config().maxHashVal(), d.config().poolSize(), d.config().costBCrypt(), 3000);
-		} catch (TimeoutException e) {
-			throw new RuntimeException(e);
-		}
 	}
 	private static class MyClientApiSafe implements ClientApiSafe {
 		@Override

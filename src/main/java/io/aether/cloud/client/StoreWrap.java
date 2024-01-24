@@ -20,14 +20,16 @@ public class StoreWrap {
 	public final Store.Property<Signer> globalSigner;
 	public final Store.Property<List<URI>> cloudFactoryUrl;
 	public final Store.PropertyInt countServersForRegistration;
+	public final Store.PropertyInt timoutForConnectToRegistrationServer;
 	private final Store store;
 	public StoreWrap(Store store) {
 		this(store, null);
 	}
 	public StoreWrap(Store store, UUID parent) {
 		this.store = store;
-		pingDuration = store.getPropertyLong("settings.ping.duration");
-		countServersForRegistration = store.getPropertyInt("settings.countServersForRegistration");
+		pingDuration = store.getPropertyLong("client.ping.duration");
+		countServersForRegistration = store.getPropertyInt("client.countServersForRegistration");
+		timoutForConnectToRegistrationServer = store.getPropertyInt("client.timoutForConnectToRegistrationServer");
 		uid = store.getProperty("client.uid", UUID::fromString);
 		parentUid = store.getProperty("client.parentUid", UUID::fromString);
 		if (parent != null) parentUid.set(parent);

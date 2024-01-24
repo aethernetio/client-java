@@ -17,6 +17,7 @@ import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.URI;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
@@ -34,6 +35,7 @@ public final class AetherCloudClient {
 	public static final ADebug.Counter requestPositionBegin = ADebug.key("requestPositionBegin");
 	public static final ADebug.Counter requestPositionEnd = ADebug.key("requestPositionEnd");
 	private static final Logger log = LoggerFactory.getLogger(AetherCloudClient.class);
+	private static final List<URI> DEFAULT_URL_FOR_CONNECT = List.of(URI.create("registration.aether.io"));
 	public final AtomicBoolean beginCreateUser = new AtomicBoolean();
 	public final SlotConsumer<Message> onMessage = new SlotConsumer<>();
 	public final AFuture startFuture = new AFuture();
@@ -158,11 +160,16 @@ public final class AetherCloudClient {
 	public void connect() {
 		startScheduledTask();
 		if (!isRegistered() && tryReg.compareAndSet(false, true)) {
-			var uris = storeWrap.cloudFactoryUrl.get();
+			var uris = storeWrap.cloudFactoryUrl.get(DEFAULT_URL_FOR_CONNECT);
+			var timeoutForConnect = storeWrap.timoutForConnectToRegistrationServer.get(10);
 			var countServersForRegistration = storeWrap.countServersForRegistration.get(1);
 			log.info("try registration by: {}", uris);
-			streamOf(uris).shuffle().limit(countServersForRegistration)
-					.to(sd -> new ConnectionForRegistration(this, sd));
+			var startFutures = streamOf(uris).shuffle().limit(countServersForRegistration)
+					.map(sd -> new ConnectionForRegistration(this, sd).connectFuture)
+					.toList();
+			AFuture.any(startFutures).timeout(10, () -> {
+				log.error("Failed to connect to registration server: {}", uris);
+			});
 		} else {
 			var cloud = storeWrap.getCloud(getUid());
 			if (cloud == null || cloud.length == 0) throw new UnsupportedOperationException();
