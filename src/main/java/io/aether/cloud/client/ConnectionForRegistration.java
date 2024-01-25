@@ -35,6 +35,7 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 	private Protocol<ClientApiUnsafe, RootApi> protocol;
 	private ClientApiSafe clientApiSafe;
 	public ConnectionForRegistration(AetherCloudClient client, URI uri) {
+		assert uri != null;
 		setSubApiFactory(this::getClientApiSafe);
 		this.client = client;
 		log.debug("try reg to: " + uri);

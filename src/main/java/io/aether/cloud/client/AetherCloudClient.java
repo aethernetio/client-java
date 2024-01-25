@@ -50,6 +50,7 @@ public final class AetherCloudClient {
 	private final Map<UUID, AtomicInteger> idCounters = new ConcurrentHashMap<>();
 	private final StoreWrap storeWrap;
 	private final Collection<ScheduledFuture<?>> scheduledFutures = new HashSet<>();
+	private final AtomicBoolean startConnection = new AtomicBoolean();
 	public SlotConsumer<Collection<UUID>> onNewChildren = new SlotConsumer<>();
 	volatile Connection currentConnection;
 	volatile long pingTime = -1;
@@ -158,18 +159,27 @@ public final class AetherCloudClient {
 		updateCloud(uid, cloud);
 	}
 	public void connect() {
-		startScheduledTask();
+		if (!startConnection.compareAndSet(false, true)) return;
+		connect(10);
+	}
+	private void connect(int step) {
+		if (step == 0) {
+			return;
+		}
 		if (!isRegistered() && tryReg.compareAndSet(false, true)) {
 			var uris = storeWrap.cloudFactoryUrl.get(DEFAULT_URL_FOR_CONNECT);
 			var timeoutForConnect = storeWrap.timoutForConnectToRegistrationServer.get(10);
-			var countServersForRegistration = storeWrap.countServersForRegistration.get(1);
+			var countServersForRegistration = Math.min(uris.size(), storeWrap.countServersForRegistration.get(1));
 			log.info("try registration by: {}", uris);
 			var startFutures = streamOf(uris).shuffle().limit(countServersForRegistration)
 					.map(sd -> new ConnectionForRegistration(this, sd).connectFuture)
 					.toList();
-			AFuture.any(startFutures).timeout(10, () -> {
-				log.error("Failed to connect to registration server: {}", uris);
-			});
+			AFuture.any(startFutures)
+					.to(this::startScheduledTask)
+					.timeout(timeoutForConnect, () -> {
+						log.error("Failed to connect to registration server: {}", uris);
+						RU.schedule(1000, () -> this.connect(step - 1));
+					});
 		} else {
 			var cloud = storeWrap.getCloud(getUid());
 			if (cloud == null || cloud.length == 0) throw new UnsupportedOperationException();
