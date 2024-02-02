@@ -17,8 +17,9 @@ public class ChatService {
 	public static ARFuture<UUID> uid = new ARFuture<>();
 	private final Map<UUID, UserDescriptor> users = new ConcurrentHashMap<>();
 	private final ServerOverMessages<ServiceServerApi, ServiceClientApi> serverOverMessages;
+	public final AetherCloudClient aether;
 	public ChatService() {
-		var aether = new AetherCloudClient(Aether.TEST_UID)
+		aether = new AetherCloudClient(Aether.TEST_UID)
 				.waitStart(10);
 		uid.done(aether.getUid());
 		serverOverMessages = new ServerOverMessages<>(aether, ServiceServerApi.class, ServiceClientApi.class, (uid, message) -> new MyServiceServerApi(uid));

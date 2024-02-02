@@ -1,9 +1,9 @@
 package io.aether.examples.plainChat;
 
-import io.aether.Aether;
 import io.aether.cloud.client.AetherCloudClient;
 import io.aether.cloud.client.ClientOverMessages;
 import io.aether.net.RemoteApi;
+import io.aether.utils.slots.SlotConsumer;
 
 import java.util.Map;
 import java.util.UUID;
@@ -12,8 +12,10 @@ import java.util.concurrent.ConcurrentHashMap;
 public class ChatClient implements ServiceClientApi {
 	private final Map<UUID, UserDescriptor> users = new ConcurrentHashMap<>();
 	private final ServiceServerApi service;
+	public final AetherCloudClient aether;
+	public final SlotConsumer<MessageDescriptor> onMessage = new SlotConsumer<>();
 	public ChatClient(UUID chatService, String name) {
-		var aether = new AetherCloudClient(Aether.TEST_UID)
+		aether = new AetherCloudClient(chatService)
 				.waitStart(10);
 		var clientOverMessages = new ClientOverMessages<>(aether, ServiceClientApi.class, ServiceServerApi.class, this);
 		service = clientOverMessages.getRemoteApiBy(chatService);
@@ -39,6 +41,7 @@ public class ChatClient implements ServiceClientApi {
 	@Override
 	public void newMessages(MessageDescriptor[] messages) {
 		for (var m : messages) {
+			onMessage.fire(m);
 			var u = users.get(m.uid());
 			if (u == null) {
 				System.out.println(m);
