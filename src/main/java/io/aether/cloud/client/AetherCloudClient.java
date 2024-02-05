@@ -48,7 +48,7 @@ public final class AetherCloudClient {
 	final Map<Integer, ARFuture<ServerDescriptorOnClient>> resolvedServers = new ConcurrentHashMap<>();
 	final AFuture registrationFuture = new AFuture();
 	private final Map<UUID, AtomicInteger> idCounters = new ConcurrentHashMap<>();
-	private final StoreWrap storeWrap;
+	private final ClientConfiguration clientConfiguration;
 	private final Collection<ScheduledFuture<?>> scheduledFutures = new HashSet<>();
 	private final AtomicBoolean startConnection = new AtomicBoolean();
 	public SlotConsumer<Collection<UUID>> onNewChildren = new SlotConsumer<>();
@@ -56,22 +56,9 @@ public final class AetherCloudClient {
 	volatile long pingTime = -1;
 	Key masterKey;
 	private String name;
-	public AetherCloudClient(UUID parent) {
-		this(new StoreWrap(new StoreDefault()) {
-			{
-				parentUid.set(parent);
-			}
-		});
-	}
-	public AetherCloudClient(StoreWrap store) {
-		this.storeWrap = store;
+	public AetherCloudClient(ClientConfiguration store) {
+		this.clientConfiguration = store;
 		connect();
-	}
-	public AetherCloudClient(Store store) {
-		this(new StoreWrap(store));
-	}
-	public static AetherCloudClient start(@NotNull Store store) {
-		return new AetherCloudClient(store);
 	}
 	public Map<Integer, ARFuture<ServerDescriptorOnClient>> getResolvedServers() {
 		return resolvedServers;
@@ -167,9 +154,9 @@ public final class AetherCloudClient {
 			return;
 		}
 		if (!isRegistered() && tryReg.compareAndSet(false, true)) {
-			var uris = storeWrap.cloudFactoryUrl.get(DEFAULT_URL_FOR_CONNECT);
-			var timeoutForConnect = storeWrap.timoutForConnectToRegistrationServer.get(10);
-			var countServersForRegistration = Math.min(uris.size(), storeWrap.countServersForRegistration.get(1));
+			var uris = RU.getElse(clientConfiguration.cloudFactoryUrl, DEFAULT_URL_FOR_CONNECT);
+			var timeoutForConnect = clientConfiguration.timoutForConnectToRegistrationServer;
+			var countServersForRegistration = Math.min(uris.size(), clientConfiguration.countServersForRegistration);
 			log.info("try registration by: {}", uris);
 			var startFutures = streamOf(uris).shuffle().limit(countServersForRegistration)
 					.map(sd -> new ConnectionForRegistration(this, sd).connectFuture)
@@ -181,15 +168,15 @@ public final class AetherCloudClient {
 						RU.schedule(1000, () -> this.connect(step - 1));
 					});
 		} else {
-			var cloud = storeWrap.getCloud(getUid());
+			var cloud = clientConfiguration.getCloud(getUid());
 			if (cloud == null || cloud.length == 0) throw new UnsupportedOperationException();
 			for (var serverId : cloud) {
-				getConnection(storeWrap.getServerDescriptor(serverId, getMasterKey()));
+				getConnection(clientConfiguration.getServerDescriptor(serverId, getMasterKey()));
 			}
 		}
 	}
 	public UUID getUid() {
-		return storeWrap.uid.get();
+		return clientConfiguration.uid.get();
 	}
 	void receiveMessages(@NotNull Collection<Message> list) {
 		for (var m : list) {
@@ -221,7 +208,7 @@ public final class AetherCloudClient {
 		});
 	}
 	public void updateCloud(@NotNull UUID uid, @NotNull Cloud serverIds) {
-		storeWrap.setCloud(uid, serverIds);
+		clientConfiguration.setCloud(uid, serverIds);
 		if (uid.equals(getUid())) {
 			currentConnection = null;
 		}
@@ -229,12 +216,12 @@ public final class AetherCloudClient {
 	}
 	public long getPingTime() {
 		if (pingTime == -1) {
-			pingTime = storeWrap.pingDuration.get(1000);
+			pingTime = clientConfiguration.pingDuration.get(1000);
 		}
 		return pingTime;
 	}
 	public boolean isRegistered() {
-		return storeWrap.uid.get(null) != null;
+		return clientConfiguration.uid.get(null) != null;
 	}
 	public void setCurrentConnection(@NotNull Connection connection) {
 		currentConnection = connection;
@@ -243,7 +230,7 @@ public final class AetherCloudClient {
 	public void confirmRegistration(RegistrationResponse cd) {
 		if (!successfulAuthorization.compareAndSet(false, true)) return;
 		log.trace("confirmRegistration: " + cd);
-		storeWrap.uid.set(cd.uid());
+		clientConfiguration.uid.set(cd.uid());
 		beginCreateUser.set(false);
 		registrationFuture.done();
 		assert isRegistered();
@@ -293,16 +280,16 @@ public final class AetherCloudClient {
 		onMessage.remove(listener);
 	}
 	public UUID getParent() {
-		return storeWrap.parentUid.get();
+		return clientConfiguration.parentUid.get();
 	}
 	public Key getMasterKey() {
 		Key res;
 		res = masterKey;
 		if (res != null) return res;
-		res = storeWrap.masterKey.get(null);
+		res = clientConfiguration.masterKey.get(null);
 		if (res == null) {
 			res = ChaCha20Poly1305.generateSyncKey();
-			storeWrap.masterKey.set(res);
+			clientConfiguration.masterKey.set(res);
 		}
 		masterKey = res;
 		return res;

@@ -16,7 +16,6 @@ import io.aether.net.RemoteApi;
 import io.aether.net.impl.bin.ApiProcessor;
 import io.aether.sodium.AsymCrypt;
 import io.aether.utils.futures.AFuture;
-import io.aether.utils.streams.AStream;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,7 +23,6 @@ import org.slf4j.LoggerFactory;
 import java.lang.invoke.MethodHandles;
 import java.net.URI;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
 public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe> implements ClientApiUnsafe, ApiProcessorConsumer {
@@ -46,12 +44,11 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 					return this;
 				});
 		connectFuture = con.to((p) -> {
-			var keys = p.getRemoteApi().getKeys(Set.of(KeyType.CURVE25519, KeyType.SODIUM_SIGN), Set.of(KeyType.SODIUM_SIGN));
-			keys.to((kk) -> {
-				var mapKey = AStream.streamOf(kk.keys()).toMap(KeyRecord::type, k -> k);
+			var keys = p.getRemoteApi().getKeys(KeyType.CURVE25519, SignType.SODIUM);
+			keys.to((signedKey) -> {
 				var c = getConfig();
-				c.asymCrypt = new AsymCrypt(mapKey.get(KeyType.CURVE25519).signedKey().key());
-				c.signer = SignChecker.of(mapKey.get(KeyType.SODIUM_SIGN).signedKey().key());
+				c.signer.check(signedKey);
+				c.asymCrypt = new AsymCrypt(signedKey.key());
 				var safeApi = protocol.getRemoteApi().enter().curve25519();
 				safeApi.requestWorkProofData(client.getParent())
 						.to(wpd -> {

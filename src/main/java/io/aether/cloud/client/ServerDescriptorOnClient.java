@@ -15,7 +15,7 @@ public class ServerDescriptorOnClient {
 	public ServerDescriptorOnClient(ServerDescriptor serverDescriptor, Key masterKey) {
 		this.dataPreparerConfig = new DataPreparerConfig();
 		this.serverDescriptor = serverDescriptor;
-		dataPreparerConfig.signer = SignChecker.of(serverDescriptor.publicSignKey().key());
+		dataPreparerConfig.signer = SignChecker.of(serverDescriptor.getKey(SignType.SODIUM).key());
 		dataPreparerConfig.chaCha20Poly1305Pair = ChaCha20Poly1305Pair.forClient(masterKey, serverDescriptor.id(), Nonce.of());
 		dataPreparerConfig.asymCrypt = new AsymCrypt(serverDescriptor.publicKey().key());
 	}
