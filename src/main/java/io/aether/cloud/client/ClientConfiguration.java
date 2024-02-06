@@ -19,11 +19,11 @@ public abstract class ClientConfiguration {
 	public final List<URI> cloudFactoryUrl;
 	public final Map<Integer, ServerConfig> servers = new ConcurrentHashMap<>();
 	public final Map<UUID, UidConfig> uidConfigs = new ConcurrentHashMap<>();
-	public long pingDuration;
-	public UUID uid;
+	public volatile long pingDuration = 1000;
+	public volatile UUID uid;
 	public Key masterKey;
-	public int countServersForRegistration = 1;
-	public int timoutForConnectToRegistrationServer = 10;
+	public volatile int countServersForRegistration = 1;
+	public volatile int timoutForConnectToRegistrationServer = 10;
 	public ClientConfiguration(UUID parentUid, SignChecker globalSigner, List<URI> cloudFactoryUrl) {
 		this.parentUid = parentUid;
 		this.globalSigner = globalSigner;

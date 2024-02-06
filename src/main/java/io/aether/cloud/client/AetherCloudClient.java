@@ -53,7 +53,6 @@ public final class AetherCloudClient {
 	private final AtomicBoolean startConnection = new AtomicBoolean();
 	public SlotConsumer<Collection<UUID>> onNewChildren = new SlotConsumer<>();
 	volatile Connection currentConnection;
-	volatile long pingTime = -1;
 	Key masterKey;
 	private String name;
 	public AetherCloudClient(ClientConfiguration store) {
@@ -169,14 +168,14 @@ public final class AetherCloudClient {
 					});
 		} else {
 			var cloud = clientConfiguration.getCloud(getUid());
-			if (cloud == null || cloud.length == 0) throw new UnsupportedOperationException();
+			if (cloud == null || cloud.isEmpty()) throw new UnsupportedOperationException();
 			for (var serverId : cloud) {
-				getConnection(clientConfiguration.getServerDescriptor(serverId, getMasterKey()));
+				getConnection(clientConfiguration.getServerDescriptor(serverId));
 			}
 		}
 	}
 	public UUID getUid() {
-		return clientConfiguration.uid.get();
+		return clientConfiguration.uid;
 	}
 	void receiveMessages(@NotNull Collection<Message> list) {
 		for (var m : list) {
@@ -215,13 +214,10 @@ public final class AetherCloudClient {
 		getCloud(uid).set(serverIds);
 	}
 	public long getPingTime() {
-		if (pingTime == -1) {
-			pingTime = clientConfiguration.pingDuration.get(1000);
-		}
-		return pingTime;
+		return clientConfiguration.pingDuration;
 	}
 	public boolean isRegistered() {
-		return clientConfiguration.uid.get(null) != null;
+		return clientConfiguration.uid != null;
 	}
 	public void setCurrentConnection(@NotNull Connection connection) {
 		currentConnection = connection;
@@ -230,7 +226,7 @@ public final class AetherCloudClient {
 	public void confirmRegistration(RegistrationResponse cd) {
 		if (!successfulAuthorization.compareAndSet(false, true)) return;
 		log.trace("confirmRegistration: " + cd);
-		clientConfiguration.uid.set(cd.uid());
+		clientConfiguration.uid(cd.uid());
 		beginCreateUser.set(false);
 		registrationFuture.done();
 		assert isRegistered();
@@ -280,16 +276,16 @@ public final class AetherCloudClient {
 		onMessage.remove(listener);
 	}
 	public UUID getParent() {
-		return clientConfiguration.parentUid.get();
+		return clientConfiguration.parentUid;
 	}
 	public Key getMasterKey() {
 		Key res;
 		res = masterKey;
 		if (res != null) return res;
-		res = clientConfiguration.masterKey.get(null);
+		res = clientConfiguration.masterKey;
 		if (res == null) {
 			res = ChaCha20Poly1305.generateSyncKey();
-			clientConfiguration.masterKey.set(res);
+			clientConfiguration.masterKey(res);
 		}
 		masterKey = res;
 		return res;
