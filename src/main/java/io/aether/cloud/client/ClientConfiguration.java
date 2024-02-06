@@ -71,7 +71,7 @@ public abstract class ClientConfiguration {
 		}
 	}
 
-	static class UidConfig {
+	public static class UidConfig {
 		public final UUID uid;
 		public Cloud cloud;
 		public UidConfig(UUID uid) {
