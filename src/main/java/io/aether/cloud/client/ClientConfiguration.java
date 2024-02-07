@@ -13,7 +13,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-public abstract class ClientConfiguration {
+public class ClientConfiguration {
 	public final UUID parentUid;
 	public final SignChecker globalSigner;
 	public final List<URI> cloudFactoryUrl;
@@ -29,8 +29,12 @@ public abstract class ClientConfiguration {
 		this.globalSigner = globalSigner;
 		this.cloudFactoryUrl = cloudFactoryUrl;
 	}
-	public abstract void uid(UUID uid);
-	public abstract void masterKey(Key key);
+	public void uid(UUID uid) {
+		this.uid = uid;
+	}
+	public void masterKey(Key key) {
+		this.masterKey = key;
+	}
 	public ServerConfig getServerConfig(int sid) {
 		return servers.computeIfAbsent(sid, ServerConfig::new);
 	}
@@ -46,7 +50,9 @@ public abstract class ClientConfiguration {
 		res.getDataPreparerConfig().chaCha20Poly1305Pair = ChaCha20Poly1305Pair.forClient(masterKey, serverId, nonce);
 		return res;
 	}
-	public abstract void saveCloud(UUID uid, Cloud cloud);
+	public void saveCloud(UUID uid, Cloud cloud) {
+		getUidConfig(uid).cloud = cloud;
+	}
 	public UidConfig getUidConfig(UUID uid) {
 		return uidConfigs.computeIfAbsent(uid, UidConfig::new);
 	}

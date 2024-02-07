@@ -45,15 +45,16 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 				});
 		connectFuture = con.to((p) -> {
 			var keys = p.getRemoteApi().getKeys(KeyType.CURVE25519, SignType.SODIUM);
+			DataPrepareApi.prepareRemote(p.getRemoteApi(), getConfig());
 			keys.to((signedKey) -> {
 				var c = getConfig();
-				c.signer.check(signedKey);
+				client.getConfig().globalSigner.check(signedKey);
 				c.asymCrypt = new AsymCrypt(signedKey.key());
-				var safeApi = protocol.getRemoteApi().enter().curve25519();
+				var safeApi = protocol.getRemoteApi().curve25519();
 				safeApi.requestWorkProofData(client.getParent())
 						.to(wpd -> {
 							var passwords = WorkProofUtil.generateProofOfWorkPool(wpd.salt(), wpd.suffix(), wpd.config().maxHashVal(), wpd.config().poolSize(), 5000);
-							protocol.getRemoteApi().enter().curve25519()
+							protocol.getRemoteApi().curve25519()
 									.registration(wpd.salt(), wpd.suffix(), passwords, new RegistrationRequest(client.getMasterKey()))
 									.to(client::confirmRegistration);
 							protocol.flush();
@@ -80,7 +81,7 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 	@Override
 	public void sendServerKeys(SignedKey asymPublicKey, SignedKey signKey) {
 		//TODO check
-		this.getConfig().signer = SignChecker.of(signKey.key());
+		this.getConfig().signer = SignerSodium.of(signKey.key());
 		this.getConfig().asymCrypt = new AsymCrypt(asymPublicKey.key());
 		keysFuture.done();
 	}

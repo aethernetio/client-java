@@ -226,6 +226,7 @@ public final class AetherCloudClient {
 	public void confirmRegistration(RegistrationResponse cd) {
 		if (!successfulAuthorization.compareAndSet(false, true)) return;
 		log.trace("confirmRegistration: " + cd);
+		clientConfiguration.uid = cd.uid();
 		clientConfiguration.uid(cd.uid());
 		beginCreateUser.set(false);
 		registrationFuture.done();
@@ -305,5 +306,8 @@ public final class AetherCloudClient {
 			var sdc = f.get();
 			sdc.setServerDescriptor(sd, getMasterKey());
 		}
+	}
+	public ClientConfiguration getConfig() {
+		return clientConfiguration;
 	}
 }

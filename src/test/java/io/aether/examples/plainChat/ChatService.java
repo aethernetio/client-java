@@ -2,6 +2,7 @@ package io.aether.examples.plainChat;
 
 import io.aether.Aether;
 import io.aether.cloud.client.AetherCloudClient;
+import io.aether.cloud.client.ClientConfiguration;
 import io.aether.cloud.client.ServerOverMessages;
 import io.aether.net.ApiProcessorConsumer;
 import io.aether.net.RemoteApi;
@@ -19,7 +20,7 @@ public class ChatService {
 	private final ServerOverMessages<ServiceServerApi, ServiceClientApi> serverOverMessages;
 	public final AetherCloudClient aether;
 	public ChatService() {
-		aether = new AetherCloudClient(Aether.TEST_UID)
+		aether = new AetherCloudClient(new ClientConfiguration(Aether.TEST_UID, null, null))
 				.waitStart(10);
 		uid.done(aether.getUid());
 		serverOverMessages = new ServerOverMessages<>(aether, ServiceServerApi.class, ServiceClientApi.class, (uid, message) -> new MyServiceServerApi(uid));

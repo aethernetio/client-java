@@ -1,10 +1,13 @@
 package io.aether.examples.plainChat;
 
 import io.aether.cloud.client.AetherCloudClient;
+import io.aether.cloud.client.ClientConfiguration;
 import io.aether.cloud.client.ClientOverMessages;
 import io.aether.net.RemoteApi;
 import io.aether.utils.slots.SlotConsumer;
 
+import java.net.URI;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -15,7 +18,7 @@ public class ChatClient implements ServiceClientApi {
 	public final AetherCloudClient aether;
 	public final SlotConsumer<MessageDescriptor> onMessage = new SlotConsumer<>();
 	public ChatClient(UUID chatService, String name) {
-		aether = new AetherCloudClient(chatService)
+		aether = new AetherCloudClient(new ClientConfiguration(chatService, null, List.of(URI.create("tcp://aethernet.io"))))
 				.waitStart(10);
 		var clientOverMessages = new ClientOverMessages<>(aether, ServiceClientApi.class, ServiceServerApi.class, this);
 		service = clientOverMessages.getRemoteApiBy(chatService);
