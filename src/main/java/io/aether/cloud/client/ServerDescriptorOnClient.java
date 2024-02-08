@@ -1,7 +1,10 @@
 package io.aether.cloud.client;
 
 import io.aether.api.DataPreparerConfig;
-import io.aether.common.*;
+import io.aether.common.AetherCodec;
+import io.aether.common.Key;
+import io.aether.common.KeyType;
+import io.aether.common.ServerDescriptor;
 import io.aether.sodium.AsymCrypt;
 import io.aether.sodium.ChaCha20Poly1305Pair;
 import io.aether.sodium.Nonce;
@@ -15,7 +18,6 @@ public class ServerDescriptorOnClient {
 	public ServerDescriptorOnClient(ServerDescriptor serverDescriptor, Key masterKey) {
 		this.dataPreparerConfig = new DataPreparerConfig();
 		this.serverDescriptor = serverDescriptor;
-		dataPreparerConfig.signer = SignerSodium.of(serverDescriptor.getKey(KeyType.SODIUM_SIGN));
 		dataPreparerConfig.chaCha20Poly1305Pair = ChaCha20Poly1305Pair.forClient(masterKey, serverDescriptor.id(), Nonce.of());
 		dataPreparerConfig.asymCrypt = new AsymCrypt(serverDescriptor.getKey(KeyType.CURVE25519));
 	}
