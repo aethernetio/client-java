@@ -44,7 +44,7 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 					return this;
 				});
 		connectFuture = con.to((p) -> {
-			var keys = p.getRemoteApi().getKeys(KeyType.CURVE25519, SignType.SODIUM);
+			var keys = p.getRemoteApi().getKeys(RootApi.PublicKeyType.CURVE25519, SignType.SODIUM);
 			DataPrepareApi.prepareRemote(p.getRemoteApi(), getConfig());
 			keys.to((signedKey) -> {
 				var c = getConfig();
@@ -81,7 +81,6 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 	@Override
 	public void sendServerKeys(SignedKey asymPublicKey, SignedKey signKey) {
 		//TODO check
-		this.getConfig().signer = SignerSodium.of(signKey.key());
 		this.getConfig().asymCrypt = new AsymCrypt(asymPublicKey.key());
 		keysFuture.done();
 	}
