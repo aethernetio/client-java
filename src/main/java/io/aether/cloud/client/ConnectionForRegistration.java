@@ -53,7 +53,7 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 				}
 				c.asymCrypt = new AsymCrypt(Key.of(signedKey.key(), KeyType.CURVE25519));
 				var safeApi = protocol.getRemoteApi().curve25519();
-				safeApi.requestWorkProofData(client.getParent())
+				safeApi.requestWorkProofData2(client.getParent())
 						.to(wpd -> {
 							var passwords = WorkProofUtil.generateProofOfWorkPool(wpd.salt(), wpd.suffix(), wpd.config().maxHashVal(), wpd.config().poolSize(), 5000);
 							protocol.getRemoteApi().curve25519()
