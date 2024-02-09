@@ -4,7 +4,6 @@ import io.aether.api.DataPrepareApi;
 import io.aether.api.DataPrepareApiImpl;
 import io.aether.api.clientApi.ClientApiSafe;
 import io.aether.api.clientApi.ClientApiUnsafe;
-import io.aether.api.serverRegistryApi.RegistrationRequest;
 import io.aether.api.serverRegistryApi.RootApi;
 import io.aether.api.serverRegistryApi.WorkProofUtil;
 import io.aether.client.AetherClientFactory;
@@ -57,7 +56,7 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 						.to(wpd -> {
 							var passwords = WorkProofUtil.generateProofOfWorkPool(wpd.salt(), wpd.suffix(), wpd.maxHashVal(), wpd.poolSize(), 5000);
 							protocol.getRemoteApi().curve25519()
-									.registration(wpd.salt(), wpd.suffix(), passwords, new RegistrationRequest(client.getMasterKey()))
+									.registration(client.getParent(), wpd.salt(), wpd.suffix(), passwords, CryptType.CHACHA20POLY1305, client.getMasterKey().data())
 									.to(client::confirmRegistration);
 							protocol.flush();
 						});
