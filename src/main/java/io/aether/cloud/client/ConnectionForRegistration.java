@@ -48,8 +48,10 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 			DataPrepareApi.prepareRemote(p.getRemoteApi(), getConfig());
 			keys.to((signedKey) -> {
 				var c = getConfig();
-				client.getConfig().globalSigner.check(signedKey);
-				c.asymCrypt = new AsymCrypt(signedKey.key());
+				if (!client.getConfig().globalSigner.check(signedKey)) {
+					throw new RuntimeException();
+				}
+				c.asymCrypt = new AsymCrypt(Key.of(signedKey.key(), KeyType.CURVE25519));
 				var safeApi = protocol.getRemoteApi().curve25519();
 				safeApi.requestWorkProofData(client.getParent())
 						.to(wpd -> {
