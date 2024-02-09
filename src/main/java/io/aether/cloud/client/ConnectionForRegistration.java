@@ -55,7 +55,7 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 				var safeApi = protocol.getRemoteApi().curve25519();
 				safeApi.requestWorkProofData2(client.getParent())
 						.to(wpd -> {
-							var passwords = WorkProofUtil.generateProofOfWorkPool(wpd.salt(), wpd.suffix(), wpd.config().maxHashVal(), wpd.config().poolSize(), 5000);
+							var passwords = WorkProofUtil.generateProofOfWorkPool(wpd.salt(), wpd.suffix(), wpd.maxHashVal(), wpd.poolSize(), 5000);
 							protocol.getRemoteApi().curve25519()
 									.registration(wpd.salt(), wpd.suffix(), passwords, new RegistrationRequest(client.getMasterKey()))
 									.to(client::confirmRegistration);
