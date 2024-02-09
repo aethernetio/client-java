@@ -1,10 +1,7 @@
 package io.aether.cloud.client;
 
 import io.aether.api.serverRegistryApi.RegistrationResponse;
-import io.aether.common.Cloud;
-import io.aether.common.Key;
-import io.aether.common.Message;
-import io.aether.common.ServerDescriptor;
+import io.aether.common.*;
 import io.aether.sodium.ChaCha20Poly1305;
 import io.aether.utils.*;
 import io.aether.utils.futures.AFuture;
@@ -232,7 +229,7 @@ public final class AetherCloudClient {
 		registrationFuture.done();
 		assert isRegistered();
 		streamOf(cd.cloud())
-				.map(sd -> getConnection(ServerDescriptorOnClient.of(sd, getMasterKey())).conFuture.toFuture())
+				.map(sd -> getConnection(ServerDescriptorOnClient.of(sd.toFull(SignType.SODIUM), getMasterKey())).conFuture.toFuture())
 				.allMap(AFuture::all).to(startFuture::tryDone);
 	}
 	public void updateCloud(@NotNull UUID uid, @NotNull ServerDescriptorOnClient @NotNull [] cloud) {

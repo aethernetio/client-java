@@ -1,10 +1,7 @@
 package io.aether.cloud.client;
 
 import io.aether.api.DataPreparerConfig;
-import io.aether.common.AetherCodec;
-import io.aether.common.Key;
-import io.aether.common.KeyType;
-import io.aether.common.ServerDescriptor;
+import io.aether.common.*;
 import io.aether.sodium.AsymCrypt;
 import io.aether.sodium.ChaCha20Poly1305Pair;
 import io.aether.sodium.Nonce;
@@ -23,6 +20,9 @@ public class ServerDescriptorOnClient {
 	}
 	public static ServerDescriptorOnClient of(ServerDescriptor sd, Key masterKey) {
 		return new ServerDescriptorOnClient(sd, masterKey);
+	}
+	public static ServerDescriptorOnClient of(ServerDescriptorLite sd, Key masterKey, SignType signType) {
+		return new ServerDescriptorOnClient(sd.toFull(signType), masterKey);
 	}
 	public ServerDescriptor getServerDescriptor() {
 		return serverDescriptor;
