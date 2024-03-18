@@ -43,7 +43,7 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 					return this;
 				});
 		connectFuture = con.to((p) -> {
-			var keys = p.getRemoteApi().getKeys(RootApi.PublicKeyType.CURVE25519, SignType.SODIUM);
+			var keys = p.getRemoteApi().getKeys(io.aether.api.serverRegistryApi.CryptType.CURVE25519, SignType.AE_ED25519);
 			DataPrepareApi.prepareRemote(p.getRemoteApi(), getConfig());
 			keys.to((signedKey) -> {
 				var c = getConfig();
@@ -52,11 +52,11 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 				}
 				c.asymCrypt = new AsymCrypt(Key.of(signedKey.key(), KeyType.CURVE25519));
 				var safeApi = protocol.getRemoteApi().curve25519();
-				safeApi.requestWorkProofData2(client.getParent())
+				safeApi.requestWorkProofData2(client.getParent(), , )
 						.to(wpd -> {
 							var passwords = WorkProofUtil.generateProofOfWorkPool(wpd.salt(), wpd.suffix(), wpd.maxHashVal(), wpd.poolSize(), 5000);
 							protocol.getRemoteApi().curve25519()
-									.registration(client.getParent(), wpd.salt(), wpd.suffix(), passwords, CryptType.CHACHA20POLY1305, client.getMasterKey().data())
+									.registration(client.getParent(), wpd.salt(), wpd.suffix(), passwords, io.aether.common.CryptType.CHACHA20POLY1305, client.getMasterKey().data())
 									.to(client::confirmRegistration);
 							protocol.flush();
 						});
