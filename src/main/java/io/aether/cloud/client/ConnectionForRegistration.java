@@ -4,6 +4,7 @@ import io.aether.api.DataPrepareApi;
 import io.aether.api.DataPrepareApiImpl;
 import io.aether.api.clientApi.ClientApiSafe;
 import io.aether.api.clientApi.ClientApiUnsafe;
+import io.aether.api.serverRegistryApi.PerformPowerBCryptApi;
 import io.aether.api.serverRegistryApi.RootApi;
 import io.aether.api.serverRegistryApi.WorkProofUtil;
 import io.aether.client.AetherClientFactory;
@@ -47,16 +48,19 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 			DataPrepareApi.prepareRemote(p.getRemoteApi(), getConfig());
 			keys.to((signedKey) -> {
 				var c = getConfig();
-				if (!client.getConfig().globalSigner.check(signedKey)) {
+				if (!client.getConfig().globalSigner.check(signedKey.toSignedKeyPlain(KeyType.CURVE25519, SignType.AE_ED25519))) {
 					throw new RuntimeException();
 				}
 				c.asymCrypt = new AsymCrypt(Key.of(signedKey.key(), KeyType.CURVE25519));
 				var safeApi = protocol.getRemoteApi().curve25519();
-				safeApi.requestWorkProofData2(client.getParent(), , )
+				safeApi.requestWorkProofData2(client.getParent(), io.aether.api.serverRegistryApi.CryptType.CURVE25519, SignType.AE_ED25519)
 						.to(wpd -> {
 							var passwords = WorkProofUtil.generateProofOfWorkPool(wpd.salt(), wpd.suffix(), wpd.maxHashVal(), wpd.poolSize(), 5000);
 							protocol.getRemoteApi().curve25519()
-									.registration(client.getParent(), wpd.salt(), wpd.suffix(), passwords, io.aether.common.CryptType.CHACHA20POLY1305, client.getMasterKey().data())
+									.registration(client.getParent(), wpd.salt(), wpd.suffix(), passwords,
+											new PerformPowerBCryptApi.ChachaSodium(client.getMasterKey().data()),
+											PerformPowerBCryptApi.KdfMethod.DEFAULT
+									)
 									.to(client::confirmRegistration);
 							protocol.flush();
 						});

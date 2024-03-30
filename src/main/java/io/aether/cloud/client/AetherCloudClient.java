@@ -153,6 +153,7 @@ public final class AetherCloudClient {
 			var uris = RU.getElse(clientConfiguration.cloudFactoryUrl, DEFAULT_URL_FOR_CONNECT);
 			var timeoutForConnect = clientConfiguration.timoutForConnectToRegistrationServer;
 			var countServersForRegistration = Math.min(uris.size(), clientConfiguration.countServersForRegistration);
+			if (uris.isEmpty()) throw new RuntimeException("No urls");
 			log.info("try registration by: {}", uris);
 			var startFutures = streamOf(uris).shuffle().limit(countServersForRegistration)
 					.map(sd -> new ConnectionForRegistration(this, sd).connectFuture)
