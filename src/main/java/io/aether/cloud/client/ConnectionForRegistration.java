@@ -4,6 +4,7 @@ import io.aether.api.DataPrepareApi;
 import io.aether.api.DataPrepareApiImpl;
 import io.aether.api.clientApi.ClientApiSafe;
 import io.aether.api.clientApi.ClientApiUnsafe;
+import io.aether.api.serverRegistryApi.CryptType;
 import io.aether.api.serverRegistryApi.PerformPowerBCryptApi;
 import io.aether.api.serverRegistryApi.RootApi;
 import io.aether.api.serverRegistryApi.WorkProofUtil;
@@ -14,6 +15,7 @@ import io.aether.net.Protocol;
 import io.aether.net.ProtocolConfig;
 import io.aether.net.RemoteApi;
 import io.aether.net.impl.bin.ApiProcessor;
+import io.aether.net.impl.bin.DeserializerStaticBytes;
 import io.aether.sodium.AsymCrypt;
 import io.aether.utils.futures.AFuture;
 import org.jetbrains.annotations.NotNull;
@@ -44,7 +46,11 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 					return this;
 				});
 		connectFuture = con.to((p) -> {
-			var keys = p.getRemoteApi().getKeys(io.aether.api.serverRegistryApi.CryptType.CURVE25519, SignType.AE_ED25519);
+			var keys = p.getRemoteApi().getKeys(CryptType.CURVE25519, SignType.AE_ED25519)
+					.updateDeserializer(d -> {
+						d.getSub(DeserializerStaticBytes.class, "key").setLength(CryptType.CURVE25519.size);
+						d.getSub(DeserializerStaticBytes.class, "sign").setLength(SignType.AE_ED25519.size);
+					});
 			DataPrepareApi.prepareRemote(p.getRemoteApi(), getConfig());
 			keys.to((signedKey) -> {
 				var c = getConfig();
@@ -53,7 +59,7 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 				}
 				c.asymCrypt = new AsymCrypt(Key.of(signedKey.key(), KeyType.CURVE25519));
 				var safeApi = protocol.getRemoteApi().curve25519();
-				safeApi.requestWorkProofData2(client.getParent(), io.aether.api.serverRegistryApi.CryptType.CURVE25519, SignType.AE_ED25519)
+				safeApi.requestWorkProofData2(client.getParent(), CryptType.CURVE25519, SignType.AE_ED25519)
 						.to(wpd -> {
 							var passwords = WorkProofUtil.generateProofOfWorkPool(wpd.salt(), wpd.suffix(), wpd.maxHashVal(), wpd.poolSize(), 5000);
 							protocol.getRemoteApi().curve25519()
