@@ -8,6 +8,7 @@ import io.aether.utils.slots.EventSourceConsumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.invoke.MethodHandles;
 import java.util.Queue;
 import java.util.Set;
 import java.util.UUID;
@@ -22,7 +23,7 @@ public class MessageRequest {
 			}
 		}
 	};
-	private static final Logger log = LoggerFactory.getLogger(MessageRequest.class);
+	private final static Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 	private final Message body;
 	private final EventSourceConsumer<Event> onEvent = new EventSourceConsumer<>();
 	private final Queue<ServerDescriptorOnClient> targetServers = new ConcurrentLinkedQueue<>();

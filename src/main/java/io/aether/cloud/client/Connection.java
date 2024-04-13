@@ -23,6 +23,7 @@ import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.invoke.MethodHandles;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -33,7 +34,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import static io.aether.utils.streams.AStream.streamOf;
 
 public class Connection extends DataPrepareApiImpl<ClientApiSafe> implements ClientApiUnsafe, ApiProcessorConsumer {
-	private static final Logger log = LoggerFactory.getLogger(Connection.class);
+	private final static Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 	//region counters
 	public final AtomicLong lastBackPing = new AtomicLong(Long.MAX_VALUE);
 	public final AetherCloudClient client;

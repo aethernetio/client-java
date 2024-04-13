@@ -14,6 +14,7 @@ import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.invoke.MethodHandles;
 import java.net.URI;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -31,7 +32,7 @@ public final class AetherCloudClient {
 	public static final ADebug.Counter getUserPositionEnd = ADebug.key("getUserPositionEnd");
 	public static final ADebug.Counter requestPositionBegin = ADebug.key("requestPositionBegin");
 	public static final ADebug.Counter requestPositionEnd = ADebug.key("requestPositionEnd");
-	private static final Logger log = LoggerFactory.getLogger(AetherCloudClient.class);
+	private final static Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 	private static final List<URI> DEFAULT_URL_FOR_CONNECT = List.of(URI.create("registration.aether.io"));
 	public final AtomicBoolean beginCreateUser = new AtomicBoolean();
 	public final SlotConsumer<Message> onMessage = new SlotConsumer<>();
@@ -305,7 +306,7 @@ public final class AetherCloudClient {
 			sdc.setServerDescriptor(sd, getMasterKey());
 		}
 	}
-	public ClientConfiguration getConfig() {
+	public ClientConfiguration getClientConfig() {
 		return clientConfiguration;
 	}
 }

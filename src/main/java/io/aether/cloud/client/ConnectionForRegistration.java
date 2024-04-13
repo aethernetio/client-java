@@ -1,20 +1,17 @@
 package io.aether.cloud.client;
 
+import io.aether.Aether;
 import io.aether.api.DataPrepareApi;
 import io.aether.api.DataPrepareApiImpl;
 import io.aether.api.clientApi.ClientApiSafe;
 import io.aether.api.clientApi.ClientApiUnsafe;
 import io.aether.api.serverRegistryApi.CryptType;
-import io.aether.api.serverRegistryApi.PerformPowerBCryptApi;
-import io.aether.api.serverRegistryApi.RootApi;
-import io.aether.api.serverRegistryApi.WorkProofUtil;
+import io.aether.api.serverRegistryApi.*;
 import io.aether.client.AetherClientFactory;
 import io.aether.common.*;
 import io.aether.net.ApiProcessorConsumer;
 import io.aether.net.Protocol;
 import io.aether.net.ProtocolConfig;
-import io.aether.net.RemoteApi;
-import io.aether.net.impl.bin.ApiProcessor;
 import io.aether.net.impl.bin.DeserializerStaticBytes;
 import io.aether.sodium.AsymCrypt;
 import io.aether.utils.futures.AFuture;
@@ -53,18 +50,29 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 					});
 			DataPrepareApi.prepareRemote(p.getRemoteApi(), getConfig());
 			keys.to((signedKey) -> {
-				var c = getConfig();
-				if (!client.getConfig().globalSigner.check(signedKey.toSignedKeyPlain(KeyType.CURVE25519, SignType.AE_ED25519))) {
+				var config = getConfig();
+				if (!client.getClientConfig().globalSigner.check(signedKey.toSignedKeyPlain(KeyType.CURVE25519, SignType.AE_ED25519))) {
 					throw new RuntimeException();
 				}
-				c.asymCrypt = new AsymCrypt(Key.of(signedKey.key(), KeyType.CURVE25519));
+				config.asymCrypt = new AsymCrypt(Key.of(signedKey.key(), KeyType.CURVE25519));
 				var safeApi = protocol.getRemoteApi().curve25519();
 				safeApi.requestWorkProofData2(client.getParent(), CryptType.CURVE25519, SignType.AE_ED25519)
+						.updateDeserializer(d -> {
+							var globalKey = d.getSub("globalKey");
+							globalKey.getSub(DeserializerStaticBytes.class, "key").setLength(CryptType.CURVE25519.size);
+							globalKey.getSub(DeserializerStaticBytes.class, "sign").setLength(SignType.AE_ED25519.size);
+						})
 						.to(wpd -> {
-							var passwords = WorkProofUtil.generateProofOfWorkPool(wpd.salt(), wpd.suffix(), wpd.maxHashVal(), wpd.poolSize(), 5000);
+							var passwords = WorkProofUtil.generateProofOfWorkPool(
+									wpd.salt(),
+									wpd.suffix(),
+									wpd.maxHashVal(),
+									wpd.poolSize(),
+									5000);
+							var encodedMasterKey = Aether.globalAsym.encode(client.getMasterKey().data());
 							protocol.getRemoteApi().curve25519()
 									.registration(client.getParent(), wpd.salt(), wpd.suffix(), passwords,
-											new PerformPowerBCryptApi.ChachaSodium(client.getMasterKey().data()),
+											new ChachaSodiumTypedKey(encodedMasterKey),
 											PerformPowerBCryptApi.KdfMethod.DEFAULT
 									)
 									.to(client::confirmRegistration);
@@ -74,16 +82,6 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 			});
 			p.flush();
 		}).toFuture();
-	}
-	@Override
-	public void setApiProcessor(ApiProcessor apiProcessor) {
-		super.setApiProcessor(apiProcessor);
-		var remoteApi = (RootApi) apiProcessor.getRemoteApi();
-		((RemoteApi) remoteApi).setOnSubApi(a -> {
-			switch (a.methodName) {
-				case "enter" -> DataPrepareApi.prepareRemote((DataPrepareApi<?>) a, getConfig());
-			}
-		});
 	}
 	public ClientApiSafe getClientApiSafe() {
 		if (clientApiSafe == null) clientApiSafe = new MyClientApiSafe();
