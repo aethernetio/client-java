@@ -54,7 +54,7 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 				if (!client.getClientConfig().globalSigner.check(signedKey.toSignedKeyPlain(KeyType.CURVE25519, SignType.AE_ED25519))) {
 					throw new RuntimeException();
 				}
-				config.asymCrypt = new AsymCrypt(Key.of(signedKey.key(), KeyType.CURVE25519));
+				config.asymCrypt = new AsymCrypt(Key.of(KeyType.CURVE25519, signedKey.key()));
 				var safeApi = protocol.getRemoteApi().curve25519();
 				safeApi.requestWorkProofData2(client.getParent(), CryptType.CURVE25519, SignType.AE_ED25519)
 						.updateDeserializer(d -> {
@@ -72,7 +72,7 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 							var encodedMasterKey = Aether.globalAsym.encode(client.getMasterKey().data());
 							protocol.getRemoteApi().curve25519()
 									.registration(client.getParent(), wpd.salt(), wpd.suffix(), passwords,
-											new ChachaSodiumTypedKey(encodedMasterKey),
+											new EncodedChachaSodiumTypedKey(encodedMasterKey),
 											PerformPowerBCryptApi.KdfMethod.DEFAULT
 									)
 									.to(client::confirmRegistration);
