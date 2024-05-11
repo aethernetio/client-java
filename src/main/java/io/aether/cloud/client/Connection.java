@@ -63,9 +63,9 @@ public class Connection extends DataPrepareApiImpl<ClientApiSafe> implements Cli
 	public void setApiProcessor(ApiProcessor apiProcessor) {
 		super.setApiProcessor(apiProcessor);
 		var remoteApi = (LoginApi) apiProcessor.getRemoteApi();
-		((RemoteApi) remoteApi).setOnSubApiAfter(a -> {
-			switch (a.methodName) {
-				case "loginByUID", "loginByAlias" -> DataPrepareApi.prepareRemote((DataPrepareApi<?>) a, getConfig());
+		RemoteApi.of(remoteApi).onMethodInvoke(a -> {
+			switch (a.method.name()) {
+				case "loginByUID", "loginByAlias" -> DataPrepareApi.prepareRemote((DataPrepareApi<?>) a.result, getConfig());
 			}
 		});
 	}

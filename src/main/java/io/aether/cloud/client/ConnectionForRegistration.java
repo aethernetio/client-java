@@ -1,17 +1,18 @@
 package io.aether.cloud.client;
 
-import io.aether.Aether;
 import io.aether.api.DataPrepareApi;
 import io.aether.api.DataPrepareApiImpl;
 import io.aether.api.clientApi.ClientApiSafe;
 import io.aether.api.clientApi.ClientApiUnsafe;
 import io.aether.api.serverRegistryApi.CryptType;
-import io.aether.api.serverRegistryApi.*;
+import io.aether.api.serverRegistryApi.RootApi;
+import io.aether.api.serverRegistryApi.WorkProofUtil;
 import io.aether.client.AetherClientFactory;
 import io.aether.common.*;
 import io.aether.net.ApiProcessorConsumer;
 import io.aether.net.Protocol;
 import io.aether.net.ProtocolConfig;
+import io.aether.net.RemoteApi;
 import io.aether.net.impl.bin.DeserializerStaticBytes;
 import io.aether.sodium.AsymCrypt;
 import io.aether.utils.futures.AFuture;
@@ -69,13 +70,12 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 									wpd.maxHashVal(),
 									wpd.poolSize(),
 									5000);
-							var encodedMasterKey = Aether.globalAsym.encode(client.getMasterKey().data());
-							protocol.getRemoteApi().curve25519()
-									.registration(client.getParent(), wpd.salt(), wpd.suffix(), passwords,
-											new EncodedChachaSodiumTypedKey(encodedMasterKey),
-											PerformPowerBCryptApi.KdfMethod.DEFAULT
-									)
-									.to(client::confirmRegistration);
+							RemoteApi.of(protocol.getRemoteApi()).onMethodInvoke(m -> {
+							});
+							var globalClientApi = protocol.getRemoteApi().curve25519()
+									.registration(client.getParent(), wpd.salt(), wpd.suffix(), passwords, ).curve25519();
+							globalClientApi.setMasterKey(client.getMasterKey().toTypedKey());
+							globalClientApi.requestCloud();
 							protocol.flush();
 						});
 				protocol.flush();
