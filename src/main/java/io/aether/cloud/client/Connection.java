@@ -6,6 +6,7 @@ import io.aether.api.clientApi.ClientApiSafe;
 import io.aether.api.clientApi.ClientApiUnsafe;
 import io.aether.api.serverApi.AuthorizedApi;
 import io.aether.api.serverApi.LoginApi;
+import io.aether.api.serverRegistryApi.RegistrationResponse;
 import io.aether.client.AetherClientFactory;
 import io.aether.common.*;
 import io.aether.net.ApiProcessorConsumer;
@@ -229,6 +230,10 @@ public class Connection extends DataPrepareApiImpl<ClientApiSafe> implements Cli
 		return res;
 	}
 	private class MyClientApiSafe implements ClientApiSafe {
+		@Override
+		public void confirmRegistration(RegistrationResponse registrationResponse) {
+			client.confirmRegistration(registrationResponse);
+		}
 		@Override
 		public void pushMessage(@NotNull Message message) {
 			client.receiveMessage(message);

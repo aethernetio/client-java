@@ -5,6 +5,7 @@ import io.aether.api.DataPrepareApiImpl;
 import io.aether.api.clientApi.ClientApiSafe;
 import io.aether.api.clientApi.ClientApiUnsafe;
 import io.aether.api.serverRegistryApi.CryptType;
+import io.aether.api.serverRegistryApi.RegistrationResponse;
 import io.aether.api.serverRegistryApi.RootApi;
 import io.aether.api.serverRegistryApi.WorkProofUtil;
 import io.aether.client.AetherClientFactory;
@@ -12,10 +13,10 @@ import io.aether.common.*;
 import io.aether.net.ApiProcessorConsumer;
 import io.aether.net.Protocol;
 import io.aether.net.ProtocolConfig;
-import io.aether.net.RemoteApi;
 import io.aether.net.impl.bin.DeserializerStaticBytes;
 import io.aether.sodium.AsymCrypt;
 import io.aether.utils.futures.AFuture;
+import io.aether.utils.futures.ARFuture;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,6 +33,7 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 	AFuture connectFuture;
 	private Protocol<ClientApiUnsafe, RootApi> protocol;
 	private ClientApiSafe clientApiSafe;
+	final ARFuture<RegistrationResponse> regFuture = new ARFuture<>();
 	public ConnectionForRegistration(AetherCloudClient client, URI uri) {
 		assert uri != null;
 		setSubApiFactory(this::getClientApiSafe);
@@ -70,13 +72,13 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 									wpd.maxHashVal(),
 									wpd.poolSize(),
 									5000);
-							RemoteApi.of(protocol.getRemoteApi()).onMethodInvoke(m -> {
-							});
+							RootApi remoteApi = protocol.getRemoteApi();
 							var globalClientApi = protocol.getRemoteApi().curve25519()
-									.registration(client.getParent(), wpd.salt(), wpd.suffix(), passwords, ).curve25519();
+									.registration(client.getParent(), wpd.salt(), wpd.suffix(), passwords, getConfig().chaCha20Poly1305Pair.getKeyLocal().toTypedKey()).curve25519();
 							globalClientApi.setMasterKey(client.getMasterKey().toTypedKey());
 							globalClientApi.requestCloud();
 							protocol.flush();
+							regFuture.to(client::confirmRegistration);
 						});
 				protocol.flush();
 			});
@@ -93,7 +95,7 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 		this.getConfig().asymCrypt = new AsymCrypt(asymPublicKey.key());
 		keysFuture.done();
 	}
-	private static class MyClientApiSafe implements ClientApiSafe {
+	private class MyClientApiSafe implements ClientApiSafe {
 		@Override
 		public void pushMessage(@NotNull Message message) {
 			throw new UnsupportedOperationException();
@@ -109,6 +111,10 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 		@Override
 		public void newChildren(@NotNull List<UUID> newChildren) {
 			throw new UnsupportedOperationException();
+		}
+		@Override
+		public void confirmRegistration(RegistrationResponse registrationResponse) {
+			regFuture.done(registrationResponse);
 		}
 	}
 }
