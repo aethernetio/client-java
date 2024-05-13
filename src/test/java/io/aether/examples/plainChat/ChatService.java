@@ -41,11 +41,11 @@ public class ChatService {
 			for (var uu : users.values()) {
 				var r = serverOverMessages.getRemoteApiBy(uu.uid());
 				r.addNewUsers(new UserDescriptor[]{u});
-				((RemoteApi) r).flush();
+				RemoteApi.of(r).flush();
 			}
 			remoteApi.addNewUsers(AStream.streamOf(users.values()).toArray(UserDescriptor.class));
 			users.put(uid, u);
-			((RemoteApi) remoteApi).flush();
+			RemoteApi.of(remoteApi).flush();
 		}
 		@Override
 		public void sendMessage(String msg) {
@@ -53,7 +53,7 @@ public class ChatService {
 			for (var u : users.values()) {
 				var r = serverOverMessages.getRemoteApiBy(u.uid());
 				r.newMessages(new MessageDescriptor[]{md});
-				((RemoteApi) r).flush();
+				RemoteApi.of(r).flush();
 			}
 		}
 	}

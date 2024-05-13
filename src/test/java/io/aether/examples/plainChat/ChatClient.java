@@ -26,7 +26,7 @@ public class ChatClient implements ServiceClientApi {
 		flush();
 	}
 	private void flush() {
-		((RemoteApi) service).flush();
+		RemoteApi.of(service).flush();
 	}
 	@Override
 	public void addNewUsers(UserDescriptor[] users) {

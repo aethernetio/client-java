@@ -2,6 +2,7 @@ package io.aether.cloud.client;
 
 import io.aether.api.DataPrepareApi;
 import io.aether.api.DataPrepareApiImpl;
+import io.aether.api.DataPreparerConfig;
 import io.aether.api.clientApi.ClientApiSafe;
 import io.aether.api.clientApi.ClientApiUnsafe;
 import io.aether.api.serverRegistryApi.CryptType;
@@ -73,7 +74,9 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 									wpd.poolSize(),
 									5000);
 							RootApi remoteApi = protocol.getRemoteApi();
-							var globalClientApi = protocol.getRemoteApi().curve25519()
+							var globalClientApi0 = protocol.getRemoteApi();
+							DataPrepareApi.prepareRemote(globalClientApi0, getGlobalDataPreparerConfig());
+							var globalClientApi = globalClientApi0.curve25519()
 									.registration(client.getParent(), wpd.salt(), wpd.suffix(), passwords, getConfig().chaCha20Poly1305Pair.getKeyLocal().toTypedKey()).curve25519();
 							globalClientApi.setMasterKey(client.getMasterKey().toTypedKey());
 							globalClientApi.requestCloud();
@@ -84,6 +87,8 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 			});
 			p.flush();
 		}).toFuture();
+	}
+	public DataPreparerConfig getGlobalDataPreparerConfig() {
 	}
 	public ClientApiSafe getClientApiSafe() {
 		if (clientApiSafe == null) clientApiSafe = new MyClientApiSafe();
