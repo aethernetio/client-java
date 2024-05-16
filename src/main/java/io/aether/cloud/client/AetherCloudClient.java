@@ -151,7 +151,10 @@ public final class AetherCloudClient {
 			return;
 		}
 		if (!isRegistered() && tryReg.compareAndSet(false, true)) {
-			var uris = RU.getElse(clientConfiguration.cloudFactoryUrl, DEFAULT_URL_FOR_CONNECT);
+			var uris = clientConfiguration.cloudFactoryUrl;
+			if (uris == null || uris.isEmpty()) {
+				uris = DEFAULT_URL_FOR_CONNECT;
+			}
 			var timeoutForConnect = clientConfiguration.timoutForConnectToRegistrationServer;
 			var countServersForRegistration = Math.min(uris.size(), clientConfiguration.countServersForRegistration);
 			if (uris.isEmpty()) throw new RuntimeException("No urls");
@@ -159,10 +162,11 @@ public final class AetherCloudClient {
 			var startFutures = streamOf(uris).shuffle().limit(countServersForRegistration)
 					.map(sd -> new ConnectionForRegistration(this, sd).connectFuture)
 					.toList();
+			List<URI> finalUris = uris;
 			AFuture.any(startFutures)
 					.to(this::startScheduledTask)
 					.timeout(timeoutForConnect, () -> {
-						log.error("Failed to connect to registration server: {}", uris);
+						log.error("Failed to connect to registration server: {}", finalUris);
 						RU.schedule(1000, () -> this.connect(step - 1));
 					});
 		} else {

@@ -78,10 +78,6 @@ public class Connection extends DataPrepareApiImpl<ClientApiSafe> implements Cli
 		return serverDescriptor;
 	}
 	@Override
-	public ClientApiSafe chacha20poly1305() {
-		return clientApiSafe;
-	}
-	@Override
 	public String toString() {
 		return "C(" + lifeTime() + ")";
 	}

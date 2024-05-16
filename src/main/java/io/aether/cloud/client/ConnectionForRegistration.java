@@ -1,5 +1,6 @@
 package io.aether.cloud.client;
 
+import io.aether.Aether;
 import io.aether.api.DataPrepareApi;
 import io.aether.api.DataPrepareApiImpl;
 import io.aether.api.DataPreparerConfig;
@@ -16,8 +17,9 @@ import io.aether.net.Protocol;
 import io.aether.net.ProtocolConfig;
 import io.aether.net.impl.bin.DeserializerStaticBytes;
 import io.aether.sodium.AsymCrypt;
+import io.aether.sodium.ChaCha20Poly1305Pair;
+import io.aether.sodium.Nonce;
 import io.aether.utils.futures.AFuture;
-import io.aether.utils.futures.ARFuture;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,9 +34,9 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 	private final AetherCloudClient client;
 	private final AFuture keysFuture = new AFuture();
 	AFuture connectFuture;
+	DataPreparerConfig globalDataPreparerConfig;
 	private Protocol<ClientApiUnsafe, RootApi> protocol;
 	private ClientApiSafe clientApiSafe;
-	final ARFuture<RegistrationResponse> regFuture = new ARFuture<>();
 	public ConnectionForRegistration(AetherCloudClient client, URI uri) {
 		assert uri != null;
 		setSubApiFactory(this::getClientApiSafe);
@@ -54,12 +56,11 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 					});
 			DataPrepareApi.prepareRemote(p.getRemoteApi(), getConfig());
 			keys.to((signedKey) -> {
-				var config = getConfig();
 				if (!client.getClientConfig().globalSigner.check(signedKey.toSignedKeyPlain(KeyType.CURVE25519, SignType.AE_ED25519))) {
 					throw new RuntimeException();
 				}
-				config.asymCrypt = new AsymCrypt(Key.of(KeyType.CURVE25519, signedKey.key()));
-				var safeApi = protocol.getRemoteApi().curve25519();
+				getConfig().asymCrypt = new AsymCrypt(Key.of(KeyType.CURVE25519, signedKey.key()));
+				var safeApi = p.getRemoteApi().curve25519();
 				safeApi.requestWorkProofData2(client.getParent(), CryptType.CURVE25519, SignType.AE_ED25519)
 						.updateDeserializer(d -> {
 							var globalKey = d.getSub("globalKey");
@@ -73,15 +74,17 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 									wpd.maxHashVal(),
 									wpd.poolSize(),
 									5000);
-							RootApi remoteApi = protocol.getRemoteApi();
-							var globalClientApi0 = protocol.getRemoteApi();
+							RootApi remoteApi = p.getRemoteApi();
+							getConfig().chaCha20Poly1305Pair = ChaCha20Poly1305Pair.forClientAndServer(client.getMasterKey(), Nonce.of());
+							var globalClientApi0 = remoteApi
+									.curve25519()
+//									.prepare()
+									.registration(client.getParent(), wpd.salt(), wpd.suffix(), passwords, client.getMasterKey().toTypedKey());
 							DataPrepareApi.prepareRemote(globalClientApi0, getGlobalDataPreparerConfig());
-							var globalClientApi = globalClientApi0.curve25519()
-									.registration(client.getParent(), wpd.salt(), wpd.suffix(), passwords, getConfig().chaCha20Poly1305Pair.getKeyLocal().toTypedKey()).curve25519();
+							var globalClientApi = globalClientApi0.curve25519();
 							globalClientApi.setMasterKey(client.getMasterKey().toTypedKey());
-							globalClientApi.requestCloud();
+							globalClientApi.finish();
 							protocol.flush();
-							regFuture.to(client::confirmRegistration);
 						});
 				protocol.flush();
 			});
@@ -89,6 +92,11 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 		}).toFuture();
 	}
 	public DataPreparerConfig getGlobalDataPreparerConfig() {
+		if (globalDataPreparerConfig == null) {
+			globalDataPreparerConfig = new DataPreparerConfig();
+			globalDataPreparerConfig.asymCrypt = Aether.globalAsym;
+		}
+		return globalDataPreparerConfig;
 	}
 	public ClientApiSafe getClientApiSafe() {
 		if (clientApiSafe == null) clientApiSafe = new MyClientApiSafe();
@@ -119,7 +127,7 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 		}
 		@Override
 		public void confirmRegistration(RegistrationResponse registrationResponse) {
-			regFuture.done(registrationResponse);
+			client.confirmRegistration(registrationResponse);
 		}
 	}
 }
