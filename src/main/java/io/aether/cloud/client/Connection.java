@@ -12,7 +12,6 @@ import io.aether.common.*;
 import io.aether.net.ApiProcessorConsumer;
 import io.aether.net.Protocol;
 import io.aether.net.ProtocolConfig;
-import io.aether.net.RemoteApi;
 import io.aether.net.impl.bin.ApiProcessor;
 import io.aether.sodium.AsymCrypt;
 import io.aether.utils.RU;
@@ -51,6 +50,7 @@ public class Connection extends DataPrepareApiImpl<ClientApiSafe> implements Cli
 	long lastWorkTime;
 	public Connection(AetherCloudClient aetherCloudClient, ServerDescriptorOnClient s) {
 		this.client = aetherCloudClient;
+		super.setSubApi(clientApiSafe);
 		this.basicStatus = false;
 		serverDescriptor = s;
 		var codec = AetherCodec.BINARY;
@@ -63,10 +63,10 @@ public class Connection extends DataPrepareApiImpl<ClientApiSafe> implements Cli
 	@Override
 	public void setApiProcessor(ApiProcessor apiProcessor) {
 		super.setApiProcessor(apiProcessor);
-		var remoteApi = (LoginApi) apiProcessor.getRemoteApi();
-		RemoteApi.of(remoteApi).onMethodInvoke(a -> {
-			switch (a.method.name()) {
-				case "loginByUID", "loginByAlias" -> DataPrepareApi.prepareRemote((DataPrepareApi<?>) a.result, getConfig());
+		apiProcessor.getProtocol().onSubApi(cmd -> {
+			if (cmd.api != apiProcessor.getRemoteApi()) return;
+			switch (cmd.method.name()) {
+				case "loginByUID", "loginByAlias" -> DataPrepareApi.prepareRemote((DataPrepareApi<?>) cmd.result, getConfig());
 			}
 		});
 	}
@@ -149,7 +149,8 @@ public class Connection extends DataPrepareApiImpl<ClientApiSafe> implements Cli
 			if (getConfig().chaCha20Poly1305Pair == null) {
 				return;
 			}
-			sendRequests(uid, p.getRemoteApi().loginByUID(uid).chacha20poly1305());
+			var api = p.getRemoteApi().loginByUID(uid);
+			sendRequests(uid, api.chacha20poly1305());
 			p.flush();
 		} catch (Exception e) {
 			log.error("", e);
