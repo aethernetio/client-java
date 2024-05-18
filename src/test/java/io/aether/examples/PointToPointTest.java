@@ -24,8 +24,9 @@ public class PointToPointTest {
 		if (clientConfig1 == null) clientConfig1 = new ClientConfiguration(Aether.TEST_UID, globalSigner, cloudFactoryURI);
 		if (clientConfig2 == null) clientConfig2 = new ClientConfiguration(Aether.TEST_UID, globalSigner, cloudFactoryURI);
 		AetherCloudClient client1 = new AetherCloudClient(clientConfig1);
+		client1.startFuture.waitDoneSeconds(10);
 		AetherCloudClient client2 = new AetherCloudClient(clientConfig2);
-		AFuture.all(client1.startFuture, client2.startFuture).waitDoneSeconds(10);
+		client2.startFuture.waitDoneSeconds(10);
 		var message = "Hello world!".getBytes();
 		client1.sendMessage(client2.getUid(), message);
 		AFuture checkReceiveMessage = new AFuture();

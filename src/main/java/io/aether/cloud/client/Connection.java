@@ -12,7 +12,7 @@ import io.aether.common.*;
 import io.aether.net.ApiProcessorConsumer;
 import io.aether.net.Protocol;
 import io.aether.net.ProtocolConfig;
-import io.aether.net.impl.bin.ApiProcessor;
+import io.aether.net.impl.bin.ApiLevelProcessor;
 import io.aether.sodium.AsymCrypt;
 import io.aether.utils.RU;
 import io.aether.utils.futures.AFuture;
@@ -58,10 +58,12 @@ public class Connection extends DataPrepareApiImpl<ClientApiSafe> implements Cli
 		var con = AetherClientFactory.make(s.getURI(codec),
 				ProtocolConfig.of(ClientApiUnsafe.class, LoginApi.class, codec),
 				(p) -> this);
-		con.to(conFuture);
+		con.to((p) -> {
+			conFuture.done(p);
+		});
 	}
 	@Override
-	public void setApiProcessor(ApiProcessor apiProcessor) {
+	public void setApiProcessor(ApiLevelProcessor apiProcessor) {
 		super.setApiProcessor(apiProcessor);
 		apiProcessor.getProtocol().onSubApi(cmd -> {
 			if (cmd.api != apiProcessor.getRemoteApi()) return;
