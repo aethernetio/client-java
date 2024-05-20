@@ -63,7 +63,7 @@
             <pattern>%-5level [%d{yyyy-MM-dd HH:mm}] %-12logger{0}: %msg %n</pattern>
         </encoder>
     </appender>
-    <logger name="io.aether" level="trace">
+    <logger name="io.aether" level="info">
         <appender-ref ref="SystemTrace"/>
         <appender-ref ref="SystemInfo"/>
         <appender-ref ref="SystemDebug"/>
