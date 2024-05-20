@@ -83,9 +83,12 @@ public class Connection extends DataPrepareApiImpl<ClientApiSafe> implements Cli
 	public String toString() {
 		return "C(" + lifeTime() + ")";
 	}
-	public void sendMessage(MessageRequest msgRequest) {
+	public void sendMessage(MessageRequest msgRequest, boolean immediate) {
 		assert msgRequest != null;
 		newMessages.add(msgRequest);
+		if (immediate) {
+			scheduledWorkForce();
+		}
 	}
 	public AFuture close(int time) {
 		var res = new AFuture();
@@ -134,6 +137,16 @@ public class Connection extends DataPrepareApiImpl<ClientApiSafe> implements Cli
 			inProcess.set(false);
 		}
 	}
+	public void scheduledWorkForce() {
+		var t = RU.time();
+		if (!inProcess.compareAndSet(false, true)) return;
+		try {
+			lastWorkTime = t;
+			scheduledWork0();
+		} finally {
+			inProcess.set(false);
+		}
+	}
 	public void deliveryReport(long msgId) {
 		var m = messages.remove((int) msgId);
 		if (m != null) {
@@ -146,6 +159,7 @@ public class Connection extends DataPrepareApiImpl<ClientApiSafe> implements Cli
 	private void scheduledWork0() {
 		try {
 			var uid = client.getUid();
+			if (apiProcessor == null) return;
 			Protocol<?, LoginApi> p = getApiProcessor().getProtocol();
 			if (uid == null || p == null || !p.isActive()) return;
 			if (getConfig().chaCha20Poly1305Pair == null) {

@@ -9,7 +9,6 @@ import io.aether.utils.futures.ARFuture;
 import io.aether.utils.interfaces.AConsumer;
 import io.aether.utils.slots.EventSourceConsumer;
 import io.aether.utils.slots.SlotConsumer;
-import it.unimi.dsi.fastutil.objects.ObjectList;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -186,7 +185,7 @@ public final class AetherCloudClient {
 		}
 	}
 	void receiveMessage(@NotNull Message msg) {
-		receiveMessages(ObjectList.of(msg));
+		onMessage.fire(msg);
 	}
 	void getConnection(@NotNull AConsumer<Connection> t) {
 		if (currentConnection != null) {

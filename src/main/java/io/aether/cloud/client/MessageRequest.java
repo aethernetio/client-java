@@ -23,6 +23,13 @@ public class MessageRequest {
 			}
 		}
 	};
+	public static final Strategy STRATEGY_FAST = e -> {
+		if (e.status == Status.GOT_SERVER) {
+			if (!e.request.isDone()) {
+				e.request.sendToNextServer(true);
+			}
+		}
+	};
 	private final static Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 	private final Message body;
 	private final EventSourceConsumer<Event> onEvent = new EventSourceConsumer<>();
@@ -66,6 +73,13 @@ public class MessageRequest {
 		onEvent(strategy);
 		getCloud();
 	}
+	public void onDone(AConsumer<MessageRequest> e) {
+		onEvent((event) -> {
+			if (event.status == Status.DONE) {
+				e.accept(this);
+			}
+		});
+	}
 	public void onEvent(AConsumer<Event> e) {
 		onEvent.runPermanent(e);
 	}
@@ -76,12 +90,15 @@ public class MessageRequest {
 		return getTotalStatus() == Status.DONE;
 	}
 	public boolean sendToNextServer() {
+		return sendToNextServer(false);
+	}
+	public boolean sendToNextServer(boolean immediate) {
 		var s = targetServers.poll();
 		if (s == null) {
 			return false;
 		}
 		var connection = client.getConnection(s);
-		connection.sendMessage(this);
+		connection.sendMessage(this, immediate);
 		usedServers.add(s);
 		return true;
 	}
