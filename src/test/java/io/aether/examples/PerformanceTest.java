@@ -27,9 +27,9 @@ public class PerformanceTest {
 		if (clientConfig1 == null) clientConfig1 = new ClientConfiguration(Aether.TEST_UID, globalSigner, cloudFactoryURI);
 		if (clientConfig2 == null) clientConfig2 = new ClientConfiguration(Aether.TEST_UID, globalSigner, cloudFactoryURI);
 		AetherCloudClient client1 = new AetherCloudClient(clientConfig1);
-		client1.startFuture.waitDoneSeconds(10);
+		client1.startFuture.waitDoneSeconds(4);
 		AetherCloudClient client2 = new AetherCloudClient(clientConfig2);
-		client2.startFuture.waitDoneSeconds(10);
+		client2.startFuture.waitDoneSeconds(4);
 		long min = Long.MAX_VALUE;
 		var message = new byte[8];
 		BlockingQueue<Message> mq = new ArrayBlockingQueue<>(10);
