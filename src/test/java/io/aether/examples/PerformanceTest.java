@@ -23,12 +23,38 @@ public class PerformanceTest {
 	public SignChecker globalSigner;
 	public List<URI> cloudFactoryURI = new ArrayList<>();
 	@Test
-	public void main() throws InterruptedException {
+	public void timeOneMessage() throws InterruptedException {
 		if (clientConfig1 == null) clientConfig1 = new ClientConfiguration(Aether.TEST_UID, globalSigner, cloudFactoryURI);
 		if (clientConfig2 == null) clientConfig2 = new ClientConfiguration(Aether.TEST_UID, globalSigner, cloudFactoryURI);
 		AetherCloudClient client1 = new AetherCloudClient(clientConfig1);
-		client1.startFuture.waitDoneSeconds(4);
 		AetherCloudClient client2 = new AetherCloudClient(clientConfig2);
+		client1.startFuture.waitDoneSeconds(4);
+		client2.startFuture.waitDoneSeconds(4);
+		long min = Long.MAX_VALUE;
+		var message = new byte[8];
+		BlockingQueue<Message> mq = new ArrayBlockingQueue<>(10);
+		client2.onMessage(mq::add);
+		while (true) {
+			var t1 = System.nanoTime();
+			new MessageRequest(client1, client2.getUid(), message)
+					.requestByStrategy(MessageRequest.STRATEGY_FAST);
+//			client1.sendMessage(client2.getUid(), message);
+			var m = mq.poll(10, TimeUnit.SECONDS);
+			var t2 = System.nanoTime();
+			var delta = t2 - t1;
+			if (min > delta) {
+				min = delta;
+				System.out.println(min);
+			}
+		}
+	}
+	@Test
+	public void main2() throws InterruptedException {
+		if (clientConfig1 == null) clientConfig1 = new ClientConfiguration(Aether.TEST_UID, globalSigner, cloudFactoryURI);
+		if (clientConfig2 == null) clientConfig2 = new ClientConfiguration(Aether.TEST_UID, globalSigner, cloudFactoryURI);
+		AetherCloudClient client1 = new AetherCloudClient(clientConfig1);
+		AetherCloudClient client2 = new AetherCloudClient(clientConfig2);
+		client1.startFuture.waitDoneSeconds(4);
 		client2.startFuture.waitDoneSeconds(4);
 		long min = Long.MAX_VALUE;
 		var message = new byte[8];
