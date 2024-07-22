@@ -6,7 +6,7 @@ import io.aether.cloud.client.ClientConfiguration;
 import io.aether.cloud.client.ServerOverMessages;
 import io.aether.net.ApiProcessorConsumer;
 import io.aether.net.RemoteApi;
-import io.aether.net.impl.bin.ApiLevelProcessor;
+import io.aether.net.impl.bin.ApiLevelDeserializer;
 import io.aether.utils.futures.ARFuture;
 import io.aether.utils.streams.AStream;
 
@@ -32,7 +32,7 @@ public class ChatService {
 			this.uid = uid;
 		}
 		@Override
-		public void setApiProcessor(ApiLevelProcessor apiProcessor) {
+		public void setApiProcessor(ApiLevelDeserializer apiProcessor) {
 			remoteApi = apiProcessor.getRemoteApi();
 		}
 		@Override
