@@ -4,7 +4,7 @@ import io.aether.Aether;
 import io.aether.cloud.client.AetherCloudClient;
 import io.aether.cloud.client.ClientConfiguration;
 import io.aether.cloud.client.ServerOverMessages;
-import io.aether.net.ApiProcessorConsumer;
+import io.aether.net.ApiDeserializerConsumer;
 import io.aether.net.RemoteApi;
 import io.aether.net.impl.bin.ApiLevelDeserializer;
 import io.aether.utils.futures.ARFuture;
@@ -25,14 +25,14 @@ public class ChatService {
 		uid.done(aether.getUid());
 		serverOverMessages = new ServerOverMessages<>(aether, ServiceServerApi.class, ServiceClientApi.class, (uid, message) -> new MyServiceServerApi(uid));
 	}
-	private class MyServiceServerApi implements ServiceServerApi, ApiProcessorConsumer {
+	private class MyServiceServerApi implements ServiceServerApi, ApiDeserializerConsumer {
 		private final UUID uid;
 		ServiceClientApi remoteApi;
 		public MyServiceServerApi(UUID uid) {
 			this.uid = uid;
 		}
 		@Override
-		public void setApiProcessor(ApiLevelDeserializer apiProcessor) {
+		public void setApiDeserializer(ApiLevelDeserializer apiProcessor) {
 			remoteApi = apiProcessor.getRemoteApi();
 		}
 		@Override

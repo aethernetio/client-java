@@ -9,7 +9,7 @@ import io.aether.api.serverApi.LoginApi;
 import io.aether.api.serverRegistryApi.RegistrationResponse;
 import io.aether.client.AetherClientFactory;
 import io.aether.common.*;
-import io.aether.net.ApiProcessorConsumer;
+import io.aether.net.ApiDeserializerConsumer;
 import io.aether.net.Protocol;
 import io.aether.net.ProtocolConfig;
 import io.aether.net.impl.bin.ApiLevelDeserializer;
@@ -33,7 +33,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static io.aether.utils.streams.AStream.streamOf;
 
-public class Connection extends DataPrepareApiImpl<ClientApiSafe> implements ClientApiUnsafe, ApiProcessorConsumer {
+public class Connection extends DataPrepareApiImpl<ClientApiSafe> implements ClientApiUnsafe, ApiDeserializerConsumer {
 	private final static Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 	//region counters
 	public final AtomicLong lastBackPing = new AtomicLong(Long.MAX_VALUE);
@@ -63,8 +63,8 @@ public class Connection extends DataPrepareApiImpl<ClientApiSafe> implements Cli
 		});
 	}
 	@Override
-	public void setApiProcessor(ApiLevelDeserializer apiProcessor) {
-		super.setApiProcessor(apiProcessor);
+	public void setApiDeserializer(ApiLevelDeserializer apiProcessor) {
+		super.setApiDeserializer(apiProcessor);
 		apiProcessor.getProtocol().onSubApi(cmd -> {
 			if (cmd.api != apiProcessor.getRemoteApi()) return;
 			switch (cmd.method.name()) {

@@ -12,10 +12,9 @@ import io.aether.api.serverRegistryApi.RootApi;
 import io.aether.api.serverRegistryApi.WorkProofUtil;
 import io.aether.client.AetherClientFactory;
 import io.aether.common.*;
-import io.aether.net.ApiProcessorConsumer;
+import io.aether.net.ApiDeserializerConsumer;
 import io.aether.net.Protocol;
 import io.aether.net.ProtocolConfig;
-import io.aether.net.impl.bin.DeserializerStaticBytes;
 import io.aether.sodium.AsymCrypt;
 import io.aether.sodium.ChaCha20Poly1305Pair;
 import io.aether.sodium.Nonce;
@@ -29,7 +28,7 @@ import java.net.URI;
 import java.util.List;
 import java.util.UUID;
 
-public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe> implements ClientApiUnsafe, ApiProcessorConsumer {
+public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe> implements ClientApiUnsafe, ApiDeserializerConsumer {
 	private static final Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 	private final AetherCloudClient client;
 	private final AFuture keysFuture = new AFuture();
@@ -49,24 +48,15 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 					return this;
 				});
 		connectFuture = con.to((p) -> {
-			var keys = p.getRemoteApi().getKeys(CryptType.CURVE25519, SignType.AE_ED25519)
-					.updateDeserializer(d -> {
-						d.getSub(DeserializerStaticBytes.class, "key").setLength(CryptType.CURVE25519.size);
-						d.getSub(DeserializerStaticBytes.class, "sign").setLength(SignType.AE_ED25519.size);
-					});
+			var keys = p.getRemoteApi().getKeys(CryptType.CURVE25519, SignType.AE_ED25519);
 			DataPrepareApi.prepareRemote(p.getRemoteApi(), getConfig());
 			keys.to((signedKey) -> {
-				if (!client.getClientConfig().globalSigner.check(signedKey.toSignedKeyPlain(KeyType.CURVE25519, SignType.AE_ED25519))) {
+				if (!client.getClientConfig().globalSigner.check(signedKey.toPlain())) {
 					throw new RuntimeException();
 				}
-				getConfig().asymCrypt = new AsymCrypt(Key.of(KeyType.CURVE25519, signedKey.key()));
+				getConfig().asymCrypt = new AsymCrypt(signedKey.key());
 				var safeApi = p.getRemoteApi().curve25519();
 				safeApi.requestWorkProofData2(client.getParent(), CryptType.CURVE25519, SignType.AE_ED25519)
-						.updateDeserializer(d -> {
-							var globalKey = d.getSub("globalKey");
-							globalKey.getSub(DeserializerStaticBytes.class, "key").setLength(CryptType.CURVE25519.size);
-							globalKey.getSub(DeserializerStaticBytes.class, "sign").setLength(SignType.AE_ED25519.size);
-						})
 						.to(wpd -> {
 							var passwords = WorkProofUtil.generateProofOfWorkPool(
 									wpd.salt(),
