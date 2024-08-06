@@ -16,7 +16,6 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
 
-@Disabled
 public class PerformanceTest {
 	public ClientConfiguration clientConfig1;
 	public ClientConfiguration clientConfig2;

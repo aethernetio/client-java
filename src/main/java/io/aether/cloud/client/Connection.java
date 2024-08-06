@@ -166,6 +166,7 @@ public class Connection extends DataPrepareApiImpl<ClientApiSafe> implements Cli
 				return;
 			}
 			var api = p.getRemoteApi().loginByUID(uid);
+			DataPrepareApi.prepareRemote(api, getConfig());
 			sendRequests(uid, api.chacha20poly1305());
 			p.flush();
 		} catch (Exception e) {

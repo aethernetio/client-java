@@ -4,14 +4,12 @@ import io.aether.Aether;
 import io.aether.cloud.client.AetherCloudClient;
 import io.aether.cloud.client.ClientConfiguration;
 import io.aether.common.SignChecker;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 
-@Disabled
 public class RegistrationTest {
 	public ClientConfiguration clientConfig1;
 	public SignChecker globalSigner;
