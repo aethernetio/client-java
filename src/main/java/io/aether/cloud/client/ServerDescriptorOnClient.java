@@ -15,8 +15,8 @@ public class ServerDescriptorOnClient {
 	public ServerDescriptorOnClient(ServerDescriptor serverDescriptor, Key masterKey) {
 		this.dataPreparerConfig = new DataPreparerConfig();
 		this.serverDescriptor = serverDescriptor;
-		dataPreparerConfig.chaCha20Poly1305Pair = ChaCha20Poly1305Pair.forClient(masterKey, serverDescriptor.id(), Nonce.of());
-		dataPreparerConfig.asymCrypt = new AsymCrypt(serverDescriptor.getKey(KeyType.CURVE25519));
+		dataPreparerConfig.chaCha20Poly1305Pair = ChaCha20Poly1305Pair.forClient((Key.Chacha20Poly1305)masterKey, serverDescriptor.id(), Nonce.of());
+		dataPreparerConfig.asymCrypt = new AsymCrypt((Key.CurvePublicKey)serverDescriptor.getKey(KeyType.CURVE25519_PUBLIC));
 	}
 	public static ServerDescriptorOnClient of(ServerDescriptor sd, Key masterKey) {
 		return new ServerDescriptorOnClient(sd, masterKey);
@@ -42,7 +42,7 @@ public class ServerDescriptorOnClient {
 	}
 	public void initChaChaKeys(Key masterKey) {
 		var c = getDataPreparerConfig();
-		c.chaCha20Poly1305Pair = ChaCha20Poly1305Pair.forClient(masterKey, serverDescriptor.id(), Nonce.of());
+		c.chaCha20Poly1305Pair = ChaCha20Poly1305Pair.forClient((Key.Chacha20Poly1305)masterKey, serverDescriptor.id(), Nonce.of());
 	}
 	public int getPort(AetherCodec codec) {
 		return serverDescriptor.getPort(codec);

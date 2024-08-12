@@ -74,7 +74,7 @@ public class Connection extends DataPrepareApiImpl<ClientApiSafe> implements Cli
 	}
 	@Override
 	public void sendServerKeys(SignedKey asymPublicKey, SignedKey signKey) {
-		this.getConfig().asymCrypt = new AsymCrypt(asymPublicKey.key());
+		this.getConfig().asymCrypt = new AsymCrypt((Key.CurvePublicKey)asymPublicKey.key());
 	}
 	public ServerDescriptorOnClient getServerDescriptor() {
 		return serverDescriptor;
