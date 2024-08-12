@@ -54,7 +54,7 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 				if (!client.getClientConfig().globalSigner.check(signedKey.toPlain())) {
 					throw new RuntimeException();
 				}
-				getConfig().asymCrypt = new AsymCrypt((Key.CurvePublicKey)signedKey.key());
+				getConfig().asymCrypt = new AsymCrypt(signedKey.key());
 				DataPrepareApi.prepareRemote(p.getRemoteApi(), getConfig());
 				var safeApi = p.getRemoteApi().curve25519();
 				safeApi.requestWorkProofData2(client.getParent(), CryptType.CURVE25519, SignType.AE_ED25519)
@@ -67,11 +67,14 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 									5000);
 							RootApi remoteApi = p.getRemoteApi();
 							DataPrepareApi.prepareRemote(remoteApi, getConfig());
-							getConfig().chaCha20Poly1305Pair = ChaCha20Poly1305Pair.forClientAndServer((Key.Chacha20Poly1305)client.getMasterKey(), Nonce.of());
+							getConfig().chaCha20Poly1305Pair = ChaCha20Poly1305Pair.forClientAndServer(client.getMasterKey(), Nonce.of());
 							var globalClientApi0 = remoteApi
 									.curve25519()
-//									.prepare()
 									.registration(client.getParent(), wpd.salt(), wpd.suffix(), passwords, client.getMasterKey());
+							if (!client.getClientConfig().globalSigner.check(wpd.globalKey())) {
+								throw new RuntimeException();
+							}
+							getGlobalDataPreparerConfig().asymCrypt=new AsymCrypt(wpd.globalKey().key());
 							DataPrepareApi.prepareRemote(globalClientApi0, getGlobalDataPreparerConfig());
 							var globalClientApi = globalClientApi0.curve25519();
 							globalClientApi.setMasterKey(client.getMasterKey());
