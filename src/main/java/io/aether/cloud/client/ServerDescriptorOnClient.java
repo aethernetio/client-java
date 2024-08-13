@@ -45,7 +45,7 @@ public class ServerDescriptorOnClient {
 		c.chaCha20Poly1305Pair = ChaCha20Poly1305Pair.forClient((Key.Chacha20Poly1305)masterKey, serverDescriptor.id(), Nonce.of());
 	}
 	public int getPort(AetherCodec codec) {
-		return serverDescriptor.getPort(codec);
+		return serverDescriptor.ipAddress().getPort(codec);
 	}
 	public InetSocketAddress getInetSocketAddress(AetherCodec codec) {
 		return serverDescriptor.getInetSocketAddress(codec);
