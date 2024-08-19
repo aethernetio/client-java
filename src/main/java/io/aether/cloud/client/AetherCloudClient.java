@@ -31,7 +31,7 @@ public final class AetherCloudClient {
 	public static final ADebug.Counter getUserPositionEnd = ADebug.key("getUserPositionEnd");
 	public static final ADebug.Counter requestPositionBegin = ADebug.key("requestPositionBegin");
 	public static final ADebug.Counter requestPositionEnd = ADebug.key("requestPositionEnd");
-	private final static Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
+	
 	private static final List<URI> DEFAULT_URL_FOR_CONNECT = List.of(URI.create("registration.aether.io"));
 	public final AtomicBoolean beginCreateUser = new AtomicBoolean();
 	public final SlotConsumer<Message> onMessage = new SlotConsumer<>();

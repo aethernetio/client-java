@@ -34,7 +34,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import static io.aether.utils.streams.AStream.streamOf;
 
 public class Connection extends DataPrepareApiImpl<ClientApiSafe> implements ClientApiUnsafe, ApiDeserializerConsumer {
-	private final static Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
+	
 	//region counters
 	public final AtomicLong lastBackPing = new AtomicLong(Long.MAX_VALUE);
 	public final AetherCloudClient client;

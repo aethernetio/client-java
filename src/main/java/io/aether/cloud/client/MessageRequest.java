@@ -30,7 +30,7 @@ public class MessageRequest {
 			}
 		}
 	};
-	private final static Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
+	
 	private final Message body;
 	private final EventSourceConsumer<Event> onEvent = new EventSourceConsumer<>();
 	private final Queue<ServerDescriptorOnClient> targetServers = new ConcurrentLinkedQueue<>();
