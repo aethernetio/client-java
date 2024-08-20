@@ -9,6 +9,7 @@ import io.aether.api.serverApi.LoginApi;
 import io.aether.api.serverRegistryApi.RegistrationResponse;
 import io.aether.client.AetherClientFactory;
 import io.aether.common.*;
+import io.aether.logger.Logger;
 import io.aether.net.ApiDeserializerConsumer;
 import io.aether.net.Protocol;
 import io.aether.net.ProtocolConfig;
@@ -20,10 +21,7 @@ import io.aether.utils.futures.ARFuture;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import it.unimi.dsi.fastutil.objects.ObjectCollection;
 import org.jetbrains.annotations.NotNull;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import java.lang.invoke.MethodHandles;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -170,7 +168,7 @@ public class Connection extends DataPrepareApiImpl<ClientApiSafe> implements Cli
 			sendRequests(uid, api.chacha20poly1305());
 			p.flush();
 		} catch (Exception e) {
-			log.error("", e);
+			Logger.current().error("", e);
 		}
 	}
 	private boolean sendRequests(UUID uid, AuthorizedApi api) {

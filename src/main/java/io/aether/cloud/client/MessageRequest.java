@@ -1,14 +1,12 @@
 package io.aether.cloud.client;
 
 import io.aether.common.Message;
+import io.aether.logger.Logger;
 import io.aether.utils.ConcurrentHashSet;
 import io.aether.utils.RU;
 import io.aether.utils.interfaces.AConsumer;
 import io.aether.utils.slots.EventSourceConsumer;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import java.lang.invoke.MethodHandles;
 import java.util.Queue;
 import java.util.Set;
 import java.util.UUID;
@@ -54,9 +52,9 @@ public class MessageRequest {
 		return usedServers;
 	}
 	public void getCloud() {
-		if (log.isTraceEnabled()) log.trace("get position for {}", body.uid());
+		Logger.current().trace("get position for "+ body.uid());
 		client.getCloud(body.uid()).run(c -> {
-			if (log.isTraceEnabled()) log.trace("get position for {} is done", body.uid());
+			Logger.current().trace("get position for "+body.uid()+" is done");
 			totalStatus.set(Status.GET_CLOUD);
 			for (var sid : c) {
 				client.resolveServer(sid).to(sd -> {

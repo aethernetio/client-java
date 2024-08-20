@@ -12,6 +12,7 @@ import io.aether.api.serverRegistryApi.RootApi;
 import io.aether.api.serverRegistryApi.WorkProofUtil;
 import io.aether.client.AetherClientFactory;
 import io.aether.common.*;
+import io.aether.logger.Logger;
 import io.aether.net.ApiDeserializerConsumer;
 import io.aether.net.Protocol;
 import io.aether.net.ProtocolConfig;
@@ -20,16 +21,11 @@ import io.aether.sodium.ChaCha20Poly1305Pair;
 import io.aether.sodium.Nonce;
 import io.aether.utils.futures.AFuture;
 import org.jetbrains.annotations.NotNull;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.lang.invoke.MethodHandles;
 import java.net.URI;
 import java.util.List;
 import java.util.UUID;
 
 public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe> implements ClientApiUnsafe, ApiDeserializerConsumer {
-	private static final Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 	private final AetherCloudClient client;
 	private final AFuture keysFuture = new AFuture();
 	AFuture connectFuture;
@@ -40,7 +36,7 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 		assert uri != null;
 		setSubApiFactory(this::getClientApiSafe);
 		this.client = client;
-		log.debug("try reg to: " + uri);
+		Logger.current().debug("try reg to: " + uri);
 		var con = AetherClientFactory.make(uri,
 				ProtocolConfig.of(ClientApiUnsafe.class, RootApi.class, AetherCodec.BINARY),
 				(p) -> {
