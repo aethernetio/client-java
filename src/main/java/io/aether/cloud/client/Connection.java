@@ -9,7 +9,7 @@ import io.aether.api.serverApi.LoginApi;
 import io.aether.api.serverRegistryApi.RegistrationResponse;
 import io.aether.client.AetherClientFactory;
 import io.aether.common.*;
-import io.aether.logger.Logger;
+import io.aether.logger.Log;
 import io.aether.net.ApiDeserializerConsumer;
 import io.aether.net.Protocol;
 import io.aether.net.ProtocolConfig;
@@ -168,7 +168,7 @@ public class Connection extends DataPrepareApiImpl<ClientApiSafe> implements Cli
 			sendRequests(uid, api.chacha20poly1305());
 			p.flush();
 		} catch (Exception e) {
-			Logger.current().error("", e);
+			Log.error("", e);
 		}
 	}
 	private boolean sendRequests(UUID uid, AuthorizedApi api) {

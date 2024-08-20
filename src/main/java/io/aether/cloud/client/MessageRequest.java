@@ -1,7 +1,7 @@
 package io.aether.cloud.client;
 
 import io.aether.common.Message;
-import io.aether.logger.Logger;
+import io.aether.logger.Log;
 import io.aether.utils.ConcurrentHashSet;
 import io.aether.utils.RU;
 import io.aether.utils.interfaces.AConsumer;
@@ -52,9 +52,9 @@ public class MessageRequest {
 		return usedServers;
 	}
 	public void getCloud() {
-		Logger.current().trace("get position for "+ body.uid());
+		Log.trace("get position for "+ body.uid());
 		client.getCloud(body.uid()).run(c -> {
-			Logger.current().trace("get position for "+body.uid()+" is done");
+			Log.trace("get position for "+body.uid()+" is done");
 			totalStatus.set(Status.GET_CLOUD);
 			for (var sid : c) {
 				client.resolveServer(sid).to(sd -> {
