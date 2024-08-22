@@ -97,7 +97,7 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 	@Override
 	public void sendServerKeys(SignedKey asymPublicKey, SignedKey signKey) {
 		//TODO check
-		this.getConfig().asymCrypt = new AsymCrypt((Key.CurvePublicKey)asymPublicKey.key());
+		this.getConfig().asymCrypt = new AsymCrypt((Key.CurvePublic)asymPublicKey.key());
 		keysFuture.done();
 	}
 	private class MyClientApiSafe implements ClientApiSafe {

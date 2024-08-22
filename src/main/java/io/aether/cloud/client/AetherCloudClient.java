@@ -2,7 +2,6 @@ package io.aether.cloud.client;
 
 import io.aether.api.serverRegistryApi.RegistrationResponse;
 import io.aether.common.*;
-import io.aether.logger.LNode;
 import io.aether.logger.Log;
 import io.aether.sodium.ChaCha20Poly1305;
 import io.aether.utils.*;
@@ -172,7 +171,7 @@ public final class AetherCloudClient {
             var countServersForRegistration = Math.min(uris.size(), clientConfiguration.countServersForRegistration);
             if (uris.isEmpty()) throw new RuntimeException("No urls");
 			List<URI> finalUris = uris;
-			Log.info(new LNode.Info("try registration") {
+			Log.info(new Log.Info("try registration") {
                 final URI[] uriList = finalUris.toArray(new URI[0]);
             });
             var startFutures = streamOf(uris).shuffle().limit(countServersForRegistration)
@@ -181,7 +180,7 @@ public final class AetherCloudClient {
             AFuture.any(startFutures)
                     .to(this::startScheduledTask)
                     .timeout(timeoutForConnect, () -> {
-						Log.error(new LNode.Error("Failed to connect to registration server"){
+						Log.error(new Log.Error("Failed to connect to registration server"){
 							final URI[] uriList = finalUris.toArray(new URI[0]);
 						});
                         RU.schedule(1000, () -> this.connect(step - 1));
