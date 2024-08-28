@@ -1,7 +1,7 @@
 package io.aether.cloud.client;
 
 import io.aether.api.Security;
-import io.aether.api.DataPrepareApiImpl;
+import io.aether.api.SecurityImpl;
 import io.aether.api.clientApi.ClientApiSafe;
 import io.aether.api.clientApi.ClientApiUnsafe;
 import io.aether.api.serverApi.AuthorizedApi;
@@ -32,7 +32,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static io.aether.utils.streams.AStream.streamOf;
 
-public class Connection extends DataPrepareApiImpl<ClientApiSafe> implements ClientApiUnsafe, ApiDeserializerConsumer {
+public class Connection extends SecurityImpl<ClientApiSafe> implements ClientApiUnsafe, ApiDeserializerConsumer {
 	
 	//region counters
 	public final AtomicLong lastBackPing = new AtomicLong(Long.MAX_VALUE);

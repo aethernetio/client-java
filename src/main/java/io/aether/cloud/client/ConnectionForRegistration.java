@@ -2,7 +2,7 @@ package io.aether.cloud.client;
 
 import io.aether.Aether;
 import io.aether.api.Security;
-import io.aether.api.DataPrepareApiImpl;
+import io.aether.api.SecurityImpl;
 import io.aether.api.DataPreparerConfig;
 import io.aether.api.clientApi.ClientApiSafe;
 import io.aether.api.clientApi.ClientApiUnsafe;
@@ -26,7 +26,7 @@ import java.net.URI;
 import java.util.List;
 import java.util.UUID;
 
-public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe> implements ClientApiUnsafe, ApiDeserializerConsumer {
+public class ConnectionForRegistration extends SecurityImpl<ClientApiSafe> implements ClientApiUnsafe, ApiDeserializerConsumer {
 	private final AetherCloudClient client;
 	private final AFuture keysFuture = new AFuture();
 	AFuture connectFuture;

@@ -16,7 +16,7 @@ public class ServerDescriptorOnClient {
 		this.dataPreparerConfig = new DataPreparerConfig();
 		this.serverDescriptor = serverDescriptor;
 		dataPreparerConfig.symmetric = ChaCha20Poly1305Pair.forClient((Key.Chacha20Poly1305)masterKey, serverDescriptor.id(), Nonce.of());
-		dataPreparerConfig.asymmetric = new AsymCrypt((Key.CurvePublic)serverDescriptor.getKey(KeyType.CURVE25519_PUBLIC));
+		dataPreparerConfig.asymmetric = new AsymCrypt((Key.CurvePublic)serverDescriptor.getKey(KeyType.SODIUM_CURVE25519_PUBLIC));
 	}
 	public static ServerDescriptorOnClient of(ServerDescriptor sd, Key masterKey) {
 		return new ServerDescriptorOnClient(sd, masterKey);
