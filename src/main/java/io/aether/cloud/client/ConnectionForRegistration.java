@@ -1,12 +1,12 @@
 package io.aether.cloud.client;
 
 import io.aether.Aether;
-import io.aether.api.DataPrepareApi;
+import io.aether.api.Security;
 import io.aether.api.DataPrepareApiImpl;
 import io.aether.api.DataPreparerConfig;
 import io.aether.api.clientApi.ClientApiSafe;
 import io.aether.api.clientApi.ClientApiUnsafe;
-import io.aether.api.serverRegistryApi.CryptType;
+import io.aether.common.CryptLib;
 import io.aether.api.serverRegistryApi.RegistrationResponse;
 import io.aether.api.serverRegistryApi.RootApi;
 import io.aether.api.serverRegistryApi.WorkProofUtil;
@@ -33,6 +33,11 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 	DataPreparerConfig globalDataPreparerConfig;
 	private Protocol<ClientApiUnsafe, RootApi> protocol;
 	private ClientApiSafe clientApiSafe;
+	@Override
+	protected void selectLib(CryptLib cryptLib) {
+		assert cryptLib==client.getCryptLib();
+	}
+
 	public ConnectionForRegistration(AetherCloudClient client, URI uri) {
 		assert uri != null;
 		setSubApiFactory(this::getClientApiSafe);
@@ -45,16 +50,16 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 					return this;
 				});
 		connectFuture = con.to((p) -> {
-			var keys = p.getRemoteApi().getKeys(CryptType.CURVE25519, SignType.AE_ED25519);
-			DataPrepareApi.prepareRemote(p.getRemoteApi(), getConfig());
+			var keys = p.getRemoteApi().getKeys(client.getCryptLib(), client.getCryptLib().signType);
+			Security.prepareRemote(p.getRemoteApi(), getConfig());
 			keys.to((signedKey) -> {
 				if (!client.getClientConfig().globalSigner.check(signedKey.toPlain())) {
 					throw new RuntimeException();
 				}
-				getConfig().asymCrypt = new AsymCrypt(signedKey.key());
-				DataPrepareApi.prepareRemote(p.getRemoteApi(), getConfig());
-				var safeApi = p.getRemoteApi().curve25519();
-				safeApi.requestWorkProofData2(client.getParent(), CryptType.CURVE25519, SignType.AE_ED25519)
+				getConfig().asymmetric = new AsymCrypt(signedKey.key());
+				Security.prepareRemote(p.getRemoteApi(), getConfig());
+				var safeApi = p.getRemoteApi().asymmetric();
+				safeApi.requestWorkProofData2(client.getParent(), client.getCryptLib(), client.getCryptLib().signType)
 						.to(wpd -> {
 							var passwords = WorkProofUtil.generateProofOfWorkPool(
 									wpd.salt(),
@@ -63,17 +68,17 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 									wpd.poolSize(),
 									5000);
 							RootApi remoteApi = p.getRemoteApi();
-							DataPrepareApi.prepareRemote(remoteApi, getConfig());
-							getConfig().chaCha20Poly1305Pair = ChaCha20Poly1305Pair.forClientAndServer(client.getMasterKey(), Nonce.of());
+							Security.prepareRemote(remoteApi, getConfig());
+							getConfig().symmetric = ChaCha20Poly1305Pair.forClientAndServer(client.getMasterKey(), Nonce.of());
 							var globalClientApi0 = remoteApi
-									.curve25519()
+									.asymmetric()
 									.registration(client.getParent(), wpd.salt(), wpd.suffix(), passwords, client.getMasterKey());
 							if (!client.getClientConfig().globalSigner.check(wpd.globalKey())) {
 								throw new RuntimeException();
 							}
-							getGlobalDataPreparerConfig().asymCrypt=new AsymCrypt(wpd.globalKey().key());
-							DataPrepareApi.prepareRemote(globalClientApi0, getGlobalDataPreparerConfig());
-							var globalClientApi = globalClientApi0.curve25519();
+							getGlobalDataPreparerConfig().asymmetric =new AsymCrypt(wpd.globalKey().key());
+							Security.prepareRemote(globalClientApi0, getGlobalDataPreparerConfig());
+							var globalClientApi = globalClientApi0.asymmetric();
 							globalClientApi.setMasterKey(client.getMasterKey());
 							globalClientApi.finish();
 							protocol.flush();
@@ -86,7 +91,7 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 	public DataPreparerConfig getGlobalDataPreparerConfig() {
 		if (globalDataPreparerConfig == null) {
 			globalDataPreparerConfig = new DataPreparerConfig();
-			globalDataPreparerConfig.asymCrypt = Aether.globalAsym;
+			globalDataPreparerConfig.asymmetric = Aether.globalAsym.get(client.getCryptLib());
 		}
 		return globalDataPreparerConfig;
 	}
@@ -97,7 +102,7 @@ public class ConnectionForRegistration extends DataPrepareApiImpl<ClientApiSafe>
 	@Override
 	public void sendServerKeys(SignedKey asymPublicKey, SignedKey signKey) {
 		//TODO check
-		this.getConfig().asymCrypt = new AsymCrypt((Key.CurvePublic)asymPublicKey.key());
+		this.getConfig().asymmetric = new AsymCrypt(asymPublicKey.key());
 		keysFuture.done();
 	}
 	private class MyClientApiSafe implements ClientApiSafe {

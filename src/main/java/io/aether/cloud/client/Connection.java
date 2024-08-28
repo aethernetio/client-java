@@ -1,6 +1,6 @@
 package io.aether.cloud.client;
 
-import io.aether.api.DataPrepareApi;
+import io.aether.api.Security;
 import io.aether.api.DataPrepareApiImpl;
 import io.aether.api.clientApi.ClientApiSafe;
 import io.aether.api.clientApi.ClientApiUnsafe;
@@ -9,6 +9,7 @@ import io.aether.api.serverApi.LoginApi;
 import io.aether.api.serverRegistryApi.RegistrationResponse;
 import io.aether.client.AetherClientFactory;
 import io.aether.common.*;
+import io.aether.hydrogen.HydrogenAsym;
 import io.aether.logger.Log;
 import io.aether.net.ApiDeserializerConsumer;
 import io.aether.net.Protocol;
@@ -66,13 +67,26 @@ public class Connection extends DataPrepareApiImpl<ClientApiSafe> implements Cli
 		apiProcessor.getProtocol().onSubApi(cmd -> {
 			if (cmd.api != apiProcessor.getRemoteApi()) return;
 			switch (cmd.method.name()) {
-				case "loginByUID", "loginByAlias" -> DataPrepareApi.prepareRemote((DataPrepareApi<?>) cmd.result, getConfig());
+				case "loginByUID", "loginByAlias" -> Security.prepareRemote((Security<?>) cmd.result, getConfig());
 			}
 		});
 	}
-	@Override
+
+    @Override
+    protected void selectLib(CryptLib cryptLib) {
+        assert cryptLib==client.getCryptLib();
+    }
+
+    @Override
 	public void sendServerKeys(SignedKey asymPublicKey, SignedKey signKey) {
-		this.getConfig().asymCrypt = new AsymCrypt((Key.CurvePublic)asymPublicKey.key());
+		assert client.getCryptLib()==asymPublicKey.getKey().getType().cryptLib
+				&&client.getCryptLib()==signKey.key().getType().cryptLib;
+		switch (asymPublicKey.getKey().getType().cryptLib){
+			case SODIUM ->
+			this.getConfig().asymmetric = new AsymCrypt(asymPublicKey.key());
+			case HYDROGEN ->
+			this.getConfig().asymmetric = new HydrogenAsym(asymPublicKey.key());
+		}
 	}
 	public ServerDescriptorOnClient getServerDescriptor() {
 		return serverDescriptor;
@@ -160,12 +174,12 @@ public class Connection extends DataPrepareApiImpl<ClientApiSafe> implements Cli
 			if (apiProcessor == null) return;
 			Protocol<?, LoginApi> p = getApiProcessor().getProtocol();
 			if (uid == null || p == null || !p.isActive()) return;
-			if (getConfig().chaCha20Poly1305Pair == null) {
+			if (getConfig().symmetric == null) {
 				return;
 			}
 			var api = p.getRemoteApi().loginByUID(uid);
-			DataPrepareApi.prepareRemote(api, getConfig());
-			sendRequests(uid, api.chacha20poly1305());
+			Security.prepareRemote(api, getConfig());
+			sendRequests(uid, api.symmetric());
 			p.flush();
 		} catch (Exception e) {
 			Log.error("", e);

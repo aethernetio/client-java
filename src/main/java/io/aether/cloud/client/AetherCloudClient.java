@@ -262,7 +262,7 @@ public final class AetherCloudClient {
         registrationFuture.done();
         assert isRegistered();
         streamOf(cd.cloud())
-                .map(sd -> getConnection(ServerDescriptorOnClient.of(sd.toFull(SignType.AE_ED25519), getMasterKey())).conFuture.toFuture())
+                .map(sd -> getConnection(ServerDescriptorOnClient.of(sd.toFull(SignType.SODIUM_AE_ED25519), getMasterKey())).conFuture.toFuture())
                 .allMap(AFuture::all).to(() -> {
                     startFuture.tryDone();
                 });
@@ -355,5 +355,9 @@ public final class AetherCloudClient {
 
     public ClientConfiguration getClientConfig() {
         return clientConfiguration;
+    }
+
+    public CryptLib getCryptLib() {
+        return CryptLib.SODIUM;
     }
 }

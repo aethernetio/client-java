@@ -47,7 +47,7 @@ public class ClientConfiguration {
 			ds.nonce = Nonce.of();
 			nonce = ds.nonce;
 		}
-		res.getDataPreparerConfig().chaCha20Poly1305Pair = ChaCha20Poly1305Pair.forClient((Key.Chacha20Poly1305)masterKey, serverId, nonce);
+		res.getDataPreparerConfig().symmetric = ChaCha20Poly1305Pair.forClient((Key.Chacha20Poly1305)masterKey, serverId, nonce);
 		return res;
 	}
 	public void saveCloud(UUID uid, Cloud cloud) {
