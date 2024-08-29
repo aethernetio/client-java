@@ -18,7 +18,7 @@ public class ChatClient implements ServiceClientApi {
 	public final AetherCloudClient aether;
 	public final SlotConsumer<MessageDescriptor> onMessage = new SlotConsumer<>();
 	public ChatClient(UUID chatService, String name) {
-		aether = new AetherCloudClient(new ClientConfiguration(chatService, null, List.of(URI.create("tcp://aethernet.io"))))
+		aether = new AetherCloudClient(new ClientConfiguration(chatService,  List.of(URI.create("tcp://aethernet.io"))))
 				.waitStart(10);
 		var clientOverMessages = new ClientOverMessages<>(aether, ServiceClientApi.class, ServiceServerApi.class, this);
 		service = clientOverMessages.getRemoteApiBy(chatService);

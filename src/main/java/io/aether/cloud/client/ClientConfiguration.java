@@ -3,8 +3,6 @@ package io.aether.cloud.client;
 import io.aether.common.Cloud;
 import io.aether.common.Key;
 import io.aether.common.ServerDescriptor;
-import io.aether.common.SignChecker;
-import io.aether.sodium.ChaCha20Poly1305Pair;
 import io.aether.sodium.Nonce;
 
 import java.net.URI;
@@ -15,7 +13,6 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class ClientConfiguration {
 	public final UUID parentUid;
-	public final SignChecker globalSigner;
 	public final List<URI> cloudFactoryUrl;
 	public final Map<Integer, ServerConfig> servers = new ConcurrentHashMap<>();
 	public final Map<UUID, UidConfig> uidConfigs = new ConcurrentHashMap<>();
@@ -24,9 +21,8 @@ public class ClientConfiguration {
 	public Key masterKey;
 	public volatile int countServersForRegistration = 1;
 	public volatile int timoutForConnectToRegistrationServer = 10;
-	public ClientConfiguration(UUID parentUid, SignChecker globalSigner, List<URI> cloudFactoryUrl) {
+	public ClientConfiguration(UUID parentUid, List<URI> cloudFactoryUrl) {
 		this.parentUid = parentUid;
-		this.globalSigner = globalSigner;
 		this.cloudFactoryUrl = cloudFactoryUrl;
 	}
 	public void uid(UUID uid) {
@@ -47,7 +43,7 @@ public class ClientConfiguration {
 			ds.nonce = Nonce.of();
 			nonce = ds.nonce;
 		}
-		res.getDataPreparerConfig().symmetric = ChaCha20Poly1305Pair.forClient((Key.Chacha20Poly1305)masterKey, serverId, nonce);
+		res.getSecurityConfig().symmetric = masterKey.getType().cryptoLib().env.symmetricForClient(masterKey, serverId, nonce);
 		return res;
 	}
 	public void saveCloud(UUID uid, Cloud cloud) {

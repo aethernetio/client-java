@@ -1,6 +1,6 @@
 package io.aether.examples.plainChat;
 
-import io.aether.Aether;
+import io.aether.StandardUUIDs;
 import io.aether.cloud.client.AetherCloudClient;
 import io.aether.cloud.client.ClientConfiguration;
 import io.aether.cloud.client.ServerOverMessages;
@@ -20,7 +20,7 @@ public class ChatService {
 	private final ServerOverMessages<ServiceServerApi, ServiceClientApi> serverOverMessages;
 	public final AetherCloudClient aether;
 	public ChatService() {
-		aether = new AetherCloudClient(new ClientConfiguration(Aether.TEST_UID, null, null))
+		aether = new AetherCloudClient(new ClientConfiguration(StandardUUIDs.TEST_UID,  null))
 				.waitStart(10);
 		uid.done(aether.getUid());
 		serverOverMessages = new ServerOverMessages<>(aether, ServiceServerApi.class, ServiceClientApi.class, (uid, message) -> new MyServiceServerApi(uid));

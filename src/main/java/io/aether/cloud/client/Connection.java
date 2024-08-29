@@ -9,13 +9,11 @@ import io.aether.api.serverApi.LoginApi;
 import io.aether.api.serverRegistryApi.RegistrationResponse;
 import io.aether.client.AetherClientFactory;
 import io.aether.common.*;
-import io.aether.hydrogen.HydrogenAsym;
 import io.aether.logger.Log;
 import io.aether.net.ApiDeserializerConsumer;
 import io.aether.net.Protocol;
 import io.aether.net.ProtocolConfig;
 import io.aether.net.impl.bin.ApiLevelDeserializer;
-import io.aether.sodium.AsymCrypt;
 import io.aether.utils.RU;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
@@ -53,7 +51,7 @@ public class Connection extends SecurityImpl<ClientApiSafe> implements ClientApi
 		this.basicStatus = false;
 		serverDescriptor = s;
 		var codec = AetherCodec.BINARY;
-		config = s.dataPreparerConfig;
+		config = s.securityConfig;
 		var con = AetherClientFactory.make(s.getURI(codec),
 				ProtocolConfig.of(ClientApiUnsafe.class, LoginApi.class, codec),
 				(p) -> this);
@@ -73,20 +71,15 @@ public class Connection extends SecurityImpl<ClientApiSafe> implements ClientApi
 	}
 
     @Override
-    protected void selectLib(CryptLib cryptLib) {
-        assert cryptLib==client.getCryptLib();
+    protected void selectLib(CryptoLib cryptoLib) {
+        assert cryptoLib ==client.getCryptLib();
     }
 
     @Override
 	public void sendServerKeys(SignedKey asymPublicKey, SignedKey signKey) {
-		assert client.getCryptLib()==asymPublicKey.getKey().getType().cryptLib
-				&&client.getCryptLib()==signKey.key().getType().cryptLib;
-		switch (asymPublicKey.getKey().getType().cryptLib){
-			case SODIUM ->
-			this.getConfig().asymmetric = new AsymCrypt(asymPublicKey.key());
-			case HYDROGEN ->
-			this.getConfig().asymmetric = new HydrogenAsym(asymPublicKey.key());
-		}
+		assert client.getCryptLib()==asymPublicKey.getKey().getType().cryptoLib()
+				&&client.getCryptLib()==signKey.key().getType().cryptoLib();
+		this.getConfig().asymmetric = asymPublicKey.key().getType().cryptoLib().env.asymmetric(asymPublicKey.key());
 	}
 	public ServerDescriptorOnClient getServerDescriptor() {
 		return serverDescriptor;

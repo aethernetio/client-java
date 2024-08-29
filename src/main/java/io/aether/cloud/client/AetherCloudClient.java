@@ -3,6 +3,7 @@ package io.aether.cloud.client;
 import io.aether.api.serverRegistryApi.RegistrationResponse;
 import io.aether.common.*;
 import io.aether.logger.Log;
+import io.aether.common.ServerDescriptor;
 import io.aether.sodium.ChaCha20Poly1305;
 import io.aether.utils.*;
 import io.aether.utils.futures.AFuture;
@@ -262,7 +263,7 @@ public final class AetherCloudClient {
         registrationFuture.done();
         assert isRegistered();
         streamOf(cd.cloud())
-                .map(sd -> getConnection(ServerDescriptorOnClient.of(sd.toFull(SignType.SODIUM_AE_ED25519), getMasterKey())).conFuture.toFuture())
+                .map(sd -> getConnection(ServerDescriptorOnClient.of(sd, getMasterKey())).conFuture.toFuture())
                 .allMap(AFuture::all).to(() -> {
                     startFuture.tryDone();
                 });
@@ -327,7 +328,7 @@ public final class AetherCloudClient {
         if (res != null) return res;
         res = clientConfiguration.masterKey;
         if (res == null) {
-            res = ChaCha20Poly1305.generateSyncKey();
+            res = getCryptLib().env.makeSymmetricKey();
             clientConfiguration.masterKey(res);
         }
         masterKey = res;
@@ -357,7 +358,7 @@ public final class AetherCloudClient {
         return clientConfiguration;
     }
 
-    public CryptLib getCryptLib() {
-        return CryptLib.SODIUM;
+    public CryptoLib getCryptLib() {
+        return CryptoLib.HYDROGEN;
     }
 }

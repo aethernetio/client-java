@@ -1,28 +1,26 @@
 package io.aether.cloud.client;
 
-import io.aether.api.DataPreparerConfig;
-import io.aether.common.*;
-import io.aether.sodium.AsymCrypt;
-import io.aether.sodium.ChaCha20Poly1305Pair;
-import io.aether.sodium.Nonce;
+import io.aether.api.SecurityConfig;
+import io.aether.common.AetherCodec;
+import io.aether.common.CryptoLib;
+import io.aether.common.Key;
+import io.aether.common.ServerDescriptor;
 
 import java.net.InetSocketAddress;
 import java.net.URI;
 
 public class ServerDescriptorOnClient {
-	DataPreparerConfig dataPreparerConfig;
+	SecurityConfig securityConfig;
 	private ServerDescriptor serverDescriptor;
 	public ServerDescriptorOnClient(ServerDescriptor serverDescriptor, Key masterKey) {
-		this.dataPreparerConfig = new DataPreparerConfig();
+		this.securityConfig = new SecurityConfig();
 		this.serverDescriptor = serverDescriptor;
-		dataPreparerConfig.symmetric = ChaCha20Poly1305Pair.forClient((Key.Chacha20Poly1305)masterKey, serverDescriptor.id(), Nonce.of());
-		dataPreparerConfig.asymmetric = new AsymCrypt((Key.CurvePublic)serverDescriptor.getKey(KeyType.SODIUM_CURVE25519_PUBLIC));
+		CryptoLib cryptoLib=masterKey.getType().cryptoLib();
+		securityConfig.symmetric = cryptoLib.env.symmetricForClient(masterKey, serverDescriptor.id());
+		securityConfig.asymmetric = serverDescriptor.keys().makeProviderAsym(cryptoLib);
 	}
 	public static ServerDescriptorOnClient of(ServerDescriptor sd, Key masterKey) {
 		return new ServerDescriptorOnClient(sd, masterKey);
-	}
-	public static ServerDescriptorOnClient of(ServerDescriptorLite sd, Key masterKey, SignType signType) {
-		return new ServerDescriptorOnClient(sd.toFull(signType), masterKey);
 	}
 	public ServerDescriptor getServerDescriptor() {
 		return serverDescriptor;
@@ -34,15 +32,15 @@ public class ServerDescriptorOnClient {
 	public int getId() {
 		return serverDescriptor.id();
 	}
-	public DataPreparerConfig getDataPreparerConfig() {
-		if (dataPreparerConfig == null) {
-			dataPreparerConfig = new DataPreparerConfig();
+	public SecurityConfig getSecurityConfig() {
+		if (securityConfig == null) {
+			securityConfig = new SecurityConfig();
 		}
-		return dataPreparerConfig;
+		return securityConfig;
 	}
 	public void initChaChaKeys(Key masterKey) {
-		var c = getDataPreparerConfig();
-		c.symmetric = ChaCha20Poly1305Pair.forClient((Key.Chacha20Poly1305)masterKey, serverDescriptor.id(), Nonce.of());
+		var c = getSecurityConfig();
+		c.symmetric = masterKey.getType().cryptoLib().env.symmetricForClient(masterKey, serverDescriptor.id());
 	}
 	public int getPort(AetherCodec codec) {
 		return serverDescriptor.ipAddress().getPort(codec);
