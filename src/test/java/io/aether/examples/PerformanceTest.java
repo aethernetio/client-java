@@ -6,6 +6,7 @@ import io.aether.cloud.client.ClientConfiguration;
 import io.aether.cloud.client.MessageRequest;
 import io.aether.common.Message;
 import io.aether.common.SignChecker;
+import io.aether.logger.Log;
 import org.junit.jupiter.api.Test;
 
 import java.net.URI;
@@ -42,7 +43,8 @@ public class PerformanceTest {
             var delta = t2 - t1;
             if (min > delta) {
                 min = delta;
-                System.out.println(min);
+//                Log.info("MIN: "+min+" ("+min/1000000+"ms)");
+                System.out.println("MIN: "+min+" ("+min/1000000+"ms)");
             }
         }
     }
@@ -71,7 +73,7 @@ public class PerformanceTest {
             var delta = t2 - t1;
             if (min > delta) {
                 min = delta;
-                System.out.println(min);
+                System.out.println("MIN: "+min+" ("+min/1000000+"ms)");
             }
         }
     }

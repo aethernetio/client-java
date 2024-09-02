@@ -1,7 +1,7 @@
 package io.aether.cloud.client;
 
-import io.aether.api.Security;
-import io.aether.api.SecurityImpl;
+import io.aether.api.EncryptionApi;
+import io.aether.api.EncryptionApiImpl;
 import io.aether.api.clientApi.ClientApiSafe;
 import io.aether.api.clientApi.ClientApiUnsafe;
 import io.aether.api.serverApi.AuthorizedApi;
@@ -30,7 +30,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static io.aether.utils.streams.AStream.streamOf;
 
-public class Connection extends SecurityImpl<ClientApiSafe> implements ClientApiUnsafe, ApiDeserializerConsumer {
+public class Connection extends EncryptionApiImpl<ClientApiSafe> implements ClientApiUnsafe, ApiDeserializerConsumer {
 	
 	//region counters
 	public final AtomicLong lastBackPing = new AtomicLong(Long.MAX_VALUE);
@@ -65,7 +65,7 @@ public class Connection extends SecurityImpl<ClientApiSafe> implements ClientApi
 		apiProcessor.getProtocol().onSubApi(cmd -> {
 			if (cmd.api != apiProcessor.getRemoteApi()) return;
 			switch (cmd.method.name()) {
-				case "loginByUID", "loginByAlias" -> Security.prepareRemote((Security<?>) cmd.result, getConfig());
+				case "loginByUID", "loginByAlias" -> EncryptionApi.prepareRemote((EncryptionApi<?>) cmd.result, getConfig());
 			}
 		});
 	}
@@ -171,7 +171,7 @@ public class Connection extends SecurityImpl<ClientApiSafe> implements ClientApi
 				return;
 			}
 			var api = p.getRemoteApi().loginByUID(uid);
-			Security.prepareRemote(api, getConfig());
+			EncryptionApi.prepareRemote(api, getConfig());
 			sendRequests(uid, api.symmetric());
 			p.flush();
 		} catch (Exception e) {

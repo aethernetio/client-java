@@ -3,8 +3,6 @@ package io.aether.cloud.client;
 import io.aether.api.serverRegistryApi.RegistrationResponse;
 import io.aether.common.*;
 import io.aether.logger.Log;
-import io.aether.common.ServerDescriptor;
-import io.aether.sodium.ChaCha20Poly1305;
 import io.aether.utils.*;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
@@ -50,7 +48,13 @@ public final class AetherCloudClient {
     public SlotConsumer<Collection<UUID>> onNewChildren = new SlotConsumer<>();
     volatile Connection currentConnection;
     Key masterKey;
+    long lastSecond;
+    int currentCountMMM;
     private String name;
+
+    {
+        lastSecond = System.currentTimeMillis() / 1000;
+    }
 
     public AetherCloudClient(ClientConfiguration store) {
         this.clientConfiguration = store;
@@ -171,8 +175,8 @@ public final class AetherCloudClient {
             var timeoutForConnect = clientConfiguration.timoutForConnectToRegistrationServer;
             var countServersForRegistration = Math.min(uris.size(), clientConfiguration.countServersForRegistration);
             if (uris.isEmpty()) throw new RuntimeException("No urls");
-			List<URI> finalUris = uris;
-			Log.info(new Log.Info("try registration") {
+            List<URI> finalUris = uris;
+            Log.info(new Log.Info("try registration") {
                 final URI[] uriList = finalUris.toArray(new URI[0]);
             });
             var startFutures = streamOf(uris).shuffle().limit(countServersForRegistration)
@@ -181,9 +185,9 @@ public final class AetherCloudClient {
             AFuture.any(startFutures)
                     .to(this::startScheduledTask)
                     .timeout(timeoutForConnect, () -> {
-						Log.error(new Log.Error("Failed to connect to registration server"){
-							final URI[] uriList = finalUris.toArray(new URI[0]);
-						});
+                        Log.error(new Log.Error("Failed to connect to registration server") {
+                            final URI[] uriList = finalUris.toArray(new URI[0]);
+                        });
                         RU.schedule(1000, () -> this.connect(step - 1));
                     });
         } else {
@@ -200,6 +204,13 @@ public final class AetherCloudClient {
     }
 
     void receiveMessages(@NotNull Collection<Message> list) {
+        var ls = System.currentTimeMillis() / 1000;
+        if (lastSecond != ls) {
+            lastSecond = ls;
+            Log.warn("CURMM: " + currentCountMMM);
+            currentCountMMM = 0;
+        }
+        currentCountMMM++;
         for (var m : list) {
             onMessage.fire(m);
         }
@@ -256,7 +267,7 @@ public final class AetherCloudClient {
 
     public void confirmRegistration(RegistrationResponse cd) {
         if (!successfulAuthorization.compareAndSet(false, true)) return;
-		Log.trace("confirmRegistration: " + cd);
+        Log.trace("confirmRegistration: " + cd);
         clientConfiguration.uid = cd.uid();
         clientConfiguration.uid(cd.uid());
         beginCreateUser.set(false);
@@ -359,6 +370,6 @@ public final class AetherCloudClient {
     }
 
     public CryptoLib getCryptLib() {
-        return CryptoLib.HYDROGEN;
+        return CryptoLib.SODIUM;
     }
 }

@@ -1,8 +1,8 @@
 package io.aether.cloud.client;
 
-import io.aether.api.Security;
+import io.aether.api.EncryptionApi;
 import io.aether.api.SecurityConfig;
-import io.aether.api.SecurityImpl;
+import io.aether.api.EncryptionApiImpl;
 import io.aether.api.clientApi.ClientApiSafe;
 import io.aether.api.clientApi.ClientApiUnsafe;
 import io.aether.api.serverRegistryApi.RegistrationResponse;
@@ -21,7 +21,7 @@ import java.net.URI;
 import java.util.List;
 import java.util.UUID;
 
-public class ConnectionForRegistration extends SecurityImpl<ClientApiSafe> implements ClientApiUnsafe, ApiDeserializerConsumer {
+public class ConnectionForRegistration extends EncryptionApiImpl<ClientApiSafe> implements ClientApiUnsafe, ApiDeserializerConsumer {
 	private final AetherCloudClient client;
 	private final AFuture keysFuture = new AFuture();
 	AFuture connectFuture;
@@ -46,13 +46,13 @@ public class ConnectionForRegistration extends SecurityImpl<ClientApiSafe> imple
 				});
 		connectFuture = con.to((p) -> {
 			var key = p.getRemoteApi().getAsymmetricPublicKey(client.getCryptLib());
-			Security.prepareRemote(p.getRemoteApi(), getConfig());
+			EncryptionApi.prepareRemote(p.getRemoteApi(), getConfig());
 			key.to((signedKey) -> {
 				if (!signedKey.check()) {
 					throw new RuntimeException();
 				}
 				getConfig().asymmetric = signedKey.key().getType().cryptoLib().env.asymmetric(signedKey.key());
-				Security.prepareRemote(p.getRemoteApi(), getConfig());
+				EncryptionApi.prepareRemote(p.getRemoteApi(), getConfig());
 				var safeApi = p.getRemoteApi().asymmetric();
 				safeApi.requestWorkProofData2(client.getParent(), client.getCryptLib())
 						.to(wpd -> {
@@ -63,7 +63,7 @@ public class ConnectionForRegistration extends SecurityImpl<ClientApiSafe> imple
 									wpd.poolSize(),
 									5000);
 							RootApi remoteApi = p.getRemoteApi();
-							Security.prepareRemote(remoteApi, getConfig());
+							EncryptionApi.prepareRemote(remoteApi, getConfig());
 							getConfig().symmetric =client.getMasterKey().getType().cryptoLib().env.symmetricForClientAndServer(client.getMasterKey(),0);
 							var globalClientApi0 = remoteApi
 									.asymmetric()
@@ -72,7 +72,7 @@ public class ConnectionForRegistration extends SecurityImpl<ClientApiSafe> imple
 								throw new RuntimeException();
 							}
 							getGlobalDataPreparerConfig().asymmetric =wpd.globalKey().key().getType().cryptoLib().env.asymmetric(wpd.globalKey().key());
-							Security.prepareRemote(globalClientApi0, getGlobalDataPreparerConfig());
+							EncryptionApi.prepareRemote(globalClientApi0, getGlobalDataPreparerConfig());
 							var globalClientApi = globalClientApi0.asymmetric();
 							globalClientApi.setMasterKey(client.getMasterKey());
 							globalClientApi.finish();
