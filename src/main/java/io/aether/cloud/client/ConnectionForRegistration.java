@@ -5,7 +5,7 @@ import io.aether.api.SecurityConfig;
 import io.aether.api.EncryptionApiImpl;
 import io.aether.api.clientApi.ClientApiSafe;
 import io.aether.api.clientApi.ClientApiUnsafe;
-import io.aether.api.serverRegistryApi.RegistrationResponse;
+import io.aether.api.serverRegistryApi.RegistrationResponseLite;
 import io.aether.api.serverRegistryApi.RootApi;
 import io.aether.api.serverRegistryApi.WorkProofUtil;
 import io.aether.client.AetherClientFactory;
@@ -119,7 +119,7 @@ public class ConnectionForRegistration extends EncryptionApiImpl<ClientApiSafe> 
 			throw new UnsupportedOperationException();
 		}
 		@Override
-		public void confirmRegistration(RegistrationResponse registrationResponse) {
+		public void confirmRegistration(RegistrationResponseLite registrationResponse) {
 			client.confirmRegistration(registrationResponse);
 		}
 	}

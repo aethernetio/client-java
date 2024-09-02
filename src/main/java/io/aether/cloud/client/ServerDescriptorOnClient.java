@@ -1,10 +1,8 @@
 package io.aether.cloud.client;
 
 import io.aether.api.SecurityConfig;
-import io.aether.common.AetherCodec;
-import io.aether.common.CryptoLib;
-import io.aether.common.Key;
-import io.aether.common.ServerDescriptor;
+import io.aether.api.serverRegistryApi.RegistrationResponseLite;
+import io.aether.common.*;
 
 import java.net.InetSocketAddress;
 import java.net.URI;
@@ -17,11 +15,16 @@ public class ServerDescriptorOnClient {
 		this.serverDescriptor = serverDescriptor;
 		CryptoLib cryptoLib=masterKey.getType().cryptoLib();
 		securityConfig.symmetric = cryptoLib.env.symmetricForClient(masterKey, serverDescriptor.id());
-		securityConfig.asymmetric = serverDescriptor.keys().makeProviderAsym(cryptoLib);
+//		securityConfig.asymmetric = serverDescriptor.keys().makeProviderAsym(cryptoLib);
 	}
 	public static ServerDescriptorOnClient of(ServerDescriptor sd, Key masterKey) {
 		return new ServerDescriptorOnClient(sd, masterKey);
 	}
+
+	public static ServerDescriptorOnClient of(RegistrationResponseLite.ServerDescriptorLite sd, Key masterKey) {
+		return new ServerDescriptorOnClient(new ServerDescriptor(sd.id(),sd.ipAddress(),new KeysBase()),masterKey);
+	}
+
 	public ServerDescriptor getServerDescriptor() {
 		return serverDescriptor;
 	}

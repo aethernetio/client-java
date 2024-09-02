@@ -6,7 +6,7 @@ import io.aether.api.clientApi.ClientApiSafe;
 import io.aether.api.clientApi.ClientApiUnsafe;
 import io.aether.api.serverApi.AuthorizedApi;
 import io.aether.api.serverApi.LoginApi;
-import io.aether.api.serverRegistryApi.RegistrationResponse;
+import io.aether.api.serverRegistryApi.RegistrationResponseLite;
 import io.aether.client.AetherClientFactory;
 import io.aether.common.*;
 import io.aether.logger.Log;
@@ -250,7 +250,7 @@ public class Connection extends EncryptionApiImpl<ClientApiSafe> implements Clie
 	}
 	private class MyClientApiSafe implements ClientApiSafe {
 		@Override
-		public void confirmRegistration(RegistrationResponse registrationResponse) {
+		public void confirmRegistration(RegistrationResponseLite registrationResponse) {
 			client.confirmRegistration(registrationResponse);
 		}
 		@Override

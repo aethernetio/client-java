@@ -1,6 +1,7 @@
 package io.aether.cloud.client;
 
 import io.aether.api.serverRegistryApi.RegistrationResponse;
+import io.aether.api.serverRegistryApi.RegistrationResponseLite;
 import io.aether.common.*;
 import io.aether.logger.Log;
 import io.aether.utils.*;
@@ -265,7 +266,7 @@ public final class AetherCloudClient {
         connections.put(connection.getServerDescriptor().getId(), connection);
     }
 
-    public void confirmRegistration(RegistrationResponse cd) {
+    public void confirmRegistration(RegistrationResponseLite cd) {
         if (!successfulAuthorization.compareAndSet(false, true)) return;
         Log.trace("confirmRegistration: " + cd);
         clientConfiguration.uid = cd.uid();
