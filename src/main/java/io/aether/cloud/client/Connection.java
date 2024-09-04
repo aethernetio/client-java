@@ -170,7 +170,7 @@ public class Connection extends EncryptionApiImpl<ClientApiSafe> implements Clie
 			if (getConfig().symmetric == null) {
 				return;
 			}
-			var api = p.getRemoteApi().loginByUID(uid);
+			var api = p.getRemoteApi().loginByAlias(client.getAlias());
 			EncryptionApi.prepareRemote(api, getConfig());
 			sendRequests(uid, api.symmetric());
 			p.flush();
