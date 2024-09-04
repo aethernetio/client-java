@@ -375,6 +375,6 @@ public final class AetherCloudClient {
     }
 
     public UUID getAlias() {
-        return clientConfiguration.se;
+        return getUid();
     }
 }
