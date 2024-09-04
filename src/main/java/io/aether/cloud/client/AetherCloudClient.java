@@ -371,7 +371,7 @@ public final class AetherCloudClient {
     }
 
     public CryptoLib getCryptLib() {
-        return CryptoLib.SODIUM;
+        return CryptoLib.HYDROGEN;
     }
 
     public UUID getAlias() {
