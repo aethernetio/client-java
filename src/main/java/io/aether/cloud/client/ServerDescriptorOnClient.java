@@ -1,27 +1,25 @@
 package io.aether.cloud.client;
 
-import io.aether.api.SecurityConfig;
-import io.aether.api.serverRegistryApi.RegistrationResponseLite;
+import io.aether.api.EncryptionApiConfig;
 import io.aether.common.*;
 
 import java.net.InetSocketAddress;
 import java.net.URI;
 
 public class ServerDescriptorOnClient {
-	SecurityConfig securityConfig;
+	EncryptionApiConfig encryptionApiConfig;
 	private ServerDescriptor serverDescriptor;
 	public ServerDescriptorOnClient(ServerDescriptor serverDescriptor, Key masterKey) {
-		this.securityConfig = new SecurityConfig();
+		this.encryptionApiConfig = new EncryptionApiConfig();
 		this.serverDescriptor = serverDescriptor;
 		CryptoLib cryptoLib=masterKey.getType().cryptoLib();
-		securityConfig.symmetric = cryptoLib.env.symmetricForClient(masterKey, serverDescriptor.id());
-//		securityConfig.asymmetric = serverDescriptor.keys().makeProviderAsym(cryptoLib);
+		encryptionApiConfig.symmetric = cryptoLib.env.symmetricForClient(masterKey, serverDescriptor.id());
 	}
 	public static ServerDescriptorOnClient of(ServerDescriptor sd, Key masterKey) {
 		return new ServerDescriptorOnClient(sd, masterKey);
 	}
 
-	public static ServerDescriptorOnClient of(RegistrationResponseLite.ServerDescriptorLite sd, Key masterKey) {
+	public static ServerDescriptorOnClient of(ServerDescriptorLite sd, Key masterKey) {
 		return new ServerDescriptorOnClient(new ServerDescriptor(sd.id(),sd.ipAddress(),new KeysBase()),masterKey);
 	}
 
@@ -35,11 +33,11 @@ public class ServerDescriptorOnClient {
 	public int getId() {
 		return serverDescriptor.id();
 	}
-	public SecurityConfig getSecurityConfig() {
-		if (securityConfig == null) {
-			securityConfig = new SecurityConfig();
+	public EncryptionApiConfig getSecurityConfig() {
+		if (encryptionApiConfig == null) {
+			encryptionApiConfig = new EncryptionApiConfig();
 		}
-		return securityConfig;
+		return encryptionApiConfig;
 	}
 	public void initChaChaKeys(Key masterKey) {
 		var c = getSecurityConfig();

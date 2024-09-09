@@ -51,7 +51,7 @@ public class Connection extends EncryptionApiImpl<ClientApiSafe> implements Clie
 		this.basicStatus = false;
 		serverDescriptor = s;
 		var codec = AetherCodec.BINARY;
-		config = s.securityConfig;
+		config = s.encryptionApiConfig;
 		var con = AetherClientFactory.make(s.getURI(codec),
 				ProtocolConfig.of(ClientApiUnsafe.class, LoginApi.class, codec),
 				(p) -> this);

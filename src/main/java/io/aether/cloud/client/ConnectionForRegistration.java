@@ -1,7 +1,7 @@
 package io.aether.cloud.client;
 
 import io.aether.api.EncryptionApi;
-import io.aether.api.SecurityConfig;
+import io.aether.api.EncryptionApiConfig;
 import io.aether.api.EncryptionApiImpl;
 import io.aether.api.clientApi.ClientApiSafe;
 import io.aether.api.clientApi.ClientApiUnsafe;
@@ -25,7 +25,7 @@ public class ConnectionForRegistration extends EncryptionApiImpl<ClientApiSafe> 
 	private final AetherCloudClient client;
 	private final AFuture keysFuture = new AFuture();
 	AFuture connectFuture;
-	SecurityConfig globalSecurityConfig;
+	EncryptionApiConfig globalEncryptionApiConfig;
 	private Protocol<ClientApiUnsafe, RootApi> protocol;
 	private ClientApiSafe clientApiSafe;
 	@Override
@@ -83,12 +83,12 @@ public class ConnectionForRegistration extends EncryptionApiImpl<ClientApiSafe> 
 			p.flush();
 		}).toFuture();
 	}
-	public SecurityConfig getGlobalDataPreparerConfig() {
-		if (globalSecurityConfig == null) {
-			globalSecurityConfig = new SecurityConfig();
-			globalSecurityConfig.asymmetric = CryptoLib.SODIUM.env.asymmetric();
+	public EncryptionApiConfig getGlobalDataPreparerConfig() {
+		if (globalEncryptionApiConfig == null) {
+			globalEncryptionApiConfig = new EncryptionApiConfig();
+			globalEncryptionApiConfig.asymmetric = CryptoLib.SODIUM.env.asymmetric();
 		}
-		return globalSecurityConfig;
+		return globalEncryptionApiConfig;
 	}
 	public ClientApiSafe getClientApiSafe() {
 		if (clientApiSafe == null) clientApiSafe = new MyClientApiSafe();
