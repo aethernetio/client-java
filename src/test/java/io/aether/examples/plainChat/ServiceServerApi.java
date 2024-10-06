@@ -1,8 +1,6 @@
 package io.aether.examples.plainChat;
 
-import io.aether.net.ApiResultConsumer;
-
-public interface ServiceServerApi extends ApiResultConsumer {
+public interface ServiceServerApi  {
 	void registration(String name);
 	void sendMessage(String msg);
 }

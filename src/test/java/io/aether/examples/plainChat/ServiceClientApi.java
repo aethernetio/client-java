@@ -1,9 +1,8 @@
 package io.aether.examples.plainChat;
 
-import io.aether.net.ApiResultConsumer;
-import io.aether.net.Command;
+import io.aether.net.meta.Command;
 
-public interface ServiceClientApi extends ApiResultConsumer {
+public interface ServiceClientApi {
 	@Command(3)
 	void addNewUsers(UserDescriptor[] users);
 	@Command(4)

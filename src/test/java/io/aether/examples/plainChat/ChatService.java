@@ -7,6 +7,8 @@ import io.aether.cloud.client.ServerOverMessages;
 import io.aether.net.ApiDeserializerConsumer;
 import io.aether.net.RemoteApi;
 import io.aether.net.impl.bin.ApiLevelDeserializer;
+import io.aether.net.meta.ExceptionUnit;
+import io.aether.net.meta.ResultUnit;
 import io.aether.utils.futures.ARFuture;
 import io.aether.utils.streams.AStream;
 
@@ -31,9 +33,11 @@ public class ChatService {
 		public MyServiceServerApi(UUID uid) {
 			this.uid = uid;
 		}
+		ApiLevelDeserializer apiProcessor;
 		@Override
 		public void setApiDeserializer(ApiLevelDeserializer apiProcessor) {
 			remoteApi = apiProcessor.getRemoteApi();
+			this.apiProcessor=apiProcessor;
 		}
 		@Override
 		public void registration(String name) {
@@ -47,6 +51,17 @@ public class ChatService {
 			users.put(uid, u);
 			RemoteApi.of(remoteApi).flush();
 		}
+
+		@Override
+		public void sendResult(ResultUnit unit) {
+			apiProcessor.sendResultFromRemote(unit);
+		}
+
+		@Override
+		public void sendException(ExceptionUnit unit) {
+			apiProcessor.sendResultFromRemote(unit);
+		}
+
 		@Override
 		public void sendMessage(String msg) {
 			var md = new MessageDescriptor(uid, msg);
