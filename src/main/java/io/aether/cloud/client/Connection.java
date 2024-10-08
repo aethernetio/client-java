@@ -1,24 +1,25 @@
 package io.aether.cloud.client;
 
-import io.aether.client.AetherClientFactory;
-import io.aether.common.AetherCodec;
-import io.aether.net.AConnectionConfig;
+import io.aether.classBuilder.CType;
+import io.aether.net.NettyStreamClient;
+import io.aether.net.streams.ApiStream;
+import io.aether.net.streams.DownStream;
 import io.aether.utils.RU;
 import io.aether.utils.futures.AFuture;
 
 import java.net.URI;
 
-public abstract class Connection<LT, LTS, RT>  {
+public abstract class Connection<LT, RT> {
     protected final AetherCloudClient client;
     protected final URI uri;
     private final Class<LT> lt;
     private final Class<RT> rt;
-    protected AFuture connectFuture=new AFuture();
-    protected io.aether.net.AConnection<LT, RT> aConnection;
-    LTS localSafeApi;
-    public Connection(AetherCloudClient client, URI uri, Class<LT> lt, Class<RT> rt, LTS localSafeApi) {
+    protected AFuture connectFuture = new AFuture();
+    protected ApiStream<LT, RT, DownStream> apiStream;
+
+    public Connection(AetherCloudClient client, URI uri, Class<LT> lt, Class<RT> rt) {
         assert uri != null;
-        this.localSafeApi=localSafeApi;
+        this.apiStream = new ApiStream<>(null, CType.of(lt), CType.of(rt));
         this.uri = uri;
         this.client = client;
         this.lt = lt;
@@ -41,7 +42,7 @@ public abstract class Connection<LT, LTS, RT>  {
     public AFuture close(int time) {
         var res = new AFuture();
         connectFuture.to(() -> {
-                    aConnection.close();
+                    apiStream.close();
                     res.done();
                 })
                 .timeout(time, res::done);
@@ -49,12 +50,14 @@ public abstract class Connection<LT, LTS, RT>  {
     }
 
     protected void connect() {
-        var con = AetherClientFactory.make(uri, AConnectionConfig.of(lt, rt, AetherCodec.BINARY), RU.cast(this));
-        con.to((p) -> {
-            onConnect(p.getRemoteApi());
-            p.flush();
-        }).to(connectFuture);
-
+        var nettyStream = new NettyStreamClient(uri);
+        nettyStream.onConnect.add(s -> {
+            var aConnection = apiStream.forClient(RU.cast(this));
+            this.onConnect(aConnection.getRemoteApi());
+            apiStream.flush();
+            connectFuture.done();
+        });
+        apiStream.setDownBaseStream(nettyStream);
     }
 
     protected abstract void onConnect(RT remoteApi);

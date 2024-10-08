@@ -9,14 +9,14 @@ import io.aether.api.serverRegistryApi.RegistrationRootApi;
 import io.aether.api.serverRegistryApi.WorkProofUtil;
 import io.aether.common.SignedKey;
 import io.aether.net.ApiDeserializerConsumer;
-import io.aether.net.impl.bin.ApiLevelDeserializer;
+import io.aether.net.impl.bin.ApiLevel;
 import io.aether.net.meta.ExceptionUnit;
 import io.aether.net.meta.ResultUnit;
 import io.aether.utils.futures.AFuture;
 
 import java.net.URI;
 
-public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, ClientApiRegSafe, RegistrationRootApi> implements ClientApiRegUnsafe {
+public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, RegistrationRootApi> implements ClientApiRegUnsafe {
     private final EncryptionApiConfig globalDataPreparerConfig = new EncryptionApiConfig();
     private final AFuture keysFuture = new AFuture();
 
@@ -27,9 +27,9 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Clien
 
     @Override
     protected void onConnect(RegistrationRootApi remoteApi) {
-        var key = remoteApi.getAsymmetricPublicKey(client.getCryptLib());
+        var keyFuture = remoteApi.getAsymmetricPublicKey(client.getCryptLib());
         EncryptionApi.prepareRemote(remoteApi, getConfig());
-        key.to((signedKey) -> {
+        keyFuture.to((signedKey) -> {
             if (!signedKey.check()) {
                 throw new RuntimeException();
             }
@@ -57,9 +57,9 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Clien
                         var globalClientApi = globalClientApi0.asymmetric();
                         globalClientApi.setMasterKey(client.getMasterKey());
                         globalClientApi.finish();
-                        aConnection.flush();
+                        apiStream.flush();
                     });
-            aConnection.flush();
+            apiStream.flush();
         });
     }
 
@@ -73,10 +73,10 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Clien
 
     private static class MyClientApiSafe implements ClientApiRegSafe, ApiDeserializerConsumer {
         private final AetherCloudClient client;
-        ApiLevelDeserializer apiProcessor;
+        ApiLevel apiProcessor;
         io.aether.net.AConnection
         @Override
-        public void setApiDeserializer(ApiLevelDeserializer apiProcessor) {
+        public void setApiDeserializer(ApiLevel apiProcessor) {
             this.apiProcessor=apiProcessor;
         }
 

@@ -11,11 +11,11 @@ import io.aether.common.Message;
 import io.aether.common.ServerDescriptor;
 import io.aether.logger.Log;
 import io.aether.net.ApiDeserializerConsumer;
-import io.aether.net.impl.bin.ApiLevelDeserializer;
+import io.aether.net.impl.bin.ApiLevel;
 import io.aether.net.meta.ExceptionUnit;
 import io.aether.net.meta.ResultUnit;
 import io.aether.net.streams.ApiStream;
-import io.aether.net.streams.BytesStream;
+import io.aether.net.streams.DownStream;
 import io.aether.net.streams.CryptoStream;
 import io.aether.net.streams.SafeStream;
 import io.aether.utils.RU;
@@ -58,7 +58,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe,ClientApiSafe,Log
 	}
 
 	@Override
-	public void setApiDeserializer(ApiLevelDeserializer apiProcessor) {
+	public void setApiDeserializer(ApiLevel apiProcessor) {
 		super.setApiDeserializer(apiProcessor);
 	}
 
@@ -134,9 +134,9 @@ public class ConnectionWork extends Connection<ClientApiUnsafe,ClientApiSafe,Log
 			if (getConfig().symmetric == null) {
 				return;
 			}
-			ApiStream<ClientApiSafe, AuthorizedApi, SafeStream<CryptoStream<BytesStream>>> api =
+			ApiStream<ClientApiSafe, AuthorizedApi, SafeStream<CryptoStream<DownStream>>> api =
 					p.getRemoteApi().loginByUID(client.getUid());
-			api.getStream().getStream().setCryptoProvider(getConfig().symmetric);
+			api.getDownStream().getStream().setCryptoProvider(getConfig().symmetric);
 			authorizedApi=api.forClient(localSafeApi).getRemoteApi();
 			sendRequests(uid, authorizedApi);
 			p.flush();
@@ -216,9 +216,9 @@ public class ConnectionWork extends Connection<ClientApiUnsafe,ClientApiSafe,Log
 	}
 	private static class MyClientApiSafe implements ClientApiSafe, ApiDeserializerConsumer {
 		private final AetherCloudClient client;
-		private ApiLevelDeserializer apiProcessor;
+		private ApiLevel apiProcessor;
 		@Override
-		public void setApiDeserializer(ApiLevelDeserializer apiProcessor) {
+		public void setApiDeserializer(ApiLevel apiProcessor) {
 			this.apiProcessor=apiProcessor;
 		}
 

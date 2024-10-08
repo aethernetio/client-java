@@ -5,7 +5,7 @@ import io.aether.cloud.client.ClientConfiguration;
 import io.aether.cloud.client.ClientOverMessages;
 import io.aether.net.ApiDeserializerConsumer;
 import io.aether.net.RemoteApi;
-import io.aether.net.impl.bin.ApiLevelDeserializer;
+import io.aether.net.impl.bin.ApiLevel;
 import io.aether.net.meta.ExceptionUnit;
 import io.aether.net.meta.ResultUnit;
 import io.aether.utils.slots.EventConsumer;
@@ -29,9 +29,9 @@ public class ChatClient implements ServiceClientApi, ApiDeserializerConsumer {
 		service.registration(name);
 		flush();
 	}
-	private ApiLevelDeserializer apiProcessor;
+	private ApiLevel apiProcessor;
 	@Override
-	public void setApiDeserializer(ApiLevelDeserializer apiProcessor) {
+	public void setApiDeserializer(ApiLevel apiProcessor) {
 		this.apiProcessor=apiProcessor;
 	}
 
