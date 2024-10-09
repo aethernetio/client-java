@@ -358,7 +358,7 @@ public final class AetherCloudClient {
         requestsResolveServers.remove(sd.getId());
     }
 
-    public void putServerDescriptor(ServerDescriptor sd) {
+    public void putServerDescriptor(ServerDescriptorLite sd) {
         var f = resolvedServers.computeIfAbsent((int) sd.id(), k -> new ARFuture<>());
         if (!f.tryDone(ServerDescriptorOnClient.of(sd, getMasterKey()))) {
             var sdc = f.get();
@@ -377,4 +377,5 @@ public final class AetherCloudClient {
     public UUID getAlias() {
         return getUid();
     }
+
 }

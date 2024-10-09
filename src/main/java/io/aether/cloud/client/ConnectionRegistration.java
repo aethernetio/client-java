@@ -1,42 +1,40 @@
 package io.aether.cloud.client;
 
-import io.aether.api.EncryptionApi;
-import io.aether.api.EncryptionApiConfig;
 import io.aether.api.clientApi.ClientApiRegSafe;
 import io.aether.api.clientApi.ClientApiRegUnsafe;
-import io.aether.api.serverRegistryApi.RegistrationResponseLite;
+import io.aether.api.serverRegistryApi.GlobalRegClientApi;
+import io.aether.api.serverRegistryApi.PowMethod;
 import io.aether.api.serverRegistryApi.RegistrationRootApi;
 import io.aether.api.serverRegistryApi.WorkProofUtil;
-import io.aether.common.SignedKey;
-import io.aether.net.ApiDeserializerConsumer;
-import io.aether.net.impl.bin.ApiLevel;
-import io.aether.net.meta.ExceptionUnit;
-import io.aether.net.meta.ResultUnit;
 import io.aether.utils.futures.AFuture;
 
 import java.net.URI;
 
 public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, RegistrationRootApi> implements ClientApiRegUnsafe {
-    private final EncryptionApiConfig globalDataPreparerConfig = new EncryptionApiConfig();
     private final AFuture keysFuture = new AFuture();
 
     public ConnectionRegistration(AetherCloudClient client, URI uri) {
-        super(client, uri, ClientApiRegUnsafe.class, RegistrationRootApi.class, new MyClientApiSafe(client));
+        super(client, uri, ClientApiRegUnsafe.class, RegistrationRootApi.class);
         connect();
     }
 
     @Override
     protected void onConnect(RegistrationRootApi remoteApi) {
         var keyFuture = remoteApi.getAsymmetricPublicKey(client.getCryptLib());
-        EncryptionApi.prepareRemote(remoteApi, getConfig());
         keyFuture.to((signedKey) -> {
             if (!signedKey.check()) {
                 throw new RuntimeException();
             }
-            getConfig().asymmetric = signedKey.key().getType().cryptoLib().env.asymmetric(signedKey.key());
-            EncryptionApi.prepareRemote(remoteApi, getConfig());
-            var safeApi = remoteApi.asymmetric();
-            safeApi.requestWorkProofData2(client.getParent(), client.getCryptLib())
+            var safeStream = remoteApi.enter(client.getCryptLib());
+            safeStream.getDownStream().setCryptoProviderDown(signedKey.key().getType().cryptoLib().env.asymmetric(signedKey.key()));
+            var safeApi = safeStream
+                    .forClient(new ClientApiRegSafe() {
+                    })
+                    .getRemoteApi();
+            var tempKey=client.getCryptLib().env.makeSymmetricKey();
+            var cp = tempKey.symmetricProvider();
+            safeStream.getDownStream().setCryptoProviderUp(cp);
+            safeApi.requestWorkProofData(client.getParent(), PowMethod.AE_BCRYPT_CRC32,tempKey)
                     .to(wpd -> {
                         var passwords = WorkProofUtil.generateProofOfWorkPool(
                                 wpd.salt(),
@@ -44,59 +42,28 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
                                 wpd.maxHashVal(),
                                 wpd.poolSize(),
                                 5000);
-                        EncryptionApi.prepareRemote(remoteApi, getConfig());
-                        getConfig().symmetric = client.getMasterKey().getType().cryptoLib().env.symmetricForClientAndServer(client.getMasterKey());
-                        var globalClientApi0 = remoteApi
-                                .asymmetric()
-                                .registration(client.getParent(), wpd.salt(), wpd.suffix(), passwords, client.getMasterKey());
+                        var globalApiStream = safeApi.registration(wpd.salt(), wpd.suffix(), passwords, client.getMasterKey());
                         if (!wpd.globalKey().check()) {
                             throw new RuntimeException();
                         }
-                        globalDataPreparerConfig.asymmetric = wpd.globalKey().key().getType().cryptoLib().env.asymmetric(wpd.globalKey().key());
-                        EncryptionApi.prepareRemote(globalClientApi0, globalDataPreparerConfig);
-                        var globalClientApi = globalClientApi0.asymmetric();
-                        globalClientApi.setMasterKey(client.getMasterKey());
-                        globalClientApi.finish();
-                        apiStream.flush();
+                        var masterKey = client.getMasterKey();
+                        globalApiStream.getDownStream().setCryptoProviderDown(wpd.globalKey().key().asymmetricProvider());
+                        globalApiStream.getDownStream().setCryptoProviderUp(masterKey.symmetricProvider());
+                        var globalClientApi = globalApiStream.forClient(new GlobalRegClientApi() {
+                        }).getRemoteApi();
+                        globalClientApi.setMasterKey(masterKey);
+                        globalClientApi.finish().to(d -> {
+                            safeApi.resolveServers(d.cloud()).to(ss -> {
+                                for (var s : ss) {
+                                    client.putServerDescriptor(s);
+                                }
+                                client.confirmRegistration(d);
+                            });
+                        });
+                        globalApiStream.flush();
                     });
             apiStream.flush();
         });
     }
 
-    @Override
-    public void sendServerKeys(SignedKey asymPublicKey, SignedKey signKey) {
-        //TODO check
-        var k = asymPublicKey.key();
-        this.getConfig().asymmetric = k.getType().cryptoLib().env.asymmetric(k);
-        keysFuture.done();
-    }
-
-    private static class MyClientApiSafe implements ClientApiRegSafe, ApiDeserializerConsumer {
-        private final AetherCloudClient client;
-        ApiLevel apiProcessor;
-        io.aether.net.AConnection
-        @Override
-        public void setApiDeserializer(ApiLevel apiProcessor) {
-            this.apiProcessor=apiProcessor;
-        }
-
-        @Override
-        public void sendResult(ResultUnit unit) {
-            apiProcessor.getConnection().sendResultFromRemote(unit);
-        }
-
-        @Override
-        public void sendException(ExceptionUnit unit) {
-            apiProcessor.sendResultFromRemote(unit);
-        }
-
-        public MyClientApiSafe(AetherCloudClient client) {
-            this.client = client;
-        }
-
-        @Override
-        public void confirmRegistration(RegistrationResponseLite registrationResponse) {
-            client.confirmRegistration(registrationResponse);
-        }
-    }
 }
