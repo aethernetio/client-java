@@ -2,7 +2,7 @@ package io.aether.cloud.client;
 
 import io.aether.common.Cloud;
 import io.aether.common.Key;
-import io.aether.common.ServerDescriptor;
+import io.aether.common.ServerDescriptorLite;
 import io.aether.sodium.Nonce;
 
 import java.net.URI;
@@ -34,17 +34,10 @@ public class ClientConfiguration {
 	public ServerConfig getServerConfig(int sid) {
 		return servers.computeIfAbsent(sid, ServerConfig::new);
 	}
-	public ServerDescriptorOnClient getServerDescriptor(int serverId) {
+	public ServerDescriptorLite getServerDescriptor(int serverId) {
 		assert serverId > 0;
 		var ds = getServerConfig(serverId);
-		var res = new ServerDescriptorOnClient(ds.descriptor, masterKey);
-		var nonce = ds.nonce;
-		if (nonce == null) {
-			ds.nonce = Nonce.of();
-			nonce = ds.nonce;
-		}
-		res.getSecurityConfig().symmetric = masterKey.getType().cryptoLib().env.symmetricForClient(masterKey, serverId, nonce);
-		return res;
+		return ds.descriptor;
 	}
 	public void saveCloud(UUID uid, Cloud cloud) {
 		getUidConfig(uid).cloud = cloud;
@@ -63,11 +56,11 @@ public class ClientConfiguration {
 	public static class ServerConfig {
 		int sid;
 		Nonce nonce;
-		ServerDescriptor descriptor;
+		ServerDescriptorLite descriptor;
 		public ServerConfig(int sid) {
 			this.sid = sid;
 		}
-		public ServerConfig(ServerDescriptor descriptor) {
+		public ServerConfig(ServerDescriptorLite descriptor) {
 			this(descriptor.id());
 			this.descriptor = descriptor;
 		}

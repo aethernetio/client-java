@@ -55,14 +55,14 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
                         globalClientApi.finish().to(d -> {
                             safeApi.resolveServers(d.cloud()).to(ss -> {
                                 for (var s : ss) {
-                                    client.putServerDescriptor(s);
+                                    client.servers.set(s);
                                 }
                                 client.confirmRegistration(d);
                             });
                         });
                         globalApiStream.flush();
                     });
-            apiStream.flush();
+            apiStreamRoot.flush();
         });
     }
 

@@ -10,7 +10,7 @@ import io.aether.net.impl.bin.ApiLevel;
 import io.aether.net.meta.ExceptionUnit;
 import io.aether.net.meta.ResultUnit;
 import io.aether.utils.futures.ARFuture;
-import io.aether.utils.streams.AStream;
+import io.aether.utils.flow.Flow;
 
 import java.util.Map;
 import java.util.UUID;
@@ -47,7 +47,7 @@ public class ChatService {
 				r.addNewUsers(new UserDescriptor[]{u});
 				RemoteApi.of(r).flush();
 			}
-			remoteApi.addNewUsers(AStream.streamOf(users.values()).toArray(UserDescriptor.class));
+			remoteApi.addNewUsers(Flow.flow(users.values()).toArray(UserDescriptor.class));
 			users.put(uid, u);
 			RemoteApi.of(remoteApi).flush();
 		}
