@@ -3,18 +3,11 @@ package io.aether.examples;
 import io.aether.StandardUUIDs;
 import io.aether.cloud.client.AetherCloudClient;
 import io.aether.cloud.client.ClientConfiguration;
-import io.aether.cloud.client.MessageRequest;
-import io.aether.common.Message;
-import io.aether.common.SignChecker;
-import io.aether.logger.Log;
 import org.junit.jupiter.api.Test;
 
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.TimeUnit;
 
 public class PerformanceTest {
     public ClientConfiguration clientConfig1;
@@ -29,24 +22,6 @@ public class PerformanceTest {
         AetherCloudClient client2 = new AetherCloudClient(clientConfig2);
         client1.startFuture.waitDoneSeconds(4);
         client2.startFuture.waitDoneSeconds(4);
-        long min = Long.MAX_VALUE;
-        var message = new byte[8];
-        BlockingQueue<Message> mq = new ArrayBlockingQueue<>(10);
-        client2.onMessage(mq::add);
-        while (true) {
-            var t1 = System.nanoTime();
-            new MessageRequest(client1, client2.getUid(), message)
-                    .requestByStrategy(MessageRequest.STRATEGY_FAST);
-//			client1.sendMessage(client2.getUid(), message);
-            var m = mq.poll(10, TimeUnit.SECONDS);
-            var t2 = System.nanoTime();
-            var delta = t2 - t1;
-            if (min > delta) {
-                min = delta;
-//                Log.info("MIN: "+min+" ("+min/1000000+"ms)");
-                System.out.println("MIN: "+min+" ("+min/1000000+"ms)");
-            }
-        }
     }
 
     @Test
@@ -59,22 +34,5 @@ public class PerformanceTest {
         AetherCloudClient client2 = new AetherCloudClient(clientConfig2);
         client1.startFuture.waitDoneSeconds(4);
         client2.startFuture.waitDoneSeconds(4);
-        long min = Long.MAX_VALUE;
-        var message = new byte[8];
-        BlockingQueue<Message> mq = new ArrayBlockingQueue<>(10);
-        client2.onMessage(mq::add);
-        while (true) {
-            var t1 = System.nanoTime();
-            new MessageRequest(client1, client2.getUid(), message)
-                    .requestByStrategy(MessageRequest.STRATEGY_FAST);
-//			client1.sendMessage(client2.getUid(), message);
-            var m = mq.poll(10, TimeUnit.SECONDS);
-            var t2 = System.nanoTime();
-            var delta = t2 - t1;
-            if (min > delta) {
-                min = delta;
-                System.out.println("MIN: "+min+" ("+min/1000000+"ms)");
-            }
-        }
     }
 }

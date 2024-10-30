@@ -4,7 +4,6 @@ import io.aether.api.clientApi.ClientApiSafe;
 import io.aether.api.clientApi.ClientApiUnsafe;
 import io.aether.api.serverApi.AuthorizedApi;
 import io.aether.api.serverApi.LoginApi;
-import io.aether.api.serverRegistryApi.RegistrationResponseLite;
 import io.aether.common.AetherCodec;
 import io.aether.common.ServerDescriptorLite;
 import io.aether.net.ApiDeserializerConsumer;
@@ -24,30 +23,33 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
 
     //region counters
     public final AtomicLong lastBackPing = new AtomicLong(Long.MAX_VALUE);
+    final ApiStream<ClientApiSafe, AuthorizedApi, CryptoStream<DownStream>> safeApiStream;
     private final ServerDescriptorLite serverDescriptor;
     final private AtomicBoolean inProcess = new AtomicBoolean();
     boolean basicStatus;
     long lastWorkTime;
     AuthorizedApi authorizedApi;
-    public DownStream openStreamToClient(UUID uid){
-        return authorizedApi.openStreamToClient(uid);
-    }
     ApiLevel apiLevel;
+
     public ConnectionWork(AetherCloudClient client, ServerDescriptorLite s) {
         super(client, s.ipAddress().getURI(AetherCodec.BINARY), ClientApiUnsafe.class, LoginApi.class);
         this.basicStatus = false;
         var mk = client.getMasterKey();
-        safeApiStream=RU.cast(ApiStream.of(
+        safeApiStream = RU.cast(ApiStream.of(
                 ClientApiSafe.class,
                 AuthorizedApi.class,
                 BufferedStream.of(CryptoStream.of(mk.getType().cryptoLib().env.symmetricForClient(mk, s.id())))
         ));
-        authorizedApi=safeApiStream.forClient(new MyClientApiSafe(client)).getRemoteApi();
+        authorizedApi = safeApiStream.forClient(new MyClientApiSafe(client)).getRemoteApi();
         serverDescriptor = s;
         client.servers.addSource(authorizedApi.getServerDescriptor());
         connect();
     }
-    final ApiStream<ClientApiSafe, AuthorizedApi, CryptoStream<DownStream>> safeApiStream;
+
+    public DownStream openStreamToClient(UUID uid) {
+        return authorizedApi.openStreamToClient(uid);
+    }
+
     @Override
     protected void onConnect(LoginApi remoteApi) {
         safeApiStream.setDownBase(remoteApi.loginByAlias(client.getAlias()).getDownBase());
@@ -97,13 +99,8 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
         }
 
         @Override
-        public void confirmRegistration(RegistrationResponseLite registrationResponse) {
-            client.confirmRegistration(registrationResponse);
-        }
-
-        @Override
-        public void streamToClient(@NotNull DownStream message) {
-            //TODO
+        public void streamToClient(@NotNull UUID uid, @NotNull DownStream message) {
+            client.onClientStream.fire(uid, message);
         }
     }
 }

@@ -10,7 +10,9 @@ import io.aether.net.meta.ApiManager;
 import io.aether.utils.RU;
 import io.aether.utils.ThreadSafe;
 import io.aether.utils.futures.AFuture;
+import io.aether.utils.interfaces.ABiConsumer;
 import io.aether.utils.interfaces.AConsumer;
+import io.aether.utils.slots.EventBiConsumer;
 import io.aether.utils.slots.EventSourceConsumer;
 import io.aether.utils.streams.BufferedStream;
 import io.aether.utils.streams.DownStream;
@@ -42,6 +44,7 @@ public final class AetherCloudClient {
     private final Collection<ScheduledFuture<?>> scheduledFutures = new HashSet<>();
     private final AtomicBoolean startConnection = new AtomicBoolean();
     public ElementsStream<UUID,DownStream> onNewChildren = ElementsStream.of(ApiManager.UUID);
+    public EventBiConsumer<UUID, DownStream> onClientStream=new EventBiConsumer<>();
     Key masterKey;
     long lastSecond;
     private String name;
@@ -202,7 +205,7 @@ public final class AetherCloudClient {
             var server=servers.get(c);
         }
         servers.flush();
-        flow(regResp.cloud())
+        flow(regResp.cloud().data())
                 .mapToObj(sid -> servers.get(sid).toFuture().toFuture())
                 .allMap(AFuture::all).to(startFuture::tryDone);
     }
@@ -261,4 +264,7 @@ public final class AetherCloudClient {
         return getUid();
     }
 
+    public void onClientStream(ABiConsumer<UUID,DownStream>consumer) {
+        onClientStream.add(consumer);
+    }
 }
