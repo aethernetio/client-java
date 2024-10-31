@@ -1,6 +1,8 @@
 package io.aether.cloud.client;
 
+import io.aether.common.AetherCodec;
 import io.aether.net.NettyStreamClient;
+import io.aether.net.NetworkConfigurator;
 import io.aether.utils.RU;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.streams.ApiStream;
@@ -16,6 +18,7 @@ public abstract class Connection<LT, RT> {
     private final Class<RT> rt;
     protected AFuture connectFuture = new AFuture();
     protected ApiStream<LT, RT, DownStream> apiStreamRoot;
+    NetworkConfigurator configurator = AetherCodec.BINARY.getNetworkConfigurator();
 
     public Connection(AetherCloudClient client, URI uri, Class<LT> lt, Class<RT> rt) {
         assert uri != null;
@@ -50,7 +53,7 @@ public abstract class Connection<LT, RT> {
     }
 
     protected void connect() {
-        var nettyStream = new NettyStreamClient(uri);
+        var nettyStream = new NettyStreamClient(uri, configurator);
         nettyStream.onConnect.add(s -> {
             var aConnection = apiStreamRoot.forClient(RU.cast(this));
             this.onConnect(aConnection.getRemoteApi());
