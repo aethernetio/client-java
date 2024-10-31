@@ -10,6 +10,7 @@ import io.aether.net.impl.bin.ApiLevel;
 import io.aether.utils.flow.Flow;
 import io.aether.utils.futures.ARFuture;
 import io.aether.utils.streams.ApiStream;
+import io.aether.utils.streams.DownStream;
 
 import java.util.Map;
 import java.util.UUID;
@@ -19,7 +20,7 @@ public class ChatService {
 	public static ARFuture<UUID> uid = new ARFuture<>();
 	private final Map<UUID, UserDescriptor> users = new ConcurrentHashMap<>();
 	public final AetherCloudClient aether;
-	public final Map<UUID, ApiStreamConnection<ServiceServerApi,ServiceClientApi>> clients=new ConcurrentHashMap<>();
+	public final Map<UUID, ApiStreamConnection<ServiceServerApi,ServiceClientApi, DownStream>> clients=new ConcurrentHashMap<>();
 	public ChatService() {
 		aether = new AetherCloudClient(new ClientConfiguration(StandardUUIDs.TEST_UID,  null))
 				.waitStart(10);
