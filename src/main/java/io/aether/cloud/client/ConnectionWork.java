@@ -42,7 +42,10 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
         ));
         authorizedApi = safeApiStream.forClient(new MyClientApiSafe(client)).getRemoteApi();
         serverDescriptor = s;
-        client.servers.addSource(authorizedApi.getServerDescriptor());
+        client.servers.addSource(authorizedApi.getServerDescriptor().mapKey(
+                Integer::shortValue,
+                Short::intValue
+        ));
         connect();
     }
 
