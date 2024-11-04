@@ -61,6 +61,7 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
                                 }
                                 client.confirmRegistration(d);
                             });
+                            RemoteApi.of(safeApi).flush();
                         });
                         globalApiStream.flush();
                     });
