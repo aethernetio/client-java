@@ -6,6 +6,7 @@ import io.aether.api.serverRegistryApi.GlobalRegClientApi;
 import io.aether.api.serverRegistryApi.PowMethod;
 import io.aether.api.serverRegistryApi.RegistrationRootApi;
 import io.aether.api.serverRegistryApi.WorkProofUtil;
+import io.aether.logger.Log;
 import io.aether.net.RemoteApi;
 import io.aether.utils.futures.AFuture;
 
@@ -21,8 +22,10 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
 
     @Override
     protected void onConnect(RegistrationRootApi remoteApi) {
+        Log.debug("request asym public key");
         var keyFuture = remoteApi.getAsymmetricPublicKey(client.getCryptLib());
         keyFuture.to((signedKey) -> {
+            Log.debug("asym public key was got");
             if (!signedKey.check()) {
                 throw new RuntimeException();
             }
@@ -33,10 +36,10 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
                     .forClient(new ClientApiRegSafe() {
                     })
                     .getRemoteApi();
-            var tempKey=client.getCryptLib().env.makeSymmetricKey();
+            var tempKey = client.getCryptLib().env.makeSymmetricKey();
             var cp = tempKey.symmetricProvider();
             safeStream.getDownStream().setCryptoDecoder(cp);
-            safeApi.requestWorkProofData(client.getParent(), PowMethod.AE_BCRYPT_CRC32,tempKey)
+            safeApi.requestWorkProofData(client.getParent(), PowMethod.AE_BCRYPT_CRC32, tempKey)
                     .to(wpd -> {
                         var passwords = WorkProofUtil.generateProofOfWorkPool(
                                 wpd.salt(),
@@ -67,6 +70,7 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
                     });
             RemoteApi.of(safeApi).flush();
         });
+        RemoteApi.of(remoteApi).flush();
     }
 
 }

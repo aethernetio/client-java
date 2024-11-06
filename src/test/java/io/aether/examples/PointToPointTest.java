@@ -28,6 +28,7 @@ public class PointToPointTest {
         var message = "Hello world!".getBytes();
         var chToc2 = client1.openStreamToClient(client2.getUid());
         chToc2.upToDown(message);
+        chToc2.flush();
         AFuture checkReceiveMessage = new AFuture();
         client2.onClientStream((u, st) -> {
             Assertions.assertEquals(client1.getUid(), u);

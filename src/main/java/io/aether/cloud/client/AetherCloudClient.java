@@ -1,10 +1,7 @@
 package io.aether.cloud.client;
 
 import io.aether.api.serverRegistryApi.RegistrationResponseLite;
-import io.aether.common.Cloud;
-import io.aether.common.CryptoLib;
-import io.aether.common.Key;
-import io.aether.common.ServerDescriptorLite;
+import io.aether.common.*;
 import io.aether.logger.Log;
 import io.aether.net.meta.ApiManager;
 import io.aether.utils.RU;
@@ -12,12 +9,11 @@ import io.aether.utils.ThreadSafe;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.interfaces.ABiConsumer;
 import io.aether.utils.interfaces.AConsumer;
-import io.aether.utils.slots.EventBiConsumer;
 import io.aether.utils.slots.ARMultiFuture;
+import io.aether.utils.slots.EventBiConsumer;
 import io.aether.utils.streams.BufferedStream;
 import io.aether.utils.streams.DownStream;
 import io.aether.utils.streams.ElementsStream;
-import io.aether.utils.streams.RefreshedValue;
 import io.aether.utils.streams.impl.MapBase;
 import org.jetbrains.annotations.NotNull;
 
@@ -27,24 +23,29 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static io.aether.utils.flow.Flow.flow;
 
 public final class AetherCloudClient {
     private static final List<URI> DEFAULT_URL_FOR_CONNECT = List.of(URI.create("registration.aether.io"));
-    public final AtomicBoolean beginCreateUser = new AtomicBoolean();
     public final AFuture startFuture = new AFuture();
     final Map<Integer, ConnectionWork> connections = new ConcurrentHashMap<>();
-    final Map<UUID, RefreshedValue<Cloud>> clouds=new ConcurrentHashMap<>();
-    final AtomicBoolean tryReg = new AtomicBoolean();
-    final AtomicBoolean successfulAuthorization = new AtomicBoolean();
-    final MapBase<Integer, ServerDescriptorLite> servers=new MapBase<>(ServerDescriptorLite::idAsInt);
-    final AFuture registrationFuture = new AFuture();
+    final MapBase<UUID, UUIDAndCloud> clouds = new MapBase<>(UUIDAndCloud::uid);
+
+    private enum RegStatus {
+        NO,
+        BEGIN,
+        CONFIRM
+    }
+
+    final AtomicReference<RegStatus> regStatus = new AtomicReference<>(RegStatus.NO);
+    final MapBase<Integer, ServerDescriptorLite> servers = new MapBase<>(ServerDescriptorLite::idAsInt);
     private final ClientConfiguration clientConfiguration;
     private final Collection<ScheduledFuture<?>> scheduledFutures = new HashSet<>();
     private final AtomicBoolean startConnection = new AtomicBoolean();
-    public ElementsStream<UUID,DownStream> onNewChildren = ElementsStream.of(ApiManager.UUID);
-    public EventBiConsumer<UUID, DownStream> onClientStream=new EventBiConsumer<>();
+    public ElementsStream<UUID, DownStream> onNewChildren = ElementsStream.of(ApiManager.UUID);
+    public EventBiConsumer<UUID, DownStream> onClientStream = new EventBiConsumer<>();
     Key masterKey;
     long lastSecond;
     private String name;
@@ -66,27 +67,24 @@ public final class AetherCloudClient {
         this.name = name;
     }
 
-    public ARMultiFuture<ServerDescriptorLite> resolveServer(int serverId) {
-        return servers.get(serverId);
-    }
-
     @ThreadSafe
     public void getCloudForUid(@NotNull UUID uid, AConsumer<ServerDescriptorLite> t) {
-        getCloud(uid).get(p -> {
+        getCloud(uid).to(p -> {
             for (var pp : p.data()) {
-                servers.get((int)pp).to(t);
+                servers.get((int) pp).to(t);
             }
         });
     }
 
     void getConnection(@NotNull UUID uid, @NotNull AConsumer<ConnectionWork> t) {
         getCloudForUid(uid, sd -> {
-            t.accept(getConnection(sd));
+            var c=getConnection(sd);
+            c.ready.to(t::accept);
         });
     }
 
     ConnectionWork getConnection(@NotNull ServerDescriptorLite serverDescriptor) {
-        servers.set((int)serverDescriptor.id(), serverDescriptor);
+        servers.set((int) serverDescriptor.id(), serverDescriptor);
         var c = connections.get((int) serverDescriptor.id());
         if (c == null) {
             c = connections.computeIfAbsent((int) serverDescriptor.id(),
@@ -113,12 +111,6 @@ public final class AetherCloudClient {
         getConnection(ConnectionWork::scheduledWork);
     }
 
-    public void changeCloud(Cloud cloud) {
-        var uid = getUid();
-        assert uid != null;
-        updateCloud(uid, cloud);
-    }
-
     public AFuture connect() {
         if (!startConnection.compareAndSet(false, true)) return startFuture;
         connect(10);
@@ -129,7 +121,7 @@ public final class AetherCloudClient {
         if (step == 0) {
             return;
         }
-        if (!isRegistered() && tryReg.compareAndSet(false, true)) {
+        if (!isRegistered() && regStatus.compareAndSet(RegStatus.NO, RegStatus.BEGIN)) {
             var uris = clientConfiguration.cloudFactoryUrl;
             if (uris == null || uris.isEmpty()) {
                 uris = DEFAULT_URL_FOR_CONNECT;
@@ -153,7 +145,9 @@ public final class AetherCloudClient {
                         RU.schedule(1000, () -> this.connect(step - 1));
                     });
         } else {
-            var cloud = clientConfiguration.getCloud(getUid());
+            var uid = getUid();
+            assert uid != null;
+            var cloud = clientConfiguration.getCloud(uid);
             if (cloud == null || cloud.isEmpty()) throw new UnsupportedOperationException();
             for (var serverId : cloud) {
                 getConnection(clientConfiguration.getServerDescriptor(serverId));
@@ -169,6 +163,7 @@ public final class AetherCloudClient {
         getConnection(Objects.requireNonNull(getUid()), c -> {
             c.setBasic(true);
             t.accept(c);
+            c.flush();
         });
     }
 
@@ -176,13 +171,19 @@ public final class AetherCloudClient {
         return connections.values();
     }
 
-    public RefreshedValue<Cloud> getCloud(@NotNull UUID uid) {
-        return clouds.get(uid);
-    }
-
-    public void updateCloud(@NotNull UUID uid, @NotNull Cloud serverIds) {
-        clientConfiguration.setCloud(uid, serverIds);
-        getCloud(uid).set(serverIds);
+    public ARMultiFuture<Cloud> getCloud(@NotNull UUID uid) {
+        var res= clouds.get(uid).map(UUIDAndCloud::cloud);
+        if(!res.isDone()){
+            if(clouds.sources.isEmpty()){
+                getConnection(c->{
+                    clouds.flush();
+                    c.apiLevel.getConnection().flush();
+                });
+            }else{
+                clouds.flush();
+            }
+        }
+        return res;
     }
 
     public long getPingTime() {
@@ -194,32 +195,26 @@ public final class AetherCloudClient {
     }
 
     public void confirmRegistration(RegistrationResponseLite regResp) {
-        if (!successfulAuthorization.compareAndSet(false, true)) return;
+        assert !isRegistered();
+        if (!regStatus.compareAndSet(RegStatus.BEGIN, RegStatus.CONFIRM)) return;
         Log.trace("confirmRegistration: " + regResp);
+        clouds.set(new UUIDAndCloud(regResp.uid(), regResp.cloud()));
         clientConfiguration.uid = regResp.uid();
         clientConfiguration.uid(regResp.uid());
-        beginCreateUser.set(false);
-        registrationFuture.done();
         assert isRegistered();
-        for(var c:regResp.cloud()){
-            var server=servers.get((int)c);
+        for (var c : regResp.cloud()) {
+            servers.get((int) c).to(cl -> Log.info("resolve server: " + cl));
         }
         servers.flush();
         flow(regResp.cloud().data())
-                .mapToObj(sid -> servers.get((int)sid).toFuture().toFuture())
+                .mapToInt()
+                .mapToObj(sid -> servers.get(sid).toFuture().toFuture())
                 .allMap(AFuture::all).to(startFuture::tryDone);
     }
 
-    public void updateCloud(@NotNull UUID uid, @NotNull ServerDescriptorLite @NotNull [] cloud) {
-        for (var s : cloud) {
-            resolveServer(s.id()).set(s);
-        }
-        getCloud(uid).set(Cloud.of(flow(cloud).mapToInt(ServerDescriptorLite::id).toShortArray()));
-    }
-
     public DownStream openStreamToClient(@NotNull UUID uid) {
-        DownStream res= BufferedStream.of();
-        getConnection(uid,s->{
+        DownStream res = BufferedStream.of();
+        getConnection(uid, s -> {
             res.setDownBase(s.openStreamToClient(uid));
         });
         return res;
@@ -264,7 +259,7 @@ public final class AetherCloudClient {
         return getUid();
     }
 
-    public void onClientStream(ABiConsumer<UUID,DownStream>consumer) {
+    public void onClientStream(ABiConsumer<UUID, DownStream> consumer) {
         onClientStream.add(consumer);
     }
 }

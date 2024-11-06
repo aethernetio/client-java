@@ -43,6 +43,7 @@ public class ClientConfiguration {
 		getUidConfig(uid).cloud = cloud;
 	}
 	public UidConfig getUidConfig(UUID uid) {
+		assert uid!=null;
 		return uidConfigs.computeIfAbsent(uid, UidConfig::new);
 	}
 	public void setCloud(UUID uid, Cloud cloud) {
@@ -51,6 +52,7 @@ public class ClientConfiguration {
 		saveCloud(uid, cloud);
 	}
 	public Cloud getCloud(UUID uid) {
+		assert uid!=null;
 		return getUidConfig(uid).cloud;
 	}
 	public static class ServerConfig {

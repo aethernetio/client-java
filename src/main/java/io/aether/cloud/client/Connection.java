@@ -1,6 +1,7 @@
 package io.aether.cloud.client;
 
 import io.aether.common.AetherCodec;
+import io.aether.logger.Log;
 import io.aether.net.NettyStreamClient;
 import io.aether.net.NetworkConfigurator;
 import io.aether.utils.RU;
@@ -53,14 +54,21 @@ public abstract class Connection<LT, RT> {
     }
 
     protected void connect() {
+        Log.debug("try to connect "+getClass());
         var nettyStream = new NettyStreamClient(uri, configurator);
-        nettyStream.onConnect.add(s -> {
+        nettyStream.onConnect.to(s -> {
+            Log.debug("on connect for "+getClass());
+            apiStreamRoot.setDownBase(s);
+            Log.debug("make localApi");
             var aConnection = apiStreamRoot.forClient(RU.cast(this));
-            this.onConnect(aConnection.getRemoteApi());
-            apiStreamRoot.flush();
+            Log.debug("connectFuture is done");
             connectFuture.done();
+            Log.debug("get remote api");
+            var remApi=aConnection.getRemoteApi();
+            Log.debug("call onConnect");
+            this.onConnect(remApi);
+            apiStreamRoot.flush();
         });
-        apiStreamRoot.setDownBase(nettyStream);
     }
 
     protected abstract void onConnect(RT remoteApi);

@@ -6,9 +6,12 @@ import io.aether.api.serverApi.AuthorizedApi;
 import io.aether.api.serverApi.LoginApi;
 import io.aether.common.AetherCodec;
 import io.aether.common.ServerDescriptorLite;
+import io.aether.logger.Log;
 import io.aether.net.ApiDeserializerConsumer;
+import io.aether.net.ApiStreamConnection;
 import io.aether.net.impl.bin.ApiLevel;
 import io.aether.utils.RU;
+import io.aether.utils.slots.ARMultiFuture;
 import io.aether.utils.streams.ApiStream;
 import io.aether.utils.streams.BufferedStream;
 import io.aether.utils.streams.CryptoStream;
@@ -24,6 +27,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
     //region counters
     public final AtomicLong lastBackPing = new AtomicLong(Long.MAX_VALUE);
     final ApiStream<ClientApiSafe, AuthorizedApi, CryptoStream<DownStream>> safeApiStream;
+    final ApiStreamConnection<ClientApiSafe, AuthorizedApi,CryptoStream<DownStream>> safeApiCon;
     private final ServerDescriptorLite serverDescriptor;
     final private AtomicBoolean inProcess = new AtomicBoolean();
     boolean basicStatus;
@@ -40,12 +44,14 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
                 AuthorizedApi.class,
                 BufferedStream.of(CryptoStream.of(mk.getType().cryptoLib().env.symmetricForClient(mk, s.id())))
         ));
-        authorizedApi = safeApiStream.forClient(new MyClientApiSafe(client)).getRemoteApi();
+        safeApiCon=safeApiStream.forClient(new MyClientApiSafe(client));
+        authorizedApi = safeApiCon.getRemoteApi();
         serverDescriptor = s;
-        client.servers.addSource(authorizedApi.getServerDescriptor().mapKey(
+        client.servers.addSource(authorizedApi.serverResolver().mapKey(
                 Integer::shortValue,
                 Short::intValue
         ));
+        client.clouds.addSource(authorizedApi.cloudResolver());
         connect();
     }
 
@@ -53,9 +59,16 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
         return authorizedApi.openStreamToClient(uid);
     }
 
+    public final ARMultiFuture<ConnectionWork> ready = new ARMultiFuture<>();
+    public void flush(){
+        safeApiCon.flush();
+    }
     @Override
     protected void onConnect(LoginApi remoteApi) {
-        safeApiStream.setDownBase(remoteApi.loginByAlias(client.getAlias()).getDownBase());
+        Log.debug("set down stream");
+        safeApiCon.setDownBase(remoteApi.loginByAlias(client.getAlias()).getDownBase());
+        Log.debug("set ready");
+        ready.set(this);
     }
 
     public ServerDescriptorLite getServerDescriptor() {
