@@ -18,6 +18,7 @@ public class ClientConfiguration {
 	public final Map<UUID, UidConfig> uidConfigs = new ConcurrentHashMap<>();
 	public volatile long pingDuration = 1000;
 	public volatile UUID uid;
+	public volatile UUID alias;
 	public Key masterKey;
 	public volatile int countServersForRegistration = 1;
 	public volatile int timoutForConnectToRegistrationServer = 10;
@@ -27,6 +28,9 @@ public class ClientConfiguration {
 	}
 	public void uid(UUID uid) {
 		this.uid = uid;
+	}
+	public void alias(UUID alias) {
+		this.alias = alias;
 	}
 	public void masterKey(Key key) {
 		this.masterKey = key;

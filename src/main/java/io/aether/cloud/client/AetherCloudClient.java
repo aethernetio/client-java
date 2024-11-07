@@ -78,7 +78,7 @@ public final class AetherCloudClient {
 
     void getConnection(@NotNull UUID uid, @NotNull AConsumer<ConnectionWork> t) {
         getCloudForUid(uid, sd -> {
-            var c=getConnection(sd);
+            var c = getConnection(sd);
             c.ready.to(t::accept);
         });
     }
@@ -172,14 +172,14 @@ public final class AetherCloudClient {
     }
 
     public ARMultiFuture<Cloud> getCloud(@NotNull UUID uid) {
-        var res= clouds.get(uid).map(UUIDAndCloud::cloud);
-        if(!res.isDone()){
-            if(clouds.sources.isEmpty()){
-                getConnection(c->{
+        var res = clouds.get(uid).map(UUIDAndCloud::cloud);
+        if (!res.isDone()) {
+            if (clouds.sources.isEmpty()) {
+                getConnection(c -> {
                     clouds.flush();
                     c.apiLevel.getConnection().flush();
                 });
-            }else{
+            } else {
                 clouds.flush();
             }
         }
@@ -201,6 +201,8 @@ public final class AetherCloudClient {
         clouds.set(new UUIDAndCloud(regResp.uid(), regResp.cloud()));
         clientConfiguration.uid = regResp.uid();
         clientConfiguration.uid(regResp.uid());
+        clientConfiguration.alias = regResp.uid();
+        clientConfiguration.alias(regResp.alias());
         assert isRegistered();
         for (var c : regResp.cloud()) {
             servers.get((int) c).to(cl -> Log.info("resolve server: " + cl));
@@ -256,7 +258,7 @@ public final class AetherCloudClient {
     }
 
     public UUID getAlias() {
-        return getUid();
+        return clientConfiguration.alias;
     }
 
     public void onClientStream(ABiConsumer<UUID, DownStream> consumer) {
