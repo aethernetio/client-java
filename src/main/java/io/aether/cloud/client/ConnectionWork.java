@@ -59,7 +59,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
                 Integer::shortValue,
                 Short::intValue
         ));
-        client.clouds.addSource(authorizedApi.cloudResolver());
+        client.clouds.addSource(authorizedApi.cloudResolver().withLog("client cloudResolver"));
 //        flush();
         Log.debug("work connection is ready");
         ready.set(this);

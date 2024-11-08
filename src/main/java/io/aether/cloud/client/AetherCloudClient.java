@@ -31,7 +31,7 @@ public final class AetherCloudClient {
     private static final List<URI> DEFAULT_URL_FOR_CONNECT = List.of(URI.create("registration.aether.io"));
     public final AFuture startFuture = new AFuture();
     final Map<Integer, ConnectionWork> connections = new ConcurrentHashMap<>();
-    final MapBase<UUID, UUIDAndCloud> clouds = new MapBase<>(UUIDAndCloud::uid);
+    final MapBase<UUID, UUIDAndCloud> clouds = new MapBase<>(UUIDAndCloud::uid).withLog();
 
     private enum RegStatus {
         NO,
