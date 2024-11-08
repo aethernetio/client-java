@@ -54,21 +54,16 @@ public abstract class Connection<LT, RT> {
     }
 
     protected void connect() {
-        Log.debug("try to connect "+getClass());
+        Log.debug("try to connect " + getClass());
         var nettyStream = new NettyStreamClient(uri, configurator);
-        nettyStream.onConnect.to(s -> {
-            Log.debug("on connect for "+getClass());
-            apiStreamRoot.setDownBase(s);
-            Log.debug("make localApi");
-            var aConnection = apiStreamRoot.forClient(RU.cast(this));
-            Log.debug("connectFuture is done");
-            connectFuture.done();
-            Log.debug("get remote api");
-            var remApi=aConnection.getRemoteApi();
-            Log.debug("call onConnect");
-            this.onConnect(remApi);
-            apiStreamRoot.flush();
-        });
+        var aConnection = apiStreamRoot.forClient(RU.cast(this));
+        apiStreamRoot.setDownBase(BufferedStream.of(nettyStream));
+        connectFuture.done();
+        var remApi = aConnection.getRemoteApi();
+        Log.debug("get remote api: " + rt);
+        Log.debug("call onConnect: " + getClass());
+        this.onConnect(remApi);
+        apiStreamRoot.flush();
     }
 
     protected abstract void onConnect(RT remoteApi);

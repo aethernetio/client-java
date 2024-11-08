@@ -71,15 +71,23 @@ public final class AetherCloudClient {
     public void getCloudForUid(@NotNull UUID uid, AConsumer<ServerDescriptorLite> t) {
         getCloud(uid).to(p -> {
             for (var pp : p.data()) {
-                servers.get((int) pp).to(t);
+                servers.get((int) pp).to(t,5,()->{
+                    Log.error("timeout");
+                });
             }
+        },5,()->{
+            Log.error("timeout"+uid+clouds);
         });
     }
 
     void getConnection(@NotNull UUID uid, @NotNull AConsumer<ConnectionWork> t) {
         getCloudForUid(uid, sd -> {
             var c = getConnection(sd);
-            c.ready.to(t::accept);
+            c.ready.to(t1 ->{
+                t.accept(t1);
+            },5,()->{
+                Log.error("timeout");
+            });
         });
     }
 
@@ -175,9 +183,10 @@ public final class AetherCloudClient {
         var res = clouds.get(uid).map(UUIDAndCloud::cloud);
         if (!res.isDone()) {
             if (clouds.sources.isEmpty()) {
-                getConnection(c -> {
+                getConnection(conWork -> {
+                    System.out.println(uid);
                     clouds.flush();
-                    c.apiLevel.getConnection().flush();
+                    conWork.flush();
                 });
             } else {
                 clouds.flush();
@@ -205,7 +214,9 @@ public final class AetherCloudClient {
         clientConfiguration.alias(regResp.alias());
         assert isRegistered();
         for (var c : regResp.cloud()) {
-            servers.get((int) c).to(cl -> Log.info("resolve server: " + cl));
+            servers.get((int) c).to(cl -> Log.info("resolve server: " + cl),5,()->{
+                Log.error("timeout");
+            });
         }
         servers.flush();
         flow(regResp.cloud().data())
@@ -217,7 +228,8 @@ public final class AetherCloudClient {
     public DownStream openStreamToClient(@NotNull UUID uid) {
         DownStream res = BufferedStream.of();
         getConnection(uid, s -> {
-            res.setDownBase(s.openStreamToClient(uid));
+            var ss=s.openStreamToClient(uid);
+            res.setDownBase(ss);
         });
         return res;
     }

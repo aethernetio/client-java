@@ -6,6 +6,7 @@ import io.aether.api.serverApi.AuthorizedApi;
 import io.aether.api.serverApi.LoginApi;
 import io.aether.common.AetherCodec;
 import io.aether.common.ServerDescriptorLite;
+import io.aether.logger.Log;
 import io.aether.net.ApiDeserializerConsumer;
 import io.aether.net.ApiStreamConnection;
 import io.aether.net.impl.bin.ApiLevel;
@@ -23,13 +24,14 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
 
     //region counters
     public final AtomicLong lastBackPing = new AtomicLong(Long.MAX_VALUE);
-
+    public final ARMultiFuture<ConnectionWork> ready = new ARMultiFuture<>();
     private final ServerDescriptorLite serverDescriptor;
     final private AtomicBoolean inProcess = new AtomicBoolean();
     boolean basicStatus;
     long lastWorkTime;
     AuthorizedApi authorizedApi;
     ApiLevel apiLevel;
+    ApiStreamConnection<ClientApiSafe, AuthorizedApi, CryptoStream<DownStream>> safeApiCon;
 
     public ConnectionWork(AetherCloudClient client, ServerDescriptorLite s) {
         super(client, s.ipAddress().getURI(AetherCodec.BINARY), ClientApiUnsafe.class, LoginApi.class);
@@ -42,27 +44,24 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
         return authorizedApi.openStreamToClient(uid);
     }
 
-    public final ARMultiFuture<ConnectionWork> ready = new ARMultiFuture<>();
-
     public void flush() {
         safeApiCon.flush();
     }
 
-    ApiStreamConnection<ClientApiSafe, AuthorizedApi, CryptoStream<DownStream>> safeApiCon;
-
     @Override
     protected void onConnect(LoginApi remoteApi) {
-        var authorizedApiStream= remoteApi.loginByAlias(client.getAlias());
+        var authorizedApiStream = remoteApi.loginByAlias(client.getAlias());
         var mk = client.getMasterKey();
         authorizedApiStream.getDownStream().setCryptoProvider(mk.getType().cryptoLib().env.symmetricForClient(mk, serverDescriptor.id()));
-        safeApiCon=authorizedApiStream.forClient(new MyClientApiSafe(client));
+        safeApiCon = authorizedApiStream.forClient(new MyClientApiSafe(client));
         authorizedApi = safeApiCon.getRemoteApi();
         client.servers.addSource(authorizedApi.serverResolver().mapKey(
                 Integer::shortValue,
                 Short::intValue
         ));
         client.clouds.addSource(authorizedApi.cloudResolver());
-        flush();
+//        flush();
+        Log.debug("work connection is ready");
         ready.set(this);
     }
 
