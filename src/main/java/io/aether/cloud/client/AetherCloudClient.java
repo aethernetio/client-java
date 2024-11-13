@@ -13,7 +13,7 @@ import io.aether.utils.slots.ARMultiFuture;
 import io.aether.utils.slots.EventBiConsumer;
 import io.aether.utils.streams.BufferedStream;
 import io.aether.utils.streams.DownStream;
-import io.aether.utils.streams.ElementsStream;
+import io.aether.utils.streams.SerializerStream;
 import io.aether.utils.streams.impl.MapBase;
 import org.jetbrains.annotations.NotNull;
 
@@ -44,7 +44,7 @@ public final class AetherCloudClient {
     private final ClientConfiguration clientConfiguration;
     private final Collection<ScheduledFuture<?>> scheduledFutures = new HashSet<>();
     private final AtomicBoolean startConnection = new AtomicBoolean();
-    public ElementsStream<UUID, DownStream> onNewChildren = ElementsStream.of(ApiManager.UUID);
+    public SerializerStream<UUID, DownStream> onNewChildren = SerializerStream.of(ApiManager.UUID);
     public EventBiConsumer<UUID, DownStream> onClientStream = new EventBiConsumer<>();
     Key masterKey;
     long lastSecond;

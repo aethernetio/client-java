@@ -8,7 +8,7 @@ import io.aether.common.AetherCodec;
 import io.aether.common.ServerDescriptorLite;
 import io.aether.logger.Log;
 import io.aether.net.ApiDeserializerConsumer;
-import io.aether.net.ApiStreamConnection;
+import io.aether.net.ApiGateConnection;
 import io.aether.net.impl.bin.ApiLevel;
 import io.aether.utils.RU;
 import io.aether.utils.slots.ARMultiFuture;
@@ -31,7 +31,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
     long lastWorkTime;
     AuthorizedApi authorizedApi;
     ApiLevel apiLevel;
-    ApiStreamConnection<ClientApiSafe, AuthorizedApi, CryptoStream<DownStream>> safeApiCon;
+    ApiGateConnection<ClientApiSafe, AuthorizedApi, CryptoStream<DownStream>> safeApiCon;
 
     public ConnectionWork(AetherCloudClient client, ServerDescriptorLite s) {
         super(client, s.ipAddress().getURI(AetherCodec.BINARY), ClientApiUnsafe.class, LoginApi.class);

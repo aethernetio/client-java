@@ -3,7 +3,7 @@ package io.aether.examples.plainChat;
 import io.aether.StandardUUIDs;
 import io.aether.cloud.client.AetherCloudClient;
 import io.aether.cloud.client.ClientConfiguration;
-import io.aether.net.ApiStreamConnection;
+import io.aether.net.ApiGateConnection;
 import io.aether.net.ApiDeserializerConsumer;
 import io.aether.net.RemoteApi;
 import io.aether.net.impl.bin.ApiLevel;
@@ -20,7 +20,7 @@ public class ChatService {
 	public static ARFuture<UUID> uid = new ARFuture<>();
 	private final Map<UUID, UserDescriptor> users = new ConcurrentHashMap<>();
 	public final AetherCloudClient aether;
-	public final Map<UUID, ApiStreamConnection<ServiceServerApi,ServiceClientApi, DownStream>> clients=new ConcurrentHashMap<>();
+	public final Map<UUID, ApiGateConnection<ServiceServerApi,ServiceClientApi, DownStream>> clients=new ConcurrentHashMap<>();
 	public ChatService() {
 		aether = new AetherCloudClient(new ClientConfiguration(StandardUUIDs.TEST_UID,  null))
 				.waitStart(10);
