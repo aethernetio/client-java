@@ -4,7 +4,7 @@ import io.aether.StandardUUIDs;
 import io.aether.cloud.client.AetherCloudClient;
 import io.aether.cloud.client.ClientConfiguration;
 import io.aether.utils.futures.AFuture;
-import io.aether.utils.streams.UpStream;
+import io.aether.utils.streams.Gate;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -27,12 +27,12 @@ public class PointToPointTest {
         client2.startFuture.waitDoneSeconds(10);
         var message = "Hello world!".getBytes();
         var chToc2 = client1.openStreamToClient(client2.getUid());
-        chToc2.upToDown(message);
+        chToc2.write(message);
         chToc2.flush();
         AFuture checkReceiveMessage = new AFuture();
         client2.onClientStream((u, st) -> {
             Assertions.assertEquals(client1.getUid(), u);
-            st.setUpStream(UpStream.toConsumer(newMessage -> {
+            st.link(Gate.of(newMessage -> {
                 Assertions.assertArrayEquals(newMessage, message);
                 checkReceiveMessage.done();
             }));

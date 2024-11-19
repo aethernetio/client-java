@@ -12,7 +12,7 @@ import io.aether.utils.interfaces.AConsumer;
 import io.aether.utils.slots.ARMultiFuture;
 import io.aether.utils.slots.EventBiConsumer;
 import io.aether.utils.streams.BufferedStream;
-import io.aether.utils.streams.DownStream;
+import io.aether.utils.streams.Gate;
 import io.aether.utils.streams.SerializerStream;
 import io.aether.utils.streams.impl.MapBase;
 import org.jetbrains.annotations.NotNull;
@@ -32,20 +32,13 @@ public final class AetherCloudClient {
     public final AFuture startFuture = new AFuture();
     final Map<Integer, ConnectionWork> connections = new ConcurrentHashMap<>();
     final MapBase<UUID, UUIDAndCloud> clouds = new MapBase<>(UUIDAndCloud::uid).withLog();
-
-    private enum RegStatus {
-        NO,
-        BEGIN,
-        CONFIRM
-    }
-
     final AtomicReference<RegStatus> regStatus = new AtomicReference<>(RegStatus.NO);
     final MapBase<Integer, ServerDescriptorLite> servers = new MapBase<>(ServerDescriptorLite::idAsInt);
     private final ClientConfiguration clientConfiguration;
     private final Collection<ScheduledFuture<?>> scheduledFutures = new HashSet<>();
     private final AtomicBoolean startConnection = new AtomicBoolean();
-    public SerializerStream<UUID, DownStream> onNewChildren = SerializerStream.of(ApiManager.UUID);
-    public EventBiConsumer<UUID, DownStream> onClientStream = new EventBiConsumer<>();
+    public SerializerStream<UUID, ?> onNewChildren = SerializerStream.of(ApiManager.UUID);
+    public EventBiConsumer<UUID, Gate<byte[]>> onClientStream = new EventBiConsumer<>();
     Key masterKey;
     long lastSecond;
     private String name;
@@ -71,21 +64,21 @@ public final class AetherCloudClient {
     public void getCloudForUid(@NotNull UUID uid, AConsumer<ServerDescriptorLite> t) {
         getCloud(uid).to(p -> {
             for (var pp : p.data()) {
-                servers.get((int) pp).to(t,5,()->{
+                servers.get((int) pp).to(t, 5, () -> {
                     Log.error("timeout");
                 });
             }
-        },5,()->{
-            Log.error("timeout"+uid+clouds);
+        }, 5, () -> {
+            Log.error("timeout" + uid + clouds);
         });
     }
 
     void getConnection(@NotNull UUID uid, @NotNull AConsumer<ConnectionWork> t) {
         getCloudForUid(uid, sd -> {
             var c = getConnection(sd);
-            c.ready.to(t1 ->{
+            c.ready.to(t1 -> {
                 t.accept(t1);
-            },5,()->{
+            }, 5, () -> {
                 Log.error("timeout");
             });
         });
@@ -182,7 +175,7 @@ public final class AetherCloudClient {
     public ARMultiFuture<Cloud> getCloud(@NotNull UUID uid) {
         var res = clouds.get(uid).map(UUIDAndCloud::cloud);
         if (!res.isDone()) {
-            if (clouds.sources.isEmpty()) {
+            if (clouds.sources.existsLinks()) {
                 getConnection(conWork -> {
                     System.out.println(uid);
                     clouds.flush();
@@ -214,7 +207,7 @@ public final class AetherCloudClient {
         clientConfiguration.alias(regResp.alias());
         assert isRegistered();
         for (var c : regResp.cloud()) {
-            servers.get((int) c).to(cl -> Log.info("resolve server: " + cl),5,()->{
+            servers.get((int) c).to(cl -> Log.info("resolve server: " + cl), 5, () -> {
                 Log.error("timeout");
             });
         }
@@ -225,13 +218,12 @@ public final class AetherCloudClient {
                 .allMap(AFuture::all).to(startFuture::tryDone);
     }
 
-    public DownStream openStreamToClient(@NotNull UUID uid) {
-        DownStream res = BufferedStream.of();
+    public Gate<byte[]> openStreamToClient(@NotNull UUID uid) {
+        var res = BufferedStream.of();
         getConnection(uid, s -> {
-            var ss=s.openStreamToClient(uid);
-            res.setDownBase(ss);
+            s.openStreamToClient(uid, res.down());
         });
-        return res;
+        return res.up();
     }
 
     public AFuture stop(int secondsTimeOut) {
@@ -273,7 +265,13 @@ public final class AetherCloudClient {
         return clientConfiguration.alias;
     }
 
-    public void onClientStream(ABiConsumer<UUID, DownStream> consumer) {
+    public void onClientStream(ABiConsumer<UUID, Gate<byte[]>> consumer) {
         onClientStream.add(consumer);
+    }
+
+    private enum RegStatus {
+        NO,
+        BEGIN,
+        CONFIRM
     }
 }

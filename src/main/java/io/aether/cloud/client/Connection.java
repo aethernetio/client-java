@@ -2,32 +2,33 @@ package io.aether.cloud.client;
 
 import io.aether.common.AetherCodec;
 import io.aether.logger.Log;
+import io.aether.net.ApiGateConnection;
 import io.aether.net.NettyStreamClient;
 import io.aether.net.NetworkConfigurator;
+import io.aether.net.meta.ApiManager;
+import io.aether.net.meta.MetaApi;
 import io.aether.utils.RU;
 import io.aether.utils.futures.AFuture;
-import io.aether.utils.streams.ApiStream;
 import io.aether.utils.streams.BufferedStream;
-import io.aether.utils.streams.DownStream;
 
 import java.net.URI;
 
 public abstract class Connection<LT, RT> {
     protected final AetherCloudClient client;
     protected final URI uri;
-    private final Class<LT> lt;
-    private final Class<RT> rt;
+    private final MetaApi<LT> lt;
+    private final MetaApi<RT> rt;
     protected AFuture connectFuture = new AFuture();
-    protected ApiStream<LT, RT, DownStream> apiStreamRoot;
+    protected ApiGateConnection<LT, RT> apiStreamRoot;
     NetworkConfigurator configurator = AetherCodec.BINARY.getNetworkConfigurator();
 
     public Connection(AetherCloudClient client, URI uri, Class<LT> lt, Class<RT> rt) {
         assert uri != null;
-        this.apiStreamRoot = ApiStream.of(lt, rt, BufferedStream.of());
+        this.lt = ApiManager.getApi(lt);
+        this.rt = ApiManager.getApi(rt);
+        this.apiStreamRoot = ApiGateConnection.of(this.lt, this.rt,RU.cast(this));
         this.uri = uri;
         this.client = client;
-        this.lt = lt;
-        this.rt = rt;
     }
 
     @Override
@@ -56,10 +57,9 @@ public abstract class Connection<LT, RT> {
     protected void connect() {
         Log.debug("try to connect " + getClass());
         var nettyStream = new NettyStreamClient(uri, configurator);
-        var aConnection = apiStreamRoot.forClient(RU.cast(this));
-        apiStreamRoot.setDownBase(BufferedStream.of(nettyStream));
+        apiStreamRoot.linkDown(BufferedStream.of(nettyStream));
         connectFuture.done();
-        var remApi = aConnection.getRemoteApi();
+        var remApi = apiStreamRoot.getRemoteApi();
         Log.debug("get remote api: " + rt);
         Log.debug("call onConnect: " + getClass());
         this.onConnect(remApi);

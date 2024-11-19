@@ -9,6 +9,7 @@ import io.aether.api.serverRegistryApi.WorkProofUtil;
 import io.aether.logger.Log;
 import io.aether.net.RemoteApi;
 import io.aether.utils.futures.AFuture;
+import io.aether.utils.streams.CryptoStream;
 
 import java.net.URI;
 
@@ -29,16 +30,16 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
             if (!signedKey.check()) {
                 throw new RuntimeException();
             }
-            var safeStream
-                    = remoteApi.enter(client.getCryptLib());
-            safeStream.getDownStream().setCryptoEncoder(signedKey.key().getType().cryptoLib().env.asymmetric(signedKey.key()));
+            var safeStream = remoteApi.enter(client.getCryptLib());
+            safeStream.findDown(CryptoStream.class)
+                    .setCryptoEncoder(signedKey.key().getType().cryptoLib().env.asymmetric(signedKey.key()));
             var safeApi = safeStream
                     .forClient(new ClientApiRegSafe() {
                     })
                     .getRemoteApi();
             var tempKey = client.getCryptLib().env.makeSymmetricKey();
             var cp = tempKey.symmetricProvider();
-            safeStream.getDownStream().setCryptoDecoder(cp);
+            safeStream.findDown(CryptoStream.class).setCryptoDecoder(cp);
             safeApi.requestWorkProofData(client.getParent(), PowMethod.AE_BCRYPT_CRC32, tempKey)
                     .to(wpd -> {
                         var passwords = WorkProofUtil.generateProofOfWorkPool(
@@ -52,8 +53,8 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
                             throw new RuntimeException();
                         }
                         var masterKey = client.getMasterKey();
-                        globalApiStream.getDownStream().setCryptoEncoder(wpd.globalKey().key().asymmetricProvider());
-                        globalApiStream.getDownStream().setCryptoDecoder(masterKey.symmetricProvider());
+                        globalApiStream.findDown(CryptoStream.class).setCryptoEncoder(wpd.globalKey().key().asymmetricProvider());
+                        globalApiStream.findDown(CryptoStream.class).setCryptoDecoder(masterKey.symmetricProvider());
                         var globalClientApi = globalApiStream.forClient(new GlobalRegClientApi() {
                         }).getRemoteApi();
                         globalClientApi.setMasterKey(masterKey);
