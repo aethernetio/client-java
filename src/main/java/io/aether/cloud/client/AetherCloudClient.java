@@ -175,7 +175,7 @@ public final class AetherCloudClient {
     public ARMultiFuture<Cloud> getCloud(@NotNull UUID uid) {
         var res = clouds.get(uid).map(UUIDAndCloud::cloud);
         if (!res.isDone()) {
-            if (clouds.sources.existsLinks()) {
+            if (clouds.source.existsLinks()) {
                 getConnection(conWork -> {
                     System.out.println(uid);
                     clouds.flush();
