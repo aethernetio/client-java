@@ -12,10 +12,10 @@ import java.util.List;
 public class PerformanceTest {
     public ClientConfiguration clientConfig1;
     public ClientConfiguration clientConfig2;
-    public List<URI> cloudFactoryURI = new ArrayList<>();
+    public final List<URI> cloudFactoryURI = new ArrayList<>();
 
     @Test
-    public void timeOneMessage() throws InterruptedException {
+    public void timeOneMessage() {
         if (clientConfig1 == null) clientConfig1 = new ClientConfiguration(StandardUUIDs.TEST_UID, cloudFactoryURI);
         if (clientConfig2 == null) clientConfig2 = new ClientConfiguration(StandardUUIDs.TEST_UID, cloudFactoryURI);
         AetherCloudClient client1 = new AetherCloudClient(clientConfig1);
@@ -25,7 +25,7 @@ public class PerformanceTest {
     }
 
     @Test
-    public void main2() throws InterruptedException {
+    public void main2() {
         if (clientConfig1 == null)
             clientConfig1 = new ClientConfiguration(StandardUUIDs.TEST_UID, cloudFactoryURI);
         if (clientConfig2 == null)

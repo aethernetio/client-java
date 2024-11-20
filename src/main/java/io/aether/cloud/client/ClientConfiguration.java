@@ -16,12 +16,12 @@ public class ClientConfiguration {
 	public final List<URI> cloudFactoryUrl;
 	public final Map<Integer, ServerConfig> servers = new ConcurrentHashMap<>();
 	public final Map<UUID, UidConfig> uidConfigs = new ConcurrentHashMap<>();
-	public volatile long pingDuration = 1000;
+	public final long pingDuration = 1000;
 	public volatile UUID uid;
 	public volatile UUID alias;
 	public Key masterKey;
-	public volatile int countServersForRegistration = 1;
-	public volatile int timoutForConnectToRegistrationServer = 10;
+	public final int countServersForRegistration = 1;
+	public final int timoutForConnectToRegistrationServer = 10;
 	public ClientConfiguration(UUID parentUid, List<URI> cloudFactoryUrl) {
 		this.parentUid = parentUid;
 		this.cloudFactoryUrl = cloudFactoryUrl;
@@ -60,7 +60,7 @@ public class ClientConfiguration {
 		return getUidConfig(uid).cloud;
 	}
 	public static class ServerConfig {
-		int sid;
+		final int sid;
 		Nonce nonce;
 		ServerDescriptorLite descriptor;
 		public ServerConfig(int sid) {

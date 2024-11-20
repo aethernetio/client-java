@@ -16,7 +16,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class ChatService {
-	public static ARFuture<UUID> uid = new ARFuture<>();
+	public static final ARFuture<UUID> uid = new ARFuture<>();
 	private final Map<UUID, UserDescriptor> users = new ConcurrentHashMap<>();
 	public final AetherCloudClient aether;
 	public final Map<UUID, ApiGateConnection<ServiceServerApi,ServiceClientApi>> clients=new ConcurrentHashMap<>();

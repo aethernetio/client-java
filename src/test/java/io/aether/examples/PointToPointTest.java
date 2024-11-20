@@ -15,7 +15,7 @@ import java.util.List;
 public class PointToPointTest {
     public ClientConfiguration clientConfig1;
     public ClientConfiguration clientConfig2;
-    public List<URI> cloudFactoryURI = new ArrayList<>();
+    public final List<URI> cloudFactoryURI = new ArrayList<>();
 
     @Test
     public void main() {

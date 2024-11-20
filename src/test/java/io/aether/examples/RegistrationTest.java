@@ -11,7 +11,7 @@ import java.util.List;
 
 public class RegistrationTest {
 	public ClientConfiguration clientConfig1;
-	public List<URI> cloudFactoryURI = new ArrayList<>();
+	public final List<URI> cloudFactoryURI = new ArrayList<>();
 	@Test
 	public void main() {
 		if (clientConfig1 == null) clientConfig1 = new ClientConfiguration(StandardUUIDs.TEST_UID,  cloudFactoryURI);

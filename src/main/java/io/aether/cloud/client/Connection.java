@@ -18,9 +18,9 @@ public abstract class Connection<LT, RT> {
     protected final URI uri;
     private final MetaApi<LT> lt;
     private final MetaApi<RT> rt;
-    protected AFuture connectFuture = new AFuture();
+    protected final AFuture connectFuture = new AFuture();
     protected ApiGateConnection<LT, RT> apiStreamRoot;
-    NetworkConfigurator configurator = AetherCodec.BINARY.getNetworkConfigurator();
+    final NetworkConfigurator configurator = AetherCodec.BINARY.getNetworkConfigurator();
 
     public Connection(AetherCloudClient client, URI uri, Class<LT> lt, Class<RT> rt) {
         assert uri != null;
@@ -35,7 +35,7 @@ public abstract class Connection<LT, RT> {
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
-        Connection that = (Connection) o;
+        var that = (Connection<?,?>) o;
         return uri.equals(that.uri);
     }
 

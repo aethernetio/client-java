@@ -4,7 +4,7 @@ import io.aether.api.clientApi.ClientApiSafe;
 import io.aether.api.clientApi.ClientApiUnsafe;
 import io.aether.api.serverApi.AuthorizedApi;
 import io.aether.api.serverApi.LoginApi;
-import io.aether.classBuilder.CType;
+import io.aether.utils.CType;
 import io.aether.common.AetherCodec;
 import io.aether.common.ServerDescriptorLite;
 import io.aether.logger.Log;
@@ -71,9 +71,6 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
     @Override
     public String toString() {
         return "C(" + lifeTime() + ")";
-    }
-
-    public void clearRequests() {
     }
 
     public void setBasic(boolean basic) {
