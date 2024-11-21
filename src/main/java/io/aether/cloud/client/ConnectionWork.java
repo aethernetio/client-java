@@ -46,7 +46,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
     }
 
     public void flush() {
-        safeApiCon.flush();
+        safeApiCon.flushOut();
     }
 
     @Override

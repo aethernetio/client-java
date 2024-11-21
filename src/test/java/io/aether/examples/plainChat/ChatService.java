@@ -48,7 +48,7 @@ public class ChatService {
 				var r = clients.get(uu.uid());
 				if(r!=null){
 					r.getRemoteApi().addNewUsers(new UserDescriptor[]{u});
-					r.flush();
+					r.flushOut();
 				}
 			}
 			remoteApi.addNewUsers(Flow.flow(users.values()).toArray(UserDescriptor.class));
@@ -62,7 +62,7 @@ public class ChatService {
 			for (var u : users.values()) {
 				var r = clients.get(u.uid());
 				r.getRemoteApi().newMessages(new MessageDescriptor[]{md});
-				r.flush();
+				r.flushOut();
 			}
 		}
 	}

@@ -63,7 +63,7 @@ public abstract class Connection<LT, RT> {
         Log.debug("get remote api: " + rt);
         Log.debug("call onConnect: " + getClass());
         this.onConnect(remApi);
-        apiStreamRoot.flush();
+        apiStreamRoot.flushOut();
     }
 
     protected abstract void onConnect(RT remoteApi);

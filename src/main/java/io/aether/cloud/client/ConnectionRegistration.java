@@ -31,7 +31,7 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
                 throw new RuntimeException();
             }
             var safeStream = remoteApi.enter(client.getCryptLib());
-            safeStream.findDown(CryptoStream.class)
+            safeStream.findDownRequired(CryptoStream.class)
                     .setCryptoEncoder(signedKey.key().getType().cryptoLib().env.asymmetric(signedKey.key()));
             var safeApi = safeStream
                     .forClient(new ClientApiRegSafe() {
@@ -53,8 +53,9 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
                             throw new RuntimeException();
                         }
                         var masterKey = client.getMasterKey();
-                        globalApiStream.findDown(CryptoStream.class).setCryptoEncoder(wpd.globalKey().key().asymmetricProvider());
-                        globalApiStream.findDown(CryptoStream.class).setCryptoDecoder(masterKey.symmetricProvider());
+                        var cs=globalApiStream.findDown(CryptoStream.class);
+                        cs.setCryptoEncoder(wpd.globalKey().key().asymmetricProvider());
+                        cs.setCryptoDecoder(masterKey.symmetricProvider());
                         var globalClientApi = globalApiStream.forClient(new GlobalRegClientApi() {
                         }).getRemoteApi();
                         globalClientApi.setMasterKey(masterKey);
