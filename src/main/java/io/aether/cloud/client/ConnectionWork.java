@@ -13,7 +13,7 @@ import io.aether.net.ApiGateConnection;
 import io.aether.net.impl.bin.ApiLevel;
 import io.aether.utils.RU;
 import io.aether.utils.slots.ARMultiFuture;
-import io.aether.utils.streams.CryptoStream;
+import io.aether.utils.streams.CryptoNode;
 import io.aether.utils.streams.Gate;
 import org.jetbrains.annotations.NotNull;
 
@@ -51,11 +51,11 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
 
     @Override
     protected void onConnect(LoginApi remoteApi) {
-        var authorizedApiStream = remoteApi.loginByAlias(client.getAlias());
+        var authorizedApiNode = remoteApi.loginByAlias(client.getAlias());
         var mk = client.getMasterKey();
-        CryptoStream<?> cs = authorizedApiStream.findDown(CType.of(CryptoStream.class));
+        CryptoNode<?> cs = authorizedApiNode.findDown(CType.of(CryptoNode.class));
         cs.setCryptoProvider(mk.getType().cryptoLib().env.symmetricForClient(mk, serverDescriptor.id()));
-        safeApiCon = authorizedApiStream.forClient(new MyClientApiSafe(client));
+        safeApiCon = authorizedApiNode.forClient(new MyClientApiSafe(client));
         authorizedApi = safeApiCon.getRemoteApi();
         client.servers.addSource(authorizedApi.serverResolver().forClient().mapKey(Integer::shortValue));
         client.clouds.addSource(authorizedApi.cloudResolver());

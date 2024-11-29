@@ -9,7 +9,7 @@ import io.aether.net.meta.ApiManager;
 import io.aether.net.meta.MetaApi;
 import io.aether.utils.RU;
 import io.aether.utils.futures.AFuture;
-import io.aether.utils.streams.BufferedStream;
+import io.aether.utils.streams.BufferNode;
 
 import java.net.URI;
 
@@ -19,14 +19,14 @@ public abstract class Connection<LT, RT> {
     private final MetaApi<LT> lt;
     private final MetaApi<RT> rt;
     protected final AFuture connectFuture = new AFuture();
-    protected ApiGateConnection<LT, RT> apiStreamRoot;
+    protected ApiGateConnection<LT, RT> ApiNodeRoot;
     final NetworkConfigurator configurator = AetherCodec.BINARY.getNetworkConfigurator();
 
     public Connection(AetherCloudClient client, URI uri, Class<LT> lt, Class<RT> rt) {
         assert uri != null;
         this.lt = ApiManager.getApi(lt);
         this.rt = ApiManager.getApi(rt);
-        this.apiStreamRoot = ApiGateConnection.of(this.lt, this.rt,RU.cast(this));
+        this.ApiNodeRoot = ApiGateConnection.of(this.lt, this.rt,RU.cast(this));
         this.uri = uri;
         this.client = client;
     }
@@ -47,7 +47,7 @@ public abstract class Connection<LT, RT> {
     public AFuture close(int time) {
         var res = new AFuture();
         connectFuture.to(() -> {
-                    apiStreamRoot.close();
+                    ApiNodeRoot.close();
                     res.done();
                 })
                 .timeout(time, res::done);
@@ -57,13 +57,13 @@ public abstract class Connection<LT, RT> {
     protected void connect() {
         Log.debug("try to connect " + getClass());
         var nettyStream = new NettyStreamClient(uri, configurator);
-        apiStreamRoot.linkDown(BufferedStream.of(nettyStream));
+        ApiNodeRoot.linkDown(BufferNode.of(nettyStream));
         connectFuture.done();
-        var remApi = apiStreamRoot.getRemoteApi();
+        var remApi = ApiNodeRoot.getRemoteApi();
         Log.debug("get remote api: " + rt);
         Log.debug("call onConnect: " + getClass());
         this.onConnect(remApi);
-        apiStreamRoot.flushOut();
+        ApiNodeRoot.flushOut();
     }
 
     protected abstract void onConnect(RT remoteApi);

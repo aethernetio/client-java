@@ -9,7 +9,7 @@ import io.aether.net.RemoteApi;
 import io.aether.net.impl.bin.ApiLevel;
 import io.aether.utils.flow.Flow;
 import io.aether.utils.futures.ARFuture;
-import io.aether.utils.streams.ApiStream;
+import io.aether.utils.streams.ApiNode;
 
 import java.util.Map;
 import java.util.UUID;
@@ -25,8 +25,8 @@ public class ChatService {
 				.waitStart(10);
 		uid.done(aether.getUid());
 		aether.onClientStream((u,s)->{
-			var apiStream = ApiStream.of(ServiceServerApi.class, ServiceClientApi.class, s);
-			clients.put(u,apiStream.forClient(new MyServiceServerApi(u)));
+			var ApiNode = ApiNode.of(ServiceServerApi.class, ServiceClientApi.class, s);
+			clients.put(u,ApiNode.forClient(new MyServiceServerApi(u)));
 		});
 	}
 	private class MyServiceServerApi implements ServiceServerApi, ApiDeserializerConsumer {

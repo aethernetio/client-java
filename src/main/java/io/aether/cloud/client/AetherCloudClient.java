@@ -11,7 +11,7 @@ import io.aether.utils.interfaces.ABiConsumer;
 import io.aether.utils.interfaces.AConsumer;
 import io.aether.utils.slots.ARMultiFuture;
 import io.aether.utils.slots.EventBiConsumer;
-import io.aether.utils.streams.BufferedStream;
+import io.aether.utils.streams.BufferNode;
 import io.aether.utils.streams.Gate;
 import io.aether.utils.streams.SerializerStream;
 import io.aether.utils.streams.impl.MapBase;
@@ -205,7 +205,7 @@ public final class AetherCloudClient {
     }
 
     public Gate<byte[]> openStreamToClient(@NotNull UUID uid) {
-        var res = BufferedStream.of();
+        var res = BufferNode.of();
         getConnection(uid, s -> s.openStreamToClient(uid, res.down()));
         return res.up();
     }

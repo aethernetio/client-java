@@ -9,7 +9,7 @@ import io.aether.api.serverRegistryApi.WorkProofUtil;
 import io.aether.logger.Log;
 import io.aether.net.RemoteApi;
 import io.aether.utils.futures.AFuture;
-import io.aether.utils.streams.CryptoStream;
+import io.aether.utils.streams.CryptoNode;
 
 import java.net.URI;
 
@@ -31,7 +31,7 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
                 throw new RuntimeException();
             }
             var safeStream = remoteApi.enter(client.getCryptLib());
-            safeStream.findDownRequired(CryptoStream.class)
+            safeStream.findDownRequired(CryptoNode.class)
                     .setCryptoEncoder(signedKey.key().getType().cryptoLib().env.asymmetric(signedKey.key()));
             var safeApi = safeStream
                     .forClient(new ClientApiRegSafe() {
@@ -39,7 +39,7 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
                     .getRemoteApi();
             var tempKey = client.getCryptLib().env.makeSymmetricKey();
             var cp = tempKey.symmetricProvider();
-            safeStream.findDown(CryptoStream.class).setCryptoDecoder(cp);
+            safeStream.findDown(CryptoNode.class).setCryptoDecoder(cp).setName("client enter");
             safeApi.requestWorkProofData(client.getParent(), PowMethod.AE_BCRYPT_CRC32, tempKey)
                     .to(wpd -> {
                         var passwords = WorkProofUtil.generateProofOfWorkPool(
@@ -48,15 +48,16 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
                                 wpd.maxHashVal(),
                                 wpd.poolSize(),
                                 5000);
-                        var globalApiStream = safeApi.registration(wpd.salt(), wpd.suffix(), passwords, client.getMasterKey());
+                        var globalApiNode = safeApi.registration(wpd.salt(), wpd.suffix(), passwords, client.getMasterKey());
                         if (!wpd.globalKey().check()) {
                             throw new RuntimeException();
                         }
                         var masterKey = client.getMasterKey();
-                        var cs=globalApiStream.findDown(CryptoStream.class);
-                        cs.setCryptoEncoder(wpd.globalKey().key().asymmetricProvider());
-                        cs.setCryptoDecoder(masterKey.symmetricProvider());
-                        var globalClientApi = globalApiStream.forClient(new GlobalRegClientApi() {
+                        globalApiNode.findDown(CryptoNode.class)
+                                .setCryptoEncoder(wpd.globalKey().key().asymmetricProvider())
+                                .setCryptoDecoder(masterKey.symmetricProvider())
+                                .setName("client global");
+                        var globalClientApi = globalApiNode.forClient(new GlobalRegClientApi() {
                         }).getRemoteApi();
                         globalClientApi.setMasterKey(masterKey);
                         globalClientApi.finish().to(d -> {
@@ -68,7 +69,7 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
                             });
                             RemoteApi.of(safeApi).flush();
                         });
-                        globalApiStream.flush();
+                        globalApiNode.flush();
                     });
             RemoteApi.of(safeApi).flush();
         });
