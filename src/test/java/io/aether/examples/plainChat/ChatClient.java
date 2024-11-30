@@ -18,18 +18,18 @@ public class ChatClient implements ServiceClientApi {
     public final EventConsumer<MessageDescriptor> onMessage = new EventConsumer<>();
     private final Map<UUID, UserDescriptor> users = new ConcurrentHashMap<>();
     private final ServiceServerApi service;
-    private final ApiGateConnection<ServiceClientApi, ServiceServerApi> ApiNode;
+    private final ApiGateConnection<ServiceClientApi, ServiceServerApi> apiNode;
     private final String name;
 
     public ChatClient(UUID chatService, String name) {
         this.name = name;
         aether = new AetherCloudClient(new ClientConfiguration(chatService, List.of(URI.create("tcp://aethernet.io"))))
                 .waitStart(10);
-        this.ApiNode = ApiNode.of(ServiceClientApi.class, ServiceServerApi.class, aether.openStreamToClient(chatService))
+        this.apiNode = ApiNode.of(ServiceClientApi.META, ServiceServerApi.META, aether.openStreamToClient(chatService))
                 .forClient(this);
-        service = ApiNode.getRemoteApi();
+        service = apiNode.getRemoteApi();
         service.registration(name);
-        ApiNode.flush();
+        apiNode.flush();
     }
 
     private void flush() {

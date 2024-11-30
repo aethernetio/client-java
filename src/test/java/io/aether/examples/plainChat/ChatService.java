@@ -25,8 +25,8 @@ public class ChatService {
 				.waitStart(10);
 		uid.done(aether.getUid());
 		aether.onClientStream((u,s)->{
-			var ApiNode = ApiNode.of(ServiceServerApi.class, ServiceClientApi.class, s);
-			clients.put(u,ApiNode.forClient(new MyServiceServerApi(u)));
+			var apiNode = ApiNode.of(ServiceServerApi.META, ServiceClientApi.META, s);
+			clients.put(u,apiNode.forClient(new MyServiceServerApi(u)));
 		});
 	}
 	private class MyServiceServerApi implements ServiceServerApi, ApiDeserializerConsumer {
@@ -48,7 +48,7 @@ public class ChatService {
 				var r = clients.get(uu.uid());
 				if(r!=null){
 					r.getRemoteApi().addNewUsers(new UserDescriptor[]{u});
-					r.flushOut();
+					r.flush();
 				}
 			}
 			remoteApi.addNewUsers(Flow.flow(users.values()).toArray(UserDescriptor.class));
@@ -62,7 +62,7 @@ public class ChatService {
 			for (var u : users.values()) {
 				var r = clients.get(u.uid());
 				r.getRemoteApi().newMessages(new MessageDescriptor[]{md});
-				r.flushOut();
+				r.flush();
 			}
 		}
 	}

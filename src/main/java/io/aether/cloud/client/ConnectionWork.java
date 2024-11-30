@@ -4,7 +4,6 @@ import io.aether.api.clientApi.ClientApiSafe;
 import io.aether.api.clientApi.ClientApiUnsafe;
 import io.aether.api.serverApi.AuthorizedApi;
 import io.aether.api.serverApi.LoginApi;
-import io.aether.utils.CType;
 import io.aether.common.AetherCodec;
 import io.aether.common.ServerDescriptorLite;
 import io.aether.logger.Log;
@@ -41,24 +40,24 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
         connect();
     }
 
-    public void openStreamToClient(UUID uid, Gate<byte[]> gate) {
+    public void openStreamToClient(UUID uid, Gate<byte[],byte[]> gate) {
         authorizedApi.openStreamToClient(uid, gate);
     }
 
     public void flush() {
-        safeApiCon.flushOut();
+        safeApiCon.flush();
     }
 
     @Override
     protected void onConnect(LoginApi remoteApi) {
         var authorizedApiNode = remoteApi.loginByAlias(client.getAlias());
         var mk = client.getMasterKey();
-        CryptoNode<?> cs = authorizedApiNode.findDown(CType.of(CryptoNode.class));
+        var cs = authorizedApiNode.findDown(CryptoNode.class);
         cs.setCryptoProvider(mk.getType().cryptoLib().env.symmetricForClient(mk, serverDescriptor.id()));
         safeApiCon = authorizedApiNode.forClient(new MyClientApiSafe(client));
         authorizedApi = safeApiCon.getRemoteApi();
-        client.servers.addSource(authorizedApi.serverResolver().forClient().mapKey(Integer::shortValue));
-        client.clouds.addSource(authorizedApi.cloudResolver());
+        client.servers.requestsOut.linkUp(authorizedApi.serverResolver().mapDown(Integer::shortValue));
+        client.clouds.requestsOut.linkUp(authorizedApi.cloudResolver().up());
 //        flush();
         Log.debug("work connection is ready");
         ready.set(this);
@@ -120,7 +119,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
         }
 
         @Override
-        public void streamToClient(@NotNull UUID uid, @NotNull Gate<byte[]> stream) {
+        public void streamToClient(@NotNull UUID uid, @NotNull Gate<byte[],byte[]> stream) {
             client.onClientStream.fire(uid, stream);
         }
 

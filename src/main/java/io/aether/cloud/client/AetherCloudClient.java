@@ -13,13 +13,14 @@ import io.aether.utils.slots.ARMultiFuture;
 import io.aether.utils.slots.EventBiConsumer;
 import io.aether.utils.streams.BufferNode;
 import io.aether.utils.streams.Gate;
-import io.aether.utils.streams.SerializerStream;
-import io.aether.utils.streams.impl.MapBase;
+import io.aether.utils.streams.MapBase;
+import io.aether.utils.streams.Serializer2Node;
 import org.jetbrains.annotations.NotNull;
 
 import java.net.URI;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -31,17 +32,17 @@ import static io.aether.utils.flow.Flow.flow;
 public final class AetherCloudClient {
     private static final List<URI> DEFAULT_URL_FOR_CONNECT = List.of(URI.create("registration.aether.io"));
     public final AFuture startFuture = new AFuture();
+    public final EventBiConsumer<UUID, Gate<byte[], byte[]>> onClientStream = new EventBiConsumer<>();
     final Map<Integer, ConnectionWork> connections = new ConcurrentHashMap<>();
     final MapBase<UUID, UUIDAndCloud> clouds = new MapBase<>(UUIDAndCloud::uid).withLog();
     final AtomicReference<RegStatus> regStatus = new AtomicReference<>(RegStatus.NO);
     final MapBase<Integer, ServerDescriptorLite> servers = new MapBase<>(ServerDescriptorLite::idAsInt);
+    final long lastSecond;
     private final ClientConfiguration clientConfiguration;
     private final Collection<ScheduledFuture<?>> scheduledFutures = new HashSet<>();
     private final AtomicBoolean startConnection = new AtomicBoolean();
-    public SerializerStream<UUID, ?> onNewChildren = SerializerStream.of(ApiManager.UUID);
-    public final EventBiConsumer<UUID, Gate<byte[]>> onClientStream = new EventBiConsumer<>();
+    Serializer2Node<UUID, ?> onNewChildren = Serializer2Node.of(ApiManager.UUID);
     Key masterKey;
-    final long lastSecond;
     private String name;
 
     {
@@ -163,7 +164,7 @@ public final class AetherCloudClient {
     public ARMultiFuture<Cloud> getCloud(@NotNull UUID uid) {
         var res = clouds.get(uid).map(UUIDAndCloud::cloud);
         if (!res.isDone()) {
-            if (clouds.source.existsLinks()) {
+            if (clouds.requestsOut.existsLinks()) {
                 getConnection(conWork -> {
                     System.out.println(uid);
                     clouds.flush();
@@ -204,8 +205,8 @@ public final class AetherCloudClient {
                 .allMap(AFuture::all).to(startFuture::tryDone);
     }
 
-    public Gate<byte[]> openStreamToClient(@NotNull UUID uid) {
-        var res = BufferNode.of();
+    public Gate<byte[],byte[]> openStreamToClient(@NotNull UUID uid) {
+        var res = BufferNode.ofBytes();
         getConnection(uid, s -> s.openStreamToClient(uid, res.down()));
         return res.up();
     }
@@ -249,8 +250,16 @@ public final class AetherCloudClient {
         return clientConfiguration.alias;
     }
 
-    public void onClientStream(ABiConsumer<UUID, Gate<byte[]>> consumer) {
+    public void onClientStream(ABiConsumer<UUID, Gate<byte[], byte[]>> consumer) {
         onClientStream.add(consumer);
+    }
+
+    public Serializer2Node<UUID, ?> getOnNewChildren() {
+        return onNewChildren;
+    }
+    static final Executor executor=RU.newSingleThreadExecutor("AetherCloudClient");
+    public Executor getExecutor() {
+        return executor;
     }
 
     private enum RegStatus {

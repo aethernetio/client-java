@@ -2,19 +2,16 @@ package io.aether.cloud.client;
 
 import io.aether.api.clientApi.ClientApiRegSafe;
 import io.aether.api.clientApi.ClientApiRegUnsafe;
-import io.aether.api.serverRegistryApi.GlobalRegClientApi;
-import io.aether.api.serverRegistryApi.PowMethod;
-import io.aether.api.serverRegistryApi.RegistrationRootApi;
-import io.aether.api.serverRegistryApi.WorkProofUtil;
+import io.aether.api.serverRegistryApi.*;
 import io.aether.logger.Log;
 import io.aether.net.RemoteApi;
 import io.aether.utils.futures.AFuture;
+import io.aether.utils.streams.ApiNode;
 import io.aether.utils.streams.CryptoNode;
 
 import java.net.URI;
 
 public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, RegistrationRootApi> implements ClientApiRegUnsafe {
-    private final AFuture keysFuture = new AFuture();
 
     public ConnectionRegistration(AetherCloudClient client, URI uri) {
         super(client, uri, ClientApiRegUnsafe.class, RegistrationRootApi.class);
@@ -30,8 +27,10 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
             if (!signedKey.check()) {
                 throw new RuntimeException();
             }
-            var safeStream = remoteApi.enter(client.getCryptLib());
-            safeStream.findDownRequired(CryptoNode.class)
+            ApiNode<ClientApiRegSafe, ServerRegistrationApi, CryptoNode<?>> safeStream=ApiNode.of(ClientApiRegSafe.META, ServerRegistrationApi.META,
+                    CryptoNode.of());
+            remoteApi.enter(safeStream,client.getCryptLib());
+            safeStream.down().findOut(CryptoNode.class)
                     .setCryptoEncoder(signedKey.key().getType().cryptoLib().env.asymmetric(signedKey.key()));
             var safeApi = safeStream
                     .forClient(new ClientApiRegSafe() {
