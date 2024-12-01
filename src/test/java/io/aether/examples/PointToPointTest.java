@@ -3,6 +3,7 @@ package io.aether.examples;
 import io.aether.StandardUUIDs;
 import io.aether.cloud.client.AetherCloudClient;
 import io.aether.cloud.client.ClientConfiguration;
+import io.aether.logger.Log;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.streams.Gate;
 import org.junit.jupiter.api.Assertions;
@@ -25,6 +26,8 @@ public class PointToPointTest {
         client1.startFuture.waitDoneSeconds(10);
         AetherCloudClient client2 = new AetherCloudClient(clientConfig2);
         client2.startFuture.waitDoneSeconds(10);
+        Log.info("clients is registered");
+        client2.ping();
         var message = "Hello world!".getBytes();
         var chToc2 = client1.openStreamToClient(client2.getUid());
         var g=Gate.of(chToc2,c->{});

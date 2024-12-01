@@ -5,7 +5,6 @@ import io.aether.api.clientApi.ClientApiRegUnsafe;
 import io.aether.api.serverRegistryApi.*;
 import io.aether.logger.Log;
 import io.aether.net.RemoteApi;
-import io.aether.utils.futures.AFuture;
 import io.aether.utils.streams.ApiNode;
 import io.aether.utils.streams.CryptoNode;
 
@@ -27,27 +26,29 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
             if (!signedKey.check()) {
                 throw new RuntimeException();
             }
-            ApiNode<ClientApiRegSafe, ServerRegistrationApi, CryptoNode<?>> safeStream=ApiNode.of(ClientApiRegSafe.META, ServerRegistrationApi.META,
-                    CryptoNode.of());
-            remoteApi.enter(safeStream,client.getCryptLib());
+            ApiNode<ClientApiRegSafe, ServerRegistrationApi, CryptoNode<?>> safeStream =
+                    ApiNode.of(ClientApiRegSafe.META, ServerRegistrationApi.META, CryptoNode.of());
             safeStream.down().findOut(CryptoNode.class)
                     .setCryptoEncoder(signedKey.key().getType().cryptoLib().env.asymmetric(signedKey.key()));
+            remoteApi.enter(safeStream, client.getCryptLib());
             var safeApi = safeStream
-                    .forClient(new ClientApiRegSafe() {
-                    })
+                    .forClient(ClientApiRegSafe.EMPTY_INSTANCE)
                     .getRemoteApi();
             var tempKey = client.getCryptLib().env.makeSymmetricKey();
             var cp = tempKey.symmetricProvider();
             safeStream.findDown(CryptoNode.class).setCryptoDecoder(cp).setName("client enter");
             safeApi.requestWorkProofData(client.getParent(), PowMethod.AE_BCRYPT_CRC32, tempKey)
                     .to(wpd -> {
+                        Log.debug("WorkProofData has been received");
                         var passwords = WorkProofUtil.generateProofOfWorkPool(
                                 wpd.salt(),
                                 wpd.suffix(),
                                 wpd.maxHashVal(),
                                 wpd.poolSize(),
                                 5000);
-                        var globalApiNode = safeApi.registration(wpd.salt(), wpd.suffix(), passwords, client.getMasterKey());
+                        ApiNode<GlobalRegClientApi, GlobalRegServerApi, CryptoNode<?>> globalApiNode =
+                                ApiNode.of(GlobalRegClientApi.META, GlobalRegServerApi.META, CryptoNode.of());
+                        safeApi.registration(globalApiNode, wpd.salt(), wpd.suffix(), passwords, client.getMasterKey());
                         if (!wpd.globalKey().check()) {
                             throw new RuntimeException();
                         }

@@ -11,9 +11,9 @@ import io.aether.utils.interfaces.ABiConsumer;
 import io.aether.utils.interfaces.AConsumer;
 import io.aether.utils.slots.ARMultiFuture;
 import io.aether.utils.slots.EventBiConsumer;
-import io.aether.utils.streams.BufferNode;
 import io.aether.utils.streams.Gate;
 import io.aether.utils.streams.MapBase;
+import io.aether.utils.streams.Node;
 import io.aether.utils.streams.Serializer2Node;
 import org.jetbrains.annotations.NotNull;
 
@@ -30,6 +30,7 @@ import static io.aether.utils.flow.Flow.flow;
 
 @SuppressWarnings("unused")
 public final class AetherCloudClient {
+    static final Executor executor = RU.newSingleThreadExecutor("AetherCloudClient");
     private static final List<URI> DEFAULT_URL_FOR_CONNECT = List.of(URI.create("registration.aether.io"));
     public final AFuture startFuture = new AFuture();
     public final EventBiConsumer<UUID, Gate<byte[], byte[]>> onClientStream = new EventBiConsumer<>();
@@ -63,18 +64,30 @@ public final class AetherCloudClient {
     }
 
     @ThreadSafe
-    public void getCloudForUid(@NotNull UUID uid, AConsumer<ServerDescriptorLite> t) {
+    public void getServerDescriptorForUid(@NotNull UUID uid, AConsumer<ServerDescriptorLite> t) {
         getCloud(uid).to(p -> {
+            Log.info(new Log.Info("get cloud for uid") {
+                final UUID uid0 = uid;
+                final Cloud cloud = p;
+            });
             for (var pp : p.data()) {
-                servers.get((int) pp).to(t, 5, () -> Log.error("timeout"));
+                servers.get((int) pp).to(t, 5, () -> Log.error(new Log.Error("timeout server resolve") {
+                    final int sid = pp;
+                }));
             }
-        }, 5, () -> Log.error("timeout" + uid + clouds));
+        }, 5, () -> Log.error(new Log.Error("timeout cloud resolve") {
+            final UUID uid0 = uid;
+        }));
     }
 
     void getConnection(@NotNull UUID uid, @NotNull AConsumer<ConnectionWork> t) {
-        getCloudForUid(uid, sd -> {
+        getServerDescriptorForUid(uid, sd -> {
+            Log.info(new Log.Info("get connection for uid") {
+                final UUID uid0 = uid;
+                final ServerDescriptorLite serverDescriptorLite = sd;
+            });
             var c = getConnection(sd);
-            c.ready.to(t::accept, 5, () -> Log.error("timeout"));
+            c.ready.to(t::accept, 5, () -> Log.error("timeout ready connection"));
         });
     }
 
@@ -98,7 +111,10 @@ public final class AetherCloudClient {
     }
 
     public void ping() {
-        getConnection(ConnectionWork::scheduledWork);
+        getConnection(c->{
+            c.authorizedApi.ping();
+            c.flush();
+        });
     }
 
     public AFuture connect() {
@@ -150,7 +166,11 @@ public final class AetherCloudClient {
     }
 
     void getConnection(@NotNull AConsumer<ConnectionWork> t) {
-        getConnection(Objects.requireNonNull(getUid()), c -> {
+        var uid0 = getUid();
+        getConnection(Objects.requireNonNull(uid0), c -> {
+            Log.info(new Log.Info("get default connection for uid") {
+                final UUID uid = uid0;
+            });
             c.setBasic(true);
             t.accept(c);
             c.flush();
@@ -164,9 +184,9 @@ public final class AetherCloudClient {
     public ARMultiFuture<Cloud> getCloud(@NotNull UUID uid) {
         var res = clouds.get(uid).map(UUIDAndCloud::cloud);
         if (!res.isDone()) {
-            if (clouds.requestsOut.existsLinks()) {
+            if (!clouds.requestsOut.existsLinks()) {
                 getConnection(conWork -> {
-                    System.out.println(uid);
+                    Log.info("the first connection has been received");
                     clouds.flush();
                     conWork.flush();
                 });
@@ -192,11 +212,11 @@ public final class AetherCloudClient {
         clouds.set(new UUIDAndCloud(regResp.uid(), regResp.cloud()));
         clientConfiguration.uid = regResp.uid();
         clientConfiguration.uid(regResp.uid());
-        clientConfiguration.alias = regResp.uid();
+        clientConfiguration.alias = regResp.alias();
         clientConfiguration.alias(regResp.alias());
         assert isRegistered();
         for (var c : regResp.cloud()) {
-            servers.get((int) c).to(cl -> Log.info("resolve server: " + cl), 5, () -> Log.error("timeout"));
+            servers.get((int) c).to(cl -> Log.info("resolve server: " + cl), 5, () -> Log.error("timeout resolve server"));
         }
         servers.flush();
         flow(regResp.cloud().data())
@@ -205,10 +225,13 @@ public final class AetherCloudClient {
                 .allMap(AFuture::all).to(startFuture::tryDone);
     }
 
-    public Gate<byte[],byte[]> openStreamToClient(@NotNull UUID uid) {
-        var res = BufferNode.ofBytes();
-        getConnection(uid, s -> s.openStreamToClient(uid, res.down()));
-        return res.up();
+    public Gate<byte[], byte[]> openStreamToClient(@NotNull UUID uid) {
+        var buf = Node.bufferBytes();
+        getConnection(uid, s -> {
+            Log.info("link client channel to api stream: " + uid);
+            buf.down().link(s.openStreamToClient(uid));
+        });
+        return buf.up();
     }
 
     public AFuture stop(int secondsTimeOut) {
@@ -257,7 +280,7 @@ public final class AetherCloudClient {
     public Serializer2Node<UUID, ?> getOnNewChildren() {
         return onNewChildren;
     }
-    static final Executor executor=RU.newSingleThreadExecutor("AetherCloudClient");
+
     public Executor getExecutor() {
         return executor;
     }
