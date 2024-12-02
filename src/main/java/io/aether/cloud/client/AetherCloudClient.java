@@ -117,7 +117,7 @@ public final class AetherCloudClient {
     }
 
     public AFuture connect() {
-        if (!startConnection.weakCompareAndSet(false, true)) return startFuture;
+        if (!startConnection.compareAndSet(false, true)) return startFuture;
         connect(10);
         return startFuture;
     }
@@ -126,7 +126,7 @@ public final class AetherCloudClient {
         if (step == 0) {
             return;
         }
-        if (!isRegistered() && regStatus.weakCompareAndSet(RegStatus.NO, RegStatus.BEGIN)) {
+        if (!isRegistered() && regStatus.compareAndSet(RegStatus.NO, RegStatus.BEGIN)) {
             var uris = clientConfiguration.cloudFactoryUrl;
             if (uris == null || uris.isEmpty()) {
                 uris = DEFAULT_URL_FOR_CONNECT;
@@ -206,7 +206,7 @@ public final class AetherCloudClient {
 
     public void confirmRegistration(RegistrationResponseLite regResp) {
         assert !isRegistered();
-        if (!regStatus.weakCompareAndSet(RegStatus.BEGIN, RegStatus.CONFIRM)) return;
+        if (!regStatus.compareAndSet(RegStatus.BEGIN, RegStatus.CONFIRM)) return;
         Log.trace("confirmRegistration: " + regResp);
         clouds.set(new UUIDAndCloud(regResp.uid(), regResp.cloud()));
         clientConfiguration.uid = regResp.uid();
