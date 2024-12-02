@@ -30,13 +30,12 @@ public class PointToPointTest {
         client2.ping();
         var message = "Hello world!".getBytes();
         var chToc2 = client1.openStreamToClient(client2.getUid());
-        var g=Gate.of(chToc2,c->{});
-        g.inSide().send(message);
-        g.inSide().flush();
+        var g=Gate.of(Runnable::run,chToc2,c->{});
+        g.inSide().sendAndFlush(message);
         AFuture checkReceiveMessage = new AFuture();
         client2.onClientStream((u, st) -> {
             Assertions.assertEquals(client1.getUid(), u);
-            st.link(Gate.of(newMessage -> {
+            st.link(Gate.of(Runnable::run,newMessage -> {
                 Assertions.assertArrayEquals(newMessage, message);
                 checkReceiveMessage.done();
             }));

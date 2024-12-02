@@ -96,7 +96,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
 
     public void scheduledWork() {
         var t = RU.time();
-        if ((t - lastWorkTime < client.getPingTime() || !inProcess.compareAndSet(false, true))) return;
+        if ((t - lastWorkTime < client.getPingTime() || !inProcess.weakCompareAndSet(false, true))) return;
         try {
             lastWorkTime = t;
         } finally {

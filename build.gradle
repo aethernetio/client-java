@@ -10,11 +10,11 @@ repositories {
     }
 }
 java {
-    sourceCompatibility = JavaVersion.VERSION_20
-    targetCompatibility = JavaVersion.VERSION_20
+    sourceCompatibility = JavaVersion.VERSION_22
+    targetCompatibility = JavaVersion.VERSION_22
 }
 group 'io.aether'
-version '0.0.17'
+version '0.0.18'
 dependencies {
     if (findProject(":core") != null) {
         api project(':core')
@@ -42,22 +42,6 @@ publishing {
         }
     }
 
-    repositories {
-        maven {
-            def releasesUrl = uri("http://nexus.aethernet.io/repository/maven-releases/")
-            def snapshotsUrl = uri("http://nexus.aethernet.io/repository/maven-snapshots/")
-            if (version.toString().endsWith("SNAPSHOT")) {
-                url(snapshotsUrl)
-            } else {
-                url(releasesUrl)
-            }
-            allowInsecureProtocol = true
-            credentials {
-                username 'admin'
-                password '5193051930'
-            }
-        }
-    }
 }
 test {
     useJUnitPlatform()
