@@ -5,7 +5,6 @@ import io.aether.common.*;
 import io.aether.logger.Log;
 import io.aether.net.meta.ApiManager;
 import io.aether.utils.RU;
-import io.aether.utils.ThreadSafe;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.interfaces.ABiConsumer;
 import io.aether.utils.interfaces.AConsumer;
@@ -62,7 +61,6 @@ public final class AetherCloudClient {
         this.name = name;
     }
 
-    @ThreadSafe
     public void getServerDescriptorForUid(@NotNull UUID uid, AConsumer<ServerDescriptorLite> t) {
         getCloud(uid).to(p -> {
             Log.info(new Log.Info("get cloud for uid") {
@@ -110,7 +108,7 @@ public final class AetherCloudClient {
     }
 
     public void ping() {
-        getConnection(c->{
+        getConnection(c -> {
             c.authorizedApi.ping();
             c.flush();
         });

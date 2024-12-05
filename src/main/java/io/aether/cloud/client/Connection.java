@@ -55,7 +55,7 @@ public abstract class Connection<LT, RT> {
 
     protected void connect() {
         Log.debug("try to connect " + getClass());
-        apiRoot.down().link(new NettyStreamClient(this,uri, configurator));
+        apiRoot.down().link(new NettyStreamClient(uri, configurator));
         connectFuture.done();
         var remApi = apiRoot.getRemoteApi();
         Log.debug("get remote api: " + rt);
