@@ -2,7 +2,7 @@ package io.aether.examples.plainChat;
 
 import io.aether.cloud.client.AetherCloudClient;
 import io.aether.cloud.client.ClientConfiguration;
-import io.aether.net.ApiGateConnection;
+import io.aether.net.ApiGate;
 import io.aether.net.RemoteApi;
 import io.aether.utils.slots.EventConsumer;
 import io.aether.utils.streams.ApiNode;
@@ -18,7 +18,7 @@ public class ChatClient implements ServiceClientApi {
     public final EventConsumer<MessageDescriptor> onMessage = new EventConsumer<>();
     private final Map<UUID, UserDescriptor> users = new ConcurrentHashMap<>();
     private final ServiceServerApi service;
-    private final ApiGateConnection<ServiceClientApi, ServiceServerApi> apiNode;
+    private final ApiGate<ServiceClientApi, ServiceServerApi> apiNode;
     private final String name;
 
     public ChatClient(UUID chatService, String name) {

@@ -8,8 +8,8 @@ import io.aether.common.AetherCodec;
 import io.aether.common.ServerDescriptorLite;
 import io.aether.common.UUIDAndCloud;
 import io.aether.logger.Log;
-import io.aether.net.ApiDeserializerConsumer;
-import io.aether.net.ApiGateConnection;
+import io.aether.net.ApiGate;
+import io.aether.net.ApiLevelConsumer;
 import io.aether.net.RemoteApi;
 import io.aether.net.impl.bin.ApiLevel;
 import io.aether.net.meta.ApiManager;
@@ -35,8 +35,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
     boolean basicStatus;
     long lastWorkTime;
     AuthorizedApi authorizedApi;
-    ApiLevel apiLevel;
-    ApiGateConnection<ClientApiSafe, AuthorizedApi> safeApiCon;
+    ApiGate<ClientApiSafe, AuthorizedApi> safeApiCon;
 
     public ConnectionWork(AetherCloudClient client, ServerDescriptorLite s) {
         super(client, s.ipAddress().getURI(AetherCodec.BINARY), ClientApiUnsafe.class, LoginApi.class);
@@ -48,9 +47,9 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
         connect();
     }
 
-    public  Gate<byte[], byte[]>  openStreamToClient(UUID uid) {
-        var con=RemoteApi.of(authorizedApi).getConnection();
-        var res=con.newStream().base;
+    public Gate<byte[], byte[]> openStreamToClient(UUID uid) {
+        var con = RemoteApi.of(authorizedApi).getConnection();
+        var res = con.newStream().base.up();
         authorizedApi.openStreamToClient(uid, res);
         con.flush();
         return res;
@@ -68,10 +67,10 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
         remoteApi.loginByAlias(authorizedApiNode, client.getAlias());
         safeApiCon = authorizedApiNode.forClient(new MyClientApiSafe(client));
         authorizedApi = safeApiCon.getRemoteApi();
-        SerializerNode<Short, ServerDescriptorLite, ?> serversNode = SerializerNode.of(ApiManager.SHORT, ServerDescriptorLite.META, safeApiCon.newStream().base);
-        client.servers.addSource(serversNode.forClient().mapIn(Integer::shortValue));
-        SerializerNode<UUID, UUIDAndCloud, ?> cloudsNode = SerializerNode.of(ApiManager.UUID, UUIDAndCloud.META, safeApiCon.newStream().base);
-        client.clouds.addSource(cloudsNode.forClient());
+        SerializerNode<Short, ServerDescriptorLite, ?> serversNode = SerializerNode.of(ApiManager.SHORT, ServerDescriptorLite.META, safeApiCon.newStream().base.up());
+        client.servers.addSource(serversNode.forServer().mapRead(Integer::shortValue));
+        SerializerNode<UUID, UUIDAndCloud, ?> cloudsNode = SerializerNode.of(ApiManager.UUID, UUIDAndCloud.META, safeApiCon.newStream().base.up());
+        client.clouds.addSource(cloudsNode.forServer());
         authorizedApi.resolvers(serversNode, cloudsNode);
         Log.debug("work connection is ready");
         ready.set(this);
@@ -104,7 +103,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
         }
     }
 
-    private static class MyClientApiSafe implements ClientApiSafe, ApiDeserializerConsumer {
+    private static class MyClientApiSafe implements ClientApiSafe, ApiLevelConsumer {
         private final AetherCloudClient client;
         private ApiLevel apiProcessor;
 
@@ -128,8 +127,8 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
         }
 
         @Override
-        public void setApiDeserializer(ApiLevel apiProcessor) {
-            this.apiProcessor = apiProcessor;
+        public void setApiLevel(ApiLevel apiLevel) {
+            this.apiProcessor = apiLevel;
         }
 
         @Override

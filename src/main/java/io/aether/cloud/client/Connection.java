@@ -2,13 +2,15 @@ package io.aether.cloud.client;
 
 import io.aether.common.AetherCodec;
 import io.aether.logger.Log;
-import io.aether.net.ApiGateConnection;
+import io.aether.net.ApiGate;
 import io.aether.net.NettyStreamClient;
 import io.aether.net.NetworkConfigurator;
 import io.aether.net.meta.ApiManager;
 import io.aether.net.meta.MetaApi;
 import io.aether.utils.RU;
 import io.aether.utils.futures.AFuture;
+import io.aether.utils.interfaces.AConsumer;
+import io.aether.utils.streams.Gate;
 
 import java.net.URI;
 
@@ -18,16 +20,17 @@ public abstract class Connection<LT, RT> {
     private final MetaApi<LT> lt;
     private final MetaApi<RT> rt;
     protected final AFuture connectFuture = new AFuture();
-    protected ApiGateConnection<LT, RT> apiRoot;
+    protected ApiGate<LT, RT> apiRoot;
     final NetworkConfigurator configurator = AetherCodec.BINARY.getNetworkConfigurator();
 
     public Connection(AetherCloudClient client, URI uri, Class<LT> lt, Class<RT> rt) {
         assert uri != null;
         this.lt = ApiManager.getApi(lt);
         this.rt = ApiManager.getApi(rt);
-        this.apiRoot = ApiGateConnection.of(this.lt, this.rt,RU.cast(this));
+        this.apiRoot = new ApiGate<>(this.lt, this.rt);
         this.uri = uri;
         this.client = client;
+        apiRoot.up().link(Gate.ofConsumer((AConsumer<AConsumer<LT>>) cmd->cmd.accept(RU.cast(this))));
     }
 
     @Override
@@ -55,7 +58,7 @@ public abstract class Connection<LT, RT> {
 
     protected void connect() {
         Log.debug("try to connect " + getClass());
-        apiRoot.down().link(new NettyStreamClient(uri, configurator));
+        apiRoot.down().link(new NettyStreamClient(uri, configurator).up());
         connectFuture.done();
         var remApi = apiRoot.getRemoteApi();
         Log.debug("get remote api: " + rt);

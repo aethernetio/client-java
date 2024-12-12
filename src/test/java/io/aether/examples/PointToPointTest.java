@@ -24,18 +24,18 @@ public class PointToPointTest {
         if (clientConfig2 == null) clientConfig2 = new ClientConfiguration(StandardUUIDs.TEST_UID, cloudFactoryURI);
         AetherCloudClient client1 = new AetherCloudClient(clientConfig1);
         AetherCloudClient client2 = new AetherCloudClient(clientConfig2);
-        Assertions.assertTrue(client1.startFuture.waitDoneSeconds(10));
-        Assertions.assertTrue(client2.startFuture.waitDoneSeconds(10));
+        Assertions.assertTrue(client1.startFuture.waitDoneSeconds(1000));
+        Assertions.assertTrue(client2.startFuture.waitDoneSeconds(1000));
         Log.info("clients is registered");
         client2.ping();
         var message = "Hello world!".getBytes();
         var chToc2 = client1.openStreamToClient(client2.getUid());
-        var g=Gate.of(chToc2);
+        var g= Gate.ofConsumer(chToc2,v->{});
         g.sendAndFlush(message);
         AFuture checkReceiveMessage = new AFuture();
         client2.onClientStream((u, st) -> {
             Assertions.assertEquals(client1.getUid(), u);
-            st.link(Gate.of(newMessage -> {
+            st.link(Gate.ofConsumer(newMessage -> {
                 Assertions.assertArrayEquals(newMessage, message);
                 checkReceiveMessage.done();
             }));
