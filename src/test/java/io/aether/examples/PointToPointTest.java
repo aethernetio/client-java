@@ -5,7 +5,6 @@ import io.aether.cloud.client.AetherCloudClient;
 import io.aether.cloud.client.ClientConfiguration;
 import io.aether.logger.Log;
 import io.aether.utils.futures.AFuture;
-import io.aether.utils.streams.Gate;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -28,19 +27,24 @@ public class PointToPointTest {
         Assertions.assertTrue(client2.startFuture.waitDoneSeconds(1000));
         Log.info("clients is registered");
         client2.ping();
-        var message = "Hello world!".getBytes();
-        var chToc2 = client1.openStreamToClient(client2.getUid());
-        var g= Gate.ofConsumer(chToc2,v->{});
-        g.sendAndFlush(message);
         AFuture checkReceiveMessage = new AFuture();
+        var message = "Hello world!".getBytes();
         client2.onClientStream((u, st) -> {
             Assertions.assertEquals(client1.getUid(), u);
-            st.link(Gate.ofConsumer(newMessage -> {
+            st.ofConsumer(newMessage -> {
                 Assertions.assertArrayEquals(newMessage, message);
                 checkReceiveMessage.done();
-            }));
+            });
         });
-        Assertions.assertTrue(checkReceiveMessage.waitDoneSeconds(10));
+        Log.debug("START!");
+        var chToc2 = client1.openStreamToClient(client2.getUid());
+        var g= chToc2.ofConsumer(v->{});
+//        assert !g.getFGateCast().inSide.isSoftWritable();
+//        assert !g.getFGateCast().inSide.isWritable();
+//        assert !g.getFGateCast().inSide.isConnected();
+        g.getFGateCast().inSide.sendAndFlush(message);
+
+        Assertions.assertTrue(checkReceiveMessage.waitDoneSeconds(10000));
         client1.stop(5);
         client2.stop(5);
     }

@@ -9,8 +9,6 @@ import io.aether.net.meta.ApiManager;
 import io.aether.net.meta.MetaApi;
 import io.aether.utils.RU;
 import io.aether.utils.futures.AFuture;
-import io.aether.utils.interfaces.AConsumer;
-import io.aether.utils.streams.Gate;
 
 import java.net.URI;
 
@@ -30,7 +28,7 @@ public abstract class Connection<LT, RT> {
         this.apiRoot = new ApiGate<>(this.lt, this.rt);
         this.uri = uri;
         this.client = client;
-        apiRoot.up().link(Gate.ofConsumer((AConsumer<AConsumer<LT>>) cmd->cmd.accept(RU.cast(this))));
+        apiRoot.up().ofConsumer(cmd->cmd.accept(RU.cast(this)));
     }
 
     @Override
@@ -58,7 +56,7 @@ public abstract class Connection<LT, RT> {
 
     protected void connect() {
         Log.debug("try to connect " + getClass());
-        apiRoot.down().link(new NettyStreamClient(uri, configurator).up());
+        apiRoot.down().link(new NettyStreamClient(uri, configurator).up().buffer());
         connectFuture.done();
         var remApi = apiRoot.getRemoteApi();
         Log.debug("get remote api: " + rt);

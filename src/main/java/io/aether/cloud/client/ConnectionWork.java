@@ -15,10 +15,7 @@ import io.aether.net.impl.bin.ApiLevel;
 import io.aether.net.meta.ApiManager;
 import io.aether.utils.RU;
 import io.aether.utils.slots.ARMultiFuture;
-import io.aether.utils.streams.ApiNode;
-import io.aether.utils.streams.CryptoNode;
-import io.aether.utils.streams.Gate;
-import io.aether.utils.streams.SerializerNode;
+import io.aether.utils.streams.*;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.UUID;
@@ -49,7 +46,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
 
     public Gate<byte[], byte[]> openStreamToClient(UUID uid) {
         var con = RemoteApi.of(authorizedApi).getConnection();
-        var res = con.newStream().base.up();
+        var res = con.newStream();
         authorizedApi.openStreamToClient(uid, res);
         con.flush();
         return res;
@@ -67,11 +64,22 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
         remoteApi.loginByAlias(authorizedApiNode, client.getAlias());
         safeApiCon = authorizedApiNode.forClient(new MyClientApiSafe(client));
         authorizedApi = safeApiCon.getRemoteApi();
-        SerializerNode<Short, ServerDescriptorLite, ?> serversNode = SerializerNode.of(ApiManager.SHORT, ServerDescriptorLite.META, safeApiCon.newStream().base.up());
-        client.servers.addSource(serversNode.forServer().mapRead(Integer::shortValue));
-        SerializerNode<UUID, UUIDAndCloud, ?> cloudsNode = SerializerNode.of(ApiManager.UUID, UUIDAndCloud.META, safeApiCon.newStream().base.up());
-        client.clouds.addSource(cloudsNode.forServer());
+        SerializerNode<Short, ServerDescriptorLite, ?> serversNode = SerializerNode.of(ApiManager.SHORT, ServerDescriptorLite.META, safeApiCon.newStream());
+        client.servers.addSourceHard(serversNode.forClient().mapRead(Integer::shortValue));
+        SerializerNode<UUID, UUIDAndCloud, ?> cloudsNode = SerializerNode.of(ApiManager.UUID, UUIDAndCloud.META, safeApiCon.newStream());
+        client.clouds.addSourceHard(new LoggerNode<>("client request cloud stream",cloudsNode.forClient()){
+            @Override
+            public void interceptorDown(UUIDAndCloud value) {
+                super.interceptorDown(value);
+            }
+
+            @Override
+            public void interceptorUp(UUID value) {
+                super.interceptorUp(value);
+            }
+        }.up());
         authorizedApi.resolvers(serversNode, cloudsNode);
+        safeApiCon.flush();
         Log.debug("work connection is ready");
         ready.set(this);
     }

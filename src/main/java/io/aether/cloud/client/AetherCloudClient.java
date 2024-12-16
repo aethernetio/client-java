@@ -33,13 +33,14 @@ public final class AetherCloudClient {
     public final AFuture startFuture = new AFuture();
     public final EventBiConsumer<UUID, Gate<byte[], byte[]>> onClientStream = new EventBiConsumer<>();
     final Map<Integer, ConnectionWork> connections = new ConcurrentHashMap<>();
-    final MapBase<UUID, UUIDAndCloud> clouds = new MapBase<>(UUIDAndCloud::uid).withLog();
+    final MapBase<UUID, UUIDAndCloud> clouds = new MapBase<>(UUIDAndCloud::uid).withLog("client clouds");
     final AtomicReference<RegStatus> regStatus = new AtomicReference<>(RegStatus.NO);
     final MapBase<Integer, ServerDescriptorLite> servers = new MapBase<>(ServerDescriptorLite::idAsInt);
     final long lastSecond;
     private final ClientConfiguration clientConfiguration;
     private final Collection<ScheduledFuture<?>> scheduledFutures = new HashSet<>();
     private final AtomicBoolean startConnection = new AtomicBoolean();
+    private final int timeout1 = 5;
     Serializer2Node<UUID, ?> onNewChildren = Serializer2Node.of(ApiManager.UUID);
     Key masterKey;
     private String name;
@@ -62,29 +63,41 @@ public final class AetherCloudClient {
     }
 
     public void getServerDescriptorForUid(@NotNull UUID uid, AConsumer<ServerDescriptorLite> t) {
+        if (uid.equals(getUid())) {
+            var cloud = clouds.get(uid).getValue();
+            for (var pp : cloud.cloud()) {
+                t.accept(servers.get((int) pp).getValue());
+            }
+        }
         getCloud(uid).to(p -> {
             Log.info(new Log.Info("get cloud for uid") {
                 final UUID uid0 = uid;
                 final Cloud cloud = p;
             });
             for (var pp : p.data()) {
-                servers.get((int) pp).to(t, 5, () -> Log.error(new Log.Error("timeout server resolve") {
+                servers.get((int) pp).to(t, timeout1, () -> Log.error(new Log.Error("timeout server resolve") {
                     final int sid = pp;
                 }));
             }
-        }, 5, () -> Log.error(new Log.Error("timeout cloud resolve") {
+        }, timeout1, () -> Log.error(new Log.Error("timeout cloud resolve") {
             final UUID uid0 = uid;
         }));
     }
 
     void getConnection(@NotNull UUID uid, @NotNull AConsumer<ConnectionWork> t) {
+        if (uid.equals(getUid())) {
+            var cloud = clouds.get(uid).getValue();
+            var s = servers.get((int) cloud.cloud().data()[0]).getValue();
+            t.accept(getConnection(s));
+            return;
+        }
         getServerDescriptorForUid(uid, sd -> {
             Log.info(new Log.Info("get connection for uid") {
                 final UUID uid0 = uid;
                 final ServerDescriptorLite serverDescriptorLite = sd;
             });
             var c = getConnection(sd);
-            c.ready.to(t::accept, 5, () -> Log.error("timeout ready connection"));
+            c.ready.to(t::accept, timeout1, () -> Log.error("timeout ready connection"));
         });
     }
 
