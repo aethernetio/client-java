@@ -49,7 +49,7 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
                                 5000);
                         ApiNode<GlobalRegClientApi, GlobalRegServerApi, CryptoNode<?>> globalApiNode =
                                 ApiNode.of(GlobalRegClientApi.META, GlobalRegServerApi.META, CryptoNode.of().setName("cloud client registration. global api"));
-                        authApi.registration(globalApiNode, wpd.salt(), wpd.suffix(), passwords, client.getMasterKey());
+                        authApi.registration(globalApiNode, wpd.salt(), wpd.suffix(), passwords,client.getParent(), client.getMasterKey());
                         if (!wpd.globalKey().check()) {
                             throw new RuntimeException();
                         }
