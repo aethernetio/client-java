@@ -19,7 +19,7 @@ dependencies {
     if (findProject(":core") != null) {
         api project(':core')
     } else {
-        api 'io.aether:core:0.0.48'
+        api 'io.aether:core:0.0.50'
     }
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.9.2'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine'
