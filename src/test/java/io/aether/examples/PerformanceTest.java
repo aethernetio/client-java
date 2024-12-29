@@ -8,6 +8,7 @@ import io.aether.utils.RU;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.streams.Acceptor;
 import io.aether.utils.streams.FGate;
+import io.aether.utils.streams.Value;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -28,7 +29,7 @@ public class PerformanceTest {
         AetherCloudClient client1 = new AetherCloudClient(clientConfig1);
         AetherCloudClient client2 = new AetherCloudClient(clientConfig2);
         Assertions.assertTrue(AFuture.all(client1.startFuture, client2.startFuture).waitDoneSeconds(5));
-        Log.addIgnoreRule(c -> c instanceof Log.Trace);
+        Log.addFilter(c -> false);
         var ch1 = client1.openStreamToClient(client2.getUid());
         var ch11 = ch1.ofConsumer(v->{});
         final var total = 100_000_000L;
@@ -58,7 +59,7 @@ public class PerformanceTest {
             if (cFlush%100==0) {
                 ch11.getFGateCast().inSide.flush();
             } else {
-                ch11.getFGateCast().inSide.send(data);
+                ch11.getFGateCast().inSide.send(Value.of(data));
                 cc += data.length;
                 if(cc/STEP!=lOut){
                     Log.info(">>> "+cc);
@@ -97,6 +98,11 @@ public class PerformanceTest {
         long lIn=0;
 
         @Override
+        public void close() {
+
+        }
+
+        @Override
         public boolean isWritable() {
             return true;
         }
@@ -122,8 +128,8 @@ public class PerformanceTest {
         }
 
         @Override
-        public void send(byte[] value) {
-            var c = counter.addAndGet(-value.length);
+        public void send(Value<byte[]> value) {
+            var c = counter.addAndGet(-value.data().length);
             if(c<0)return;
             if(c/STEP2!=lIn){
                 Log.info("<<< "+c);

@@ -13,6 +13,7 @@ java {
     sourceCompatibility = JavaVersion.VERSION_22
     targetCompatibility = JavaVersion.VERSION_22
 }
+
 group 'io.aether'
 version '0.0.18'
 dependencies {

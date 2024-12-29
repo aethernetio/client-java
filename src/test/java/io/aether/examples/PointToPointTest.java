@@ -5,6 +5,7 @@ import io.aether.cloud.client.AetherCloudClient;
 import io.aether.cloud.client.ClientConfiguration;
 import io.aether.logger.Log;
 import io.aether.utils.futures.AFuture;
+import io.aether.utils.streams.Value;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -39,10 +40,7 @@ public class PointToPointTest {
         Log.debug("START!");
         var chToc2 = client1.openStreamToClient(client2.getUid());
         var g= chToc2.ofConsumer(v->{});
-//        assert !g.getFGateCast().inSide.isSoftWritable();
-//        assert !g.getFGateCast().inSide.isWritable();
-//        assert !g.getFGateCast().inSide.isConnected();
-        g.getFGateCast().inSide.sendAndFlush(message);
+        g.getFGateCast().inSide.send(Value.ofForce(message));
 
         Assertions.assertTrue(checkReceiveMessage.waitDoneSeconds(10000));
         client1.stop(5);

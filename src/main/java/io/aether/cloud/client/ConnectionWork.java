@@ -48,7 +48,6 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
         var con = RemoteApi.of(authorizedApi).getConnection();
         var res = con.newStream();
         authorizedApi.openStreamToClient(uid, res);
-        con.flush();
         return res;
     }
 
