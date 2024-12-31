@@ -17,7 +17,9 @@ public class PointToPointTest {
     public ClientConfiguration clientConfig1;
     public ClientConfiguration clientConfig2;
     public final List<URI> cloudFactoryURI = new ArrayList<>();
-
+    {
+        cloudFactoryURI.add(URI.create("tcp://registration.aethernet.io:9010"));
+    }
     @Test
     public void main() {
         if (clientConfig1 == null) clientConfig1 = new ClientConfiguration(StandardUUIDs.TEST_UID, cloudFactoryURI);
