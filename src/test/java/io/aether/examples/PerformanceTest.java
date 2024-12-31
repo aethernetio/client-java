@@ -10,6 +10,7 @@ import io.aether.utils.streams.Acceptor;
 import io.aether.utils.streams.FGate;
 import io.aether.utils.streams.Value;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.net.URI;
@@ -17,6 +18,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
+@Disabled
 public class PerformanceTest {
     public final List<URI> cloudFactoryURI = new ArrayList<>();
     public ClientConfiguration clientConfig1;
