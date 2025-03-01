@@ -1,2 +1,2 @@
-# client-java
-Java client for aether
+# aether-client-java
+Aether: java client
