@@ -1,95 +1,90 @@
 package io.aether.cloud.client;
 
-import io.aether.api.clientApi.ClientApiSafe;
-import io.aether.api.clientApi.ClientApiUnsafe;
-import io.aether.api.serverApi.AuthorizedApi;
-import io.aether.api.serverApi.LoginApi;
+import io.aether.clientServerApi.clientApi.ClientApiSafe;
+import io.aether.clientServerApi.clientApi.ClientApiUnsafe;
+import io.aether.clientServerApi.serverApi.AuthorizedApi;
+import io.aether.clientServerApi.serverApi.LoginApi;
 import io.aether.common.AetherCodec;
-import io.aether.common.ServerDescriptorLite;
+import io.aether.common.Cloud;
+import io.aether.common.ServerDescriptor;
 import io.aether.common.UUIDAndCloud;
-import io.aether.logger.Log;
 import io.aether.net.ApiGate;
 import io.aether.net.ApiLevelConsumer;
-import io.aether.net.RemoteApi;
-import io.aether.net.impl.bin.ApiLevel;
-import io.aether.net.meta.ApiManager;
+import io.aether.net.Remote;
+import io.aether.net.StreamManager;
+import io.aether.net.serialization.ApiLevel;
+import io.aether.utils.Inject;
 import io.aether.utils.RU;
-import io.aether.utils.slots.ARMultiFuture;
-import io.aether.utils.streams.*;
-import org.jetbrains.annotations.NotNull;
+import io.aether.utils.slots.AMFuture;
+import io.aether.utils.streams.CryptoNode;
+import io.aether.utils.streams.Value;
 
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implements ClientApiUnsafe {
-
     //region counters
     public final AtomicLong lastBackPing = new AtomicLong(Long.MAX_VALUE);
-    public final ARMultiFuture<ConnectionWork> ready = new ARMultiFuture<>();
-    private final ServerDescriptorLite serverDescriptor;
+    public final AMFuture<ConnectionWork> ready = new AMFuture<>();
+    private final ServerDescriptor serverDescriptor;
     final private AtomicBoolean inProcess = new AtomicBoolean();
     boolean basicStatus;
     long lastWorkTime;
-    AuthorizedApi authorizedApi;
-    ApiGate<ClientApiSafe, AuthorizedApi> safeApiCon;
+    volatile ApiGate<ClientApiSafe, AuthorizedApi> safeApiCon;
 
-    public ConnectionWork(AetherCloudClient client, ServerDescriptorLite s) {
-        super(client, s.ipAddress().getURI(AetherCodec.BINARY), ClientApiUnsafe.class, LoginApi.class);
-        Log.info(new Log.Info("new connection") {
-            final ServerDescriptorLite serverDescriptor = s;
-        });
+    public ConnectionWork(AetherCloudClient client, ServerDescriptor s) {
+        super(client, s.ipAddress.getURI(AetherCodec.BINARY), ClientApiUnsafe.class, LoginApi.class);
         serverDescriptor = s;
         this.basicStatus = false;
         connect();
     }
 
-    public Gate<byte[], byte[]> openStreamToClient(UUID uid) {
-        var con = RemoteApi.of(authorizedApi).getConnection();
-        var res = con.newStream();
-        authorizedApi.openStreamToClient(uid, res);
-        return res;
+    public void ping() {
+        ready.toOnce((aa) -> {
+            safeApiCon.getRemoteApi().run_flush(a -> {
+                a.ping(client.getPingTime());
+            });
+        });
     }
 
     public void flush() {
-        safeApiCon.flush();
+        var api = safeApiCon;
+        if (api != null) {
+            api.flush();
+        }
     }
 
     @Override
-    protected void onConnect(LoginApi remoteApi) {
-        var mk = client.getMasterKey();
-        ApiNode<ClientApiSafe, AuthorizedApi, CryptoNode<?>> authorizedApiNode = ApiNode.of(ClientApiSafe.META, AuthorizedApi.META,
-                CryptoNode.of(mk.getType().cryptoLib().env.symmetricForClient(mk, serverDescriptor.id())));
-        remoteApi.loginByAlias(authorizedApiNode, client.getAlias());
-        safeApiCon = authorizedApiNode.forClient(new MyClientApiSafe(client));
-        authorizedApi = safeApiCon.getRemoteApi();
-        SerializerNode<Short, ServerDescriptorLite, ?> serversNode = SerializerNode.of(ApiManager.SHORT, ServerDescriptorLite.META, safeApiCon.newStream());
-        client.servers.addSourceHard(serversNode.forClient().mapRead(Integer::shortValue));
-        SerializerNode<UUID, UUIDAndCloud, ?> cloudsNode = SerializerNode.of(ApiManager.UUID, UUIDAndCloud.META, safeApiCon.newStream());
-        client.clouds.addSourceHard(new LoggerNode<>("client request cloud stream",cloudsNode.forClient()){
-            @Override
-            public void interceptorDown(UUIDAndCloud value) {
-                super.interceptorDown(value);
-            }
-
-            @Override
-            public void interceptorUp(UUID value) {
-                super.interceptorUp(value);
-            }
-        }.up());
-        authorizedApi.resolvers(serversNode, cloudsNode);
-        safeApiCon.flush();
-        Log.debug("work connection is ready");
-        ready.set(this);
+    public void sendSafeApiData(UUID uid, byte[] data) {
+        if (!Objects.equals(uid, client.getAlias())) {
+            throw new IllegalStateException();
+        }
+        CryptoNode<?> cp = safeApiCon.findDown(CryptoNode.class);
+        cp.down().send(Value.of(data));
     }
 
-    public ServerDescriptorLite getServerDescriptor() {
+    @Override
+    protected void onConnect(Remote<LoginApi> remoteApi) {
+        var mk = client.getMasterKey();
+        safeApiCon = ApiGate.of(ClientApiSafe.META, AuthorizedApi.META,
+                new MyClientApiSafe(client), StreamManager.forClient(),
+                CryptoNode.of(mk.getType().cryptoLib().env.symmetricForClient(mk, serverDescriptor.id())).setName("client to workServer"));
+        CryptoNode<?> cp = safeApiCon.findDown(CryptoNode.class);
+        cp.down().toSubApi(remoteApi, (a, v) -> a.loginByAlias2(client.getAlias(), v));
+        client.servers.addSourceHard().toMethod(safeApiCon, (a, sid) -> a.resolverServers(new short[]{sid.shortValue()}));
+        client.clouds.addSourceHard().toMethod(safeApiCon, (a, uid) -> a.resolverClouds(new UUID[]{uid}));
+        ready.set(ConnectionWork.this);
+    }
+
+    public ServerDescriptor getServerDescriptor() {
         return serverDescriptor;
     }
 
     @Override
     public String toString() {
-        return "C(" + lifeTime() + ")";
+        return "work(" + socketStreamClient + ")";
     }
 
     public void setBasic(boolean basic) {
@@ -105,6 +100,12 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
         if ((t - lastWorkTime < client.getPingTime() || !inProcess.compareAndSet(false, true))) return;
         try {
             lastWorkTime = t;
+            var c = safeApiCon;
+            if (c.getRemoteApiMgr().isEmpty()) {
+                ping();
+            } else {
+                c.flush();
+            }
         } finally {
             inProcess.set(false);
         }
@@ -112,6 +113,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
 
     private static class MyClientApiSafe implements ClientApiSafe, ApiLevelConsumer {
         private final AetherCloudClient client;
+        @Inject
         private ApiLevel apiProcessor;
 
         public MyClientApiSafe(AetherCloudClient client) {
@@ -129,18 +131,28 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
         }
 
         @Override
-        public void newChild(UUID uid) {
+        public void sendMessage(UUID uid, byte[] data) {
+            client.getMessageNode(uid, MessageEventListener.DEFAULT).sendMessageFromServerToClient(data);
+        }
 
+        @Override
+        public void sendServerDescriptor(ServerDescriptor v) {
+            client.servers.set(v);
+        }
+
+        @Override
+        public void sendCloud(UUID uid, Cloud cloud) {
+            client.clouds.set(new UUIDAndCloud(uid, cloud));
+        }
+
+        @Override
+        public void newChild(UUID uid) {
+            client.onNewChild.fire(uid);
         }
 
         @Override
         public void setApiLevel(ApiLevel apiLevel) {
             this.apiProcessor = apiLevel;
-        }
-
-        @Override
-        public void streamToClient(@NotNull UUID uid, @NotNull Gate<byte[], byte[]> stream) {
-            client.onClientStream.fire(uid, stream);
         }
 
     }

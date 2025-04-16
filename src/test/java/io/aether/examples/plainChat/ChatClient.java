@@ -1,11 +1,11 @@
 package io.aether.examples.plainChat;
 
 import io.aether.cloud.client.AetherCloudClient;
-import io.aether.cloud.client.ClientConfiguration;
+import io.aether.cloud.client.ClientStateInMemory;
+import io.aether.logger.Log;
 import io.aether.net.ApiGate;
-import io.aether.net.RemoteApi;
+import io.aether.net.Remote;
 import io.aether.utils.slots.EventConsumer;
-import io.aether.utils.streams.ApiNode;
 
 import java.net.URI;
 import java.util.List;
@@ -17,29 +17,24 @@ public class ChatClient implements ServiceClientApi {
     public final AetherCloudClient aether;
     public final EventConsumer<MessageDescriptor> onMessage = new EventConsumer<>();
     private final Map<UUID, UserDescriptor> users = new ConcurrentHashMap<>();
-    private final ServiceServerApi service;
+    private final Remote<ServiceServerApi> service;
     private final ApiGate<ServiceClientApi, ServiceServerApi> apiNode;
     private final String name;
 
-    public ChatClient(UUID chatService, String name) {
+    public ChatClient(UUID chatService, List<URI> regUri, String name) {
         this.name = name;
-        aether = new AetherCloudClient(new ClientConfiguration(chatService, List.of(URI.create("tcp://aethernet.io"))))
+        aether = new AetherCloudClient(new ClientStateInMemory(chatService, regUri))
                 .waitStart(10);
-        this.apiNode = ApiNode.of(ServiceClientApi.META, ServiceServerApi.META, aether.openStreamToClient(chatService))
-                .forClient(this);
+        this.apiNode = aether.openStreamToClient(chatService).bufferAutoFlush().toApi(ServiceClientApi.META, ServiceServerApi.META, this);
         service = apiNode.getRemoteApi();
-        service.registration(name);
-        apiNode.flush();
+        service.run_flush(a -> a.registration(name));
     }
 
-    private void flush() {
-        RemoteApi.of(service).flush();
-    }
 
     @Override
     public void addNewUsers(UserDescriptor[] users) {
         for (var u : users) {
-            this.users.put(u.uid(), u);
+            this.users.put(u.uid, u);
         }
     }
 
@@ -48,19 +43,18 @@ public class ChatClient implements ServiceClientApi {
     }
 
     public void sendMessage(String message) {
-        service.sendMessage(message);
-        flush();
+        service.run_flush(a -> a.sendMessage(message));
     }
 
     @Override
     public void newMessages(MessageDescriptor[] messages) {
         for (var m : messages) {
             onMessage.fire(m);
-            var u = users.get(m.uid());
+            var u = users.get(m.uid);
             if (u == null) {
-                System.out.println(m);
+                Log.info("new message $msg", "msg", m);
             } else {
-                System.out.println(u.name() + ": " + m.message());
+                Log.info("new message from: $from ($msg)", "from", u.name, "msg", m.message);
             }
         }
     }

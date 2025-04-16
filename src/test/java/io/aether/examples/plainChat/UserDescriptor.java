@@ -2,5 +2,12 @@ package io.aether.examples.plainChat;
 
 import java.util.UUID;
 
-public record UserDescriptor(UUID uid, String name) {
+public class UserDescriptor {
+    public final UUID uid;
+    public final String name;
+
+    public UserDescriptor(UUID uid, String name) {
+        this.uid = uid;
+        this.name = name;
+    }
 }

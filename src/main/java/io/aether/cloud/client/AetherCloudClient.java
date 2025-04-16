@@ -1,25 +1,33 @@
 package io.aether.cloud.client;
 
-import io.aether.api.serverRegistryApi.RegistrationResponseLite;
+import io.aether.clientServerApi.serverApi.AuthorizedApi;
+import io.aether.clientServerApi.serverApi.ServerApiByUid;
+import io.aether.clientServerApi.serverApi.ServerApiByUidClient;
+import io.aether.clientServerRegApi.serverRegistryApi.RegistrationResponseLite;
 import io.aether.common.*;
+import io.aether.crypt.CryptoLib;
+import io.aether.crypt.Key;
+import io.aether.crypt.SignedKey;
 import io.aether.logger.Log;
-import io.aether.net.meta.ApiManager;
+import io.aether.net.ApiGate;
+import io.aether.net.Remote;
+import io.aether.net.StreamManager;
 import io.aether.utils.RU;
 import io.aether.utils.futures.AFuture;
+import io.aether.utils.futures.ARFuture;
 import io.aether.utils.interfaces.ABiConsumer;
 import io.aether.utils.interfaces.AConsumer;
-import io.aether.utils.slots.ARMultiFuture;
+import io.aether.utils.interfaces.AFunction;
+import io.aether.utils.slots.AMFuture;
 import io.aether.utils.slots.EventBiConsumer;
+import io.aether.utils.slots.EventConsumer;
 import io.aether.utils.streams.Gate;
 import io.aether.utils.streams.MapBase;
-import io.aether.utils.streams.Node;
-import io.aether.utils.streams.Serializer2Node;
+import io.aether.utils.streams.rcollections.RCol;
 import org.jetbrains.annotations.NotNull;
 
-import java.net.URI;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -28,43 +36,44 @@ import java.util.concurrent.atomic.AtomicReference;
 import static io.aether.utils.flow.Flow.flow;
 
 public final class AetherCloudClient {
-    static final Executor executor = RU.newSingleThreadExecutor("AetherCloudClient");
-    private static final List<URI> DEFAULT_URL_FOR_CONNECT = List.of(URI.create("registration.aether.io"));
+    private static final Log.Node logClientContext = Log.createContext("SystemComponent", "Client");
     public final AFuture startFuture = new AFuture();
-    public final EventBiConsumer<UUID, Gate<byte[], byte[]>> onClientStream = new EventBiConsumer<>();
+    public final EventConsumer<MessageNode> onClientStream = new EventConsumer<>();
     final Map<Integer, ConnectionWork> connections = new ConcurrentHashMap<>();
     final MapBase<UUID, UUIDAndCloud> clouds = new MapBase<>(UUIDAndCloud::uid).withLog("client clouds");
     final AtomicReference<RegStatus> regStatus = new AtomicReference<>(RegStatus.NO);
-    final MapBase<Integer, ServerDescriptorLite> servers = new MapBase<>(ServerDescriptorLite::idAsInt);
+    final MapBase<Integer, ServerDescriptor> servers = new MapBase<>(ServerDescriptor::idAsInt);
     final long lastSecond;
-    private final ClientConfiguration clientConfiguration;
+    final Map<UUID, MessageNode> messageNodeMap = new ConcurrentHashMap<>();
+    final EventConsumer<UUID> onNewChild = new EventConsumer<>();
+    final EventBiConsumer<UUID, Remote<ServerApiByUid>> onNewChildApi = new EventBiConsumer<>();
+    private final ClientState clientState;
     private final Collection<ScheduledFuture<?>> scheduledFutures = new HashSet<>();
     private final AtomicBoolean startConnection = new AtomicBoolean();
     private final int timeout1 = 5;
-    Serializer2Node<UUID, ?> onNewChildren = Serializer2Node.of(ApiManager.UUID);
-    Key masterKey;
     private String name;
-    static{
-        CryptoLib.SODIUM.env.init(
-                Key.of("SODIUM_SIGN_PUBLIC:4F202A94AB729FE9B381613AE77A8A7D89EDAB9299C3320D1A0B994BA710CCEB"),
-                SignedKey.of(Key.of("SODIUM_CURVE25519_PUBLIC:FC84831B947A12F8F64A4E3A9B5A41AEFB22E9065E6299A07098A69E44AF7B2F"),
-                        Sign.of("SODIUM:E493A4FE76130850EBF71A00B509169A1925278911C28734BE5A789AC29F8D0AD13617649477F7BB1F2B8E740FB598D1AC2994F382AC481CFCFDCB1F43B2780E")),
-                null
-        );
-        CryptoLib.HYDROGEN.env.init(
-                Key.of("HYDROGEN_SIGN_PUBLIC:883B4D7E0FB04A38CA12B3A451B00942048858263EE6E6D61150F2EF15F40343"),
-                SignedKey.of(Key.of("HYDROGEN_CURVE_PUBLIC:FC84831B947A12F8F64A4E3A9B5A41AEFB22E9065E6299A07098A69E44AF7B2F"),
-                        Sign.of("HYDROGEN:56798FAD375881FB410814E6C5DFE019426567240117C7C1E3905240E67B490F2789341D08BD4E607AF3B0D30F1E2BD8B7F7DDB1A7A93A0FAA3A7837560CF004")),
-                null
-        );
-    }
+
     {
         lastSecond = System.currentTimeMillis() / 1000;
     }
 
-    public AetherCloudClient(ClientConfiguration store) {
-        this.clientConfiguration = store;
-        connect();
+    public AetherCloudClient(ClientState store) {
+        try (var ln = Log.context(logClientContext)) {
+            this.clientState = store;
+            clouds.input.linkUpHard().toConsumer(uu -> store.setCloud(uu.uid, uu.cloud));
+            servers.input.linkUpHard().toConsumer(s -> {
+                var ss = store.getServerInfo(s.idAsInt());
+                ss.setDescriptor(s);
+            });
+            onNewChild.add(u -> getConnection(c -> {
+                if (onNewChildApi.hasListener()) {
+                    getClientApi(u).to(api -> {
+                        onNewChildApi.fire(u, api);
+                    });
+                }
+            }));
+            connect();
+        }
     }
 
     public String getName() {
@@ -75,69 +84,72 @@ public final class AetherCloudClient {
         this.name = name;
     }
 
-    public void getServerDescriptorForUid(@NotNull UUID uid, AConsumer<ServerDescriptorLite> t) {
+    public AMFuture<ServerDescriptor> getServer(int id) {
+        return servers.get(id);
+    }
+
+    public void getServerDescriptorForUid(@NotNull UUID uid, AConsumer<ServerDescriptor> t) {
         if (uid.equals(getUid())) {
-            var cloud = clouds.get(uid).getValue();
+            var cloud = clouds.get(uid).getNow();
             for (var pp : cloud.cloud()) {
-                t.accept(servers.get((int) pp).getValue());
+                t.accept(servers.get((int) pp).getNow());
             }
         }
-        getCloud(uid).to(p -> {
-            Log.info(new Log.Info("get cloud for uid") {
-                final UUID uid0 = uid;
-                final Cloud cloud = p;
-            });
+        getCloud(uid).once(p -> {
             for (var pp : p.data()) {
-                servers.get((int) pp).to(t, timeout1, () -> Log.error(new Log.Error("timeout server resolve") {
-                    final int sid = pp;
-                }));
+                servers.get((int) pp).once(t, timeout1, () -> Log.warn("timeout server resolve"));
             }
-        }, timeout1, () -> Log.error(new Log.Error("timeout cloud resolve") {
-            final UUID uid0 = uid;
-        }));
+        }, timeout1, () -> Log.warn("timeout cloud resolve: $uid", "uid", uid));
     }
 
     void getConnection(@NotNull UUID uid, @NotNull AConsumer<ConnectionWork> t) {
         if (uid.equals(getUid())) {
-            var cloud = clouds.get(uid).getValue();
-            var s = servers.get((int) cloud.cloud().data()[0]).getValue();
+            UUIDAndCloud cloud0 = clouds.get(uid).getNow();
+            Cloud cloud = null;
+            if (cloud0 == null) {
+                cloud = clientState.getCloud(uid);
+            } else {
+                cloud = cloud0.cloud;
+            }
+            var s = servers.get((int) cloud.data()[0]).getNow();
             t.accept(getConnection(s));
             return;
         }
         getServerDescriptorForUid(uid, sd -> {
-            Log.info(new Log.Info("get connection for uid") {
-                final UUID uid0 = uid;
-                final ServerDescriptorLite serverDescriptorLite = sd;
-            });
             var c = getConnection(sd);
-            c.ready.to(t::accept, timeout1, () -> Log.error("timeout ready connection"));
+            c.ready.once(t::accept, timeout1, () -> Log.warn("timeout ready connection"));
         });
     }
 
-    ConnectionWork getConnection(@NotNull ServerDescriptorLite serverDescriptor) {
+    ConnectionWork getConnection(@NotNull ServerDescriptor serverDescriptor) {
         servers.set((int) serverDescriptor.id(), serverDescriptor);
         var c = connections.get((int) serverDescriptor.id());
         if (c == null) {
             c = connections.computeIfAbsent((int) serverDescriptor.id(),
-                    s -> new ConnectionWork(this, serverDescriptor));
+                    s -> {
+                        try (var ln = Log.context(logClientContext)) {
+                            return new ConnectionWork(this, serverDescriptor);
+                        }
+                    });
         }
         return c;
     }
 
     void startScheduledTask() {
-        RU.scheduleAtFixedRate(scheduledFutures, getPingTime(), TimeUnit.MILLISECONDS, () -> {
-//			getConnection(Connection::scheduledWork);
-            for (ConnectionWork connection : getConnections()) {
-                connection.scheduledWork();
-            }
+        startFuture.to(() -> {
+            RU.scheduleAtFixedRate(scheduledFutures, getPingTime(), TimeUnit.MILLISECONDS, () -> {
+                if (getConnections().isEmpty()) {
+                    getConnection(AConsumer.stub());
+                }
+                for (ConnectionWork connection : getConnections()) {
+                    connection.scheduledWork();
+                }
+            });
         });
     }
 
     public void ping() {
-        getConnection(c -> {
-            c.authorizedApi.ping();
-            c.flush();
-        });
+        getConnection(ConnectionWork::ping);
     }
 
     public AFuture connect() {
@@ -151,49 +163,78 @@ public final class AetherCloudClient {
             return;
         }
         if (!isRegistered() && regStatus.compareAndSet(RegStatus.NO, RegStatus.BEGIN)) {
-            var uris = clientConfiguration.cloudFactoryUrl;
+            var uris = clientState.getRegistrationUri();
             if (uris == null || uris.isEmpty()) {
-                uris = DEFAULT_URL_FOR_CONNECT;
+                throw new IllegalStateException("Registration uri is void");
             }
-            var timeoutForConnect = clientConfiguration.timoutForConnectToRegistrationServer;
-            var countServersForRegistration = Math.min(uris.size(), clientConfiguration.countServersForRegistration);
+            var timeoutForConnect = clientState.getTimeoutForConnectToRegistrationServer();
+            var countServersForRegistration = Math.min(uris.size(), clientState.getCountServersForRegistration());
             if (uris.isEmpty()) throw new RuntimeException("No urls");
-            List<URI> finalUris = uris;
-            Log.info(new Log.Info("try registration") {
-                final URI[] uriList = finalUris.toArray(new URI[0]);
-            });
             var startFutures = flow(uris).shuffle().limit(countServersForRegistration)
                     .map(sd -> new ConnectionRegistration(this, sd).connectFuture)
                     .toList();
             AFuture.any(startFutures)
                     .to(this::startScheduledTask)
-                    .timeout(timeoutForConnect, () -> {
-                        Log.error(new Log.Error("Failed to connect to registration server") {
-                            final URI[] uriList = finalUris.toArray(new URI[0]);
-                        });
+                    .timeoutMs(timeoutForConnect, () -> {
+                        Log.error("Failed to connect to registration server: $uris", "uris", uris);
                         RU.schedule(1000, () -> this.connect(step - 1));
                     });
         } else {
             var uid = getUid();
             assert uid != null;
-            var cloud = clientConfiguration.getCloud(uid);
+            var cloud = clientState.getCloud(uid);
             if (cloud == null || cloud.isEmpty()) throw new UnsupportedOperationException();
             for (var serverId : cloud) {
-                getConnection(clientConfiguration.getServerDescriptor(serverId));
+                getConnection(clientState.getServerDescriptor(serverId));
             }
+            startFuture.done();
         }
     }
 
     public UUID getUid() {
-        return clientConfiguration.uid;
+        return clientState.getUid();
+    }
+
+    <T> ARFuture<T> getAuthApi1(@NotNull AFunction<AuthorizedApi, ARFuture<T>> t) {
+        ARFuture<T> res = new ARFuture<>();
+        getAuthApi(a -> t.apply(a).to(res));
+        return res;
+    }
+
+    void getAuthApi(@NotNull AConsumer<AuthorizedApi> t) {
+        getConnection(c -> {
+            var a = c.safeApiCon;
+            if (a == null) {
+                c.ready.toOnce((aa) -> {
+                    aa.safeApiCon.runRt(t::accept);
+                });
+            } else {
+                a.runRt(t::accept);
+            }
+        });
+    }
+
+    <T> ARFuture<T> getAuthApi2(@NotNull AFunction<AuthorizedApi, T> t) {
+        ARFuture<T> res = new ARFuture<>();
+        getAuthApi(a -> res.done(t.apply(a)));
+        return res;
+    }
+
+    <T> ARFuture<T> getConnectionFun2(@NotNull AFunction<ConnectionWork, ARFuture<T>> t) {
+        ARFuture<T> res = new ARFuture<>();
+        getConnection(c -> t.apply(c).to(res));
+        return res;
+    }
+
+    <T> ARFuture<T> getConnectionFun(@NotNull AFunction<ConnectionWork, T> t) {
+        ARFuture<T> res = new ARFuture<>();
+        getConnection(c -> res.done(t.apply(c)));
+        return res;
     }
 
     void getConnection(@NotNull AConsumer<ConnectionWork> t) {
         var uid0 = getUid();
         getConnection(Objects.requireNonNull(uid0), c -> {
-            Log.info(new Log.Info("get default connection for uid") {
-                final UUID uid = uid0;
-            });
             c.setBasic(true);
             t.accept(c);
             c.flush();
@@ -204,12 +245,11 @@ public final class AetherCloudClient {
         return connections.values();
     }
 
-    public ARMultiFuture<Cloud> getCloud(@NotNull UUID uid) {
+    public AMFuture<Cloud> getCloud(@NotNull UUID uid) {
         var res = clouds.get(uid).map(UUIDAndCloud::cloud);
         if (!res.isDone()) {
-            if (!clouds.requestsOut.existsLinks()) {
+            if (!clouds.output.down().isWritable()) {
                 getConnection(conWork -> {
-                    Log.info("the first connection has been received");
                     clouds.flush();
                     conWork.flush();
                 });
@@ -221,40 +261,42 @@ public final class AetherCloudClient {
     }
 
     public long getPingTime() {
-        return clientConfiguration.pingDuration;
+        return clientState.getPingDuration().getNow();
     }
 
     public boolean isRegistered() {
-        return clientConfiguration.uid != null;
+        return clientState.getUid() != null;
     }
 
     public void confirmRegistration(RegistrationResponseLite regResp) {
         assert !isRegistered();
         if (!regStatus.compareAndSet(RegStatus.BEGIN, RegStatus.CONFIRM)) return;
-        Log.trace("confirmRegistration: " + regResp);
-        clouds.set(new UUIDAndCloud(regResp.uid(), regResp.cloud()));
-        clientConfiguration.uid = regResp.uid();
-        clientConfiguration.uid(regResp.uid());
-        clientConfiguration.alias = regResp.alias();
-        clientConfiguration.alias(regResp.alias());
+        clouds.set(new UUIDAndCloud(regResp.uid, regResp.cloud));
+        clientState.setUid(regResp.uid);
+        clientState.setAlias(regResp.alias);
         assert isRegistered();
-        for (var c : regResp.cloud()) {
-            servers.get((int) c).to(cl -> Log.info("resolve server: " + cl), 5, () -> Log.error("timeout resolve server"));
+        Log.info("receive my cloud: $cloud", "cloud", regResp.cloud);
+        for (var c : regResp.cloud) {
+            servers.get((int) c).once(cl -> Log.info("resolve server", "server", cl), 5, () -> Log.warn("timeout resolve server"));
         }
         servers.flush();
-        flow(regResp.cloud().data())
-                .mapToInt()
-                .mapToObj(sid -> servers.get(sid).toFuture().toFuture())
-                .allMap(AFuture::all).to(startFuture::tryDone);
+        startFuture.done();
+    }
+
+    MessageNode getMessageNode(@NotNull UUID uid, MessageEventListener strategy) {
+        return messageNodeMap.computeIfAbsent(uid, k -> {
+            var res = new MessageNode(this, k, strategy);
+            onClientStream.fire(res);
+            return res;
+        });
+    }
+
+    public MessageNode openStreamToClientDetails(@NotNull UUID uid, MessageEventListener strategy) {
+        return getMessageNode(uid, strategy);
     }
 
     public Gate<byte[], byte[]> openStreamToClient(@NotNull UUID uid) {
-        var buf = Node.bufferBytes();
-        getConnection(uid, s -> {
-            Log.info("link client channel to api stream: " + uid);
-            buf.down().link(s.openStreamToClient(uid));
-        });
-        return buf.up();
+        return openStreamToClientDetails(uid, MessageEventListener.DEFAULT).up();
     }
 
     public AFuture stop(int secondsTimeOut) {
@@ -267,19 +309,17 @@ public final class AetherCloudClient {
     }
 
     public UUID getParent() {
-        return clientConfiguration.parentUid;
+        var res = clientState.getParentUid();
+        assert res != null;
+        return res;
     }
 
     public Key getMasterKey() {
         Key res;
-        res = masterKey;
+        res = clientState.getMasterKey();
         if (res != null) return res;
-        res = clientConfiguration.masterKey;
-        if (res == null) {
-            res = getCryptLib().env.makeSymmetricKey();
-            clientConfiguration.masterKey(res);
-        }
-        masterKey = res;
+        res = getCryptLib().env.makeSymmetricKey();
+        clientState.setMasterKey(res);
         return res;
     }
 
@@ -289,23 +329,70 @@ public final class AetherCloudClient {
     }
 
     public CryptoLib getCryptLib() {
-        return CryptoLib.HYDROGEN;
+        return clientState.getCryptoLib();
     }
 
     public UUID getAlias() {
-        return clientConfiguration.alias;
+        return clientState.getAlias();
     }
 
-    public void onClientStream(ABiConsumer<UUID, Gate<byte[], byte[]>> consumer) {
+    public void onClientStream(AConsumer<MessageNode> consumer) {
         onClientStream.add(consumer);
     }
 
-    public Serializer2Node<UUID, ?> getOnNewChildren() {
-        return onNewChildren;
+    public void onNewChildrenApi(ABiConsumer<UUID, Remote<ServerApiByUid>> consumer) {
+        onNewChildApi.add(consumer);
     }
 
-    public Executor getExecutor() {
-        return executor;
+    public void onNewChildren(AConsumer<UUID> consumer) {
+        onNewChild.add(consumer);
+    }
+
+    public ARFuture<AccessGroupI> createAccessGroup(UUID... uids) {
+        return createAccessGroupWithOwner(getUid(), uids);
+    }
+
+    public ARFuture<AccessGroupI> createAccessGroupWithOwner(UUID owner, UUID... uids) {
+        return getAuthApi1(c -> c.createAccessGroup(owner, uids))
+                .map(id -> new AccessGroupImpl(new AccessGroup(owner, id, RCol.set())) {
+                    @Override
+                    public ARFuture<Boolean> add(UUID uuid) {
+                        if (accessGroup.contains(uuid)) {
+                            return ARFuture.completed(Boolean.FALSE);
+                        }
+                        return getAuthApi1(cc -> cc.addToAccessGroup(id, uuid).apply((v) -> accessGroup.add(uuid)));
+                    }
+
+                    @Override
+                    public ARFuture<Boolean> remove(UUID uuid) {
+                        if (!accessGroup.contains(uuid)) {
+                            return ARFuture.completed(Boolean.FALSE);
+                        }
+                        return getAuthApi1(cc -> cc.removeFromAccessGroup(id, uuid).apply((v) -> accessGroup.add(uuid)));
+                    }
+                });
+    }
+
+    public ARFuture<Remote<ServerApiByUid>> getClientApi(UUID uid) {
+        ARFuture<Remote<ServerApiByUid>> res = new ARFuture<>();
+        getAuthApi(auth -> {
+            var apiFuture = auth.client(uid);
+            apiFuture.to(apiCon -> {
+                var a = RU.<ApiGate<ServerApiByUidClient, ServerApiByUid>>cast(apiCon.gate.find(ApiGate.class));
+                if (a == null) {
+                    a = ApiGate.of(ServerApiByUidClient.META, ServerApiByUid.META, ServerApiByUidClient.INSTANCE, StreamManager.forClient(), apiCon.gate);
+                }
+                res.done(a.getRemoteApi());
+            });
+        });
+        return res;
+    }
+
+    public boolean verifySign(SignedKey signedKey) {
+        for (var e : clientState.getRootSigners()) {
+            if (e.cryptoLib() == signedKey.cryptoLib() && e.check(signedKey)) return true;
+        }
+        return false;
     }
 
     private enum RegStatus {
