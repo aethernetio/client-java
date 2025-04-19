@@ -57,8 +57,8 @@ public class PointToPointTest {
             Log.info("TEST IS DONE!");
         });
         checkReceiveMessage.waitDoneSeconds(1000);
-        client1.stop(5);
-        client2.stop(5);
+        client1.destroy(true).waitDoneSeconds(5);
+        client2.destroy(true).waitDoneSeconds(5);
     }
 
     //    @Test
@@ -133,8 +133,8 @@ public class PointToPointTest {
         if(!checkReceiveMessageBack.waitDoneSeconds(10)){
             throw new IllegalStateException();
         }
-        client1.stop(5);
-        client2.stop(5);
+        client1.destroy(true).waitDoneSeconds(5);
+        client2.destroy(true).waitDoneSeconds(5);
     }
 
     public void pointToPointWithService() {
@@ -180,8 +180,8 @@ public class PointToPointTest {
         chToc2.send(Value.ofForce(message));
 
         checkReceiveMessage.waitDoneSeconds(100);
-        client1.stop(5);
-        client2.stop(5);
+        client1.destroy(true).waitDoneSeconds(5);
+        client2.destroy(true).waitDoneSeconds(5);
     }
 
     public void p2pMany() {
@@ -214,8 +214,8 @@ public class PointToPointTest {
             Log.info("TEST IS DONE!");
         });
         checkReceiveMessage.waitDoneSeconds(1000);
-        client1.stop(5);
-        client2.stop(5);
+        client1.destroy(true).waitDoneSeconds(5);
+        client2.destroy(true).waitDoneSeconds(5);
     }
 
     public void pointToPointWithReconnect() {
@@ -246,8 +246,8 @@ public class PointToPointTest {
                 Log.info("TEST IS DONE!");
             });
             checkReceiveMessage.waitDoneSeconds(1000);
-            client1.stop(5);
-            client2.stop(5);
+            client1.destroy(true).waitDoneSeconds(5);
+            client2.destroy(true).waitDoneSeconds(5);
         }
         Log.debug("ITERATION 2");
         {//iteration 2
@@ -274,8 +274,8 @@ public class PointToPointTest {
                 Log.info("TEST IS DONE!");
             });
             checkReceiveMessage.waitDoneSeconds(1000);
-            client1.stop(5);
-            client2.stop(5);
+            client1.destroy(true).waitDoneSeconds(5);
+            client2.destroy(true).waitDoneSeconds(5);
         }
     }
 }

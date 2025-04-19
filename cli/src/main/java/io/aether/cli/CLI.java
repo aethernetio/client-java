@@ -4,15 +4,15 @@ import io.aether.StandardUUIDs;
 import io.aether.cloud.client.AetherCloudClient;
 import io.aether.cloud.client.ClientStateInMemory;
 import io.aether.crypt.CryptoLib;
+import io.aether.logger.Log;
 import io.aether.utils.AString;
+import io.aether.utils.Destroyer;
 import io.aether.utils.RU;
 import io.aether.utils.flow.Flow;
 import io.aether.utils.streams.Value;
+import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 
-import java.io.BufferedInputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
+import java.io.*;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -24,10 +24,13 @@ public class CLI {
         var cfg = new ConfigGetMessages(args);
         ClientStateInMemory state;
         state = ClientStateInMemory.load(cfg.clientState);
+        Destroyer destroyer = new Destroyer();
         AetherCloudClient client = new AetherCloudClient(state);
+        destroyer.add(client);
         if (cfg.formatOutput == FormatOutput.BIN) {
             client.onClientStream(m -> {
                 FileOutputStream os = new FileOutputStream(new File(cfg.fileOutput.getParentFile(), cfg.fileOutput.getName() + "-" + m.getConsumerUUID()));
+                destroyer.add(os);
                 m.up().toConsumer(d -> {
                     os.write(d);
                     os.flush();
@@ -45,7 +48,6 @@ public class CLI {
         if (!client.startFuture.waitDoneSeconds(cfg.timeout)) {
             printError("timeout exception");
         }
-        client.ping();
     }
 
     public void show(String[] args) {
@@ -148,6 +150,54 @@ public class CLI {
         RU.sleep(1000);
     }
 
+    public ClientStateInMemory create(String[] args) {
+        if (args.length == 1) {
+            printError("specify the object to create (client|group)");
+        }
+        if (args[1].equals("client")) {
+            return createClient(args);
+        } else if (args[1].equals("group")) {
+            return createGroup(args);
+        } else {
+            printError("Cannot create unknown type object: " + args[1]);
+            return null;
+        }
+    }
+
+    public ClientStateInMemory createGroup(String[] args) {
+        var cfg = new ConfigCreateGroup(args);
+        var state = ClientStateInMemory.load(cfg.clientState);
+        AetherCloudClient client = new AetherCloudClient(state);
+        if (!client.startFuture.waitDoneSeconds(cfg.timeout)) {
+            printError("timeout exception");
+        }
+        List<UUID> uids = new ObjectArrayList<>();
+        if (cfg.stdIn) {
+            try (var r = new BufferedReader(new InputStreamReader(System.in))) {
+                while (r.ready()) {
+                    var l = r.readLine();
+                    if (l == null) break;
+                    try {
+                        uids.add(UUID.fromString(l));
+                    } catch (Exception e) {
+                        printError("format UUID exception: " + l);
+                    }
+                }
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+        UUID owner = cfg.owner;
+        if (owner == null) {
+            owner = client.getUid();
+        }
+        var future = client.createAccessGroupWithOwner(owner, uids.toArray(new UUID[0]));
+        future.waitDoneSeconds(cfg.timeout);
+        Log.info("Access group ID: $ag", "ag", future.getNow().getId());
+        client.destroy(true).waitDoneSeconds(cfg.timeout);
+        return state;
+    }
+
     public ClientStateInMemory createClient(String[] args) {
         var cfg = new ConfigCreateClient(args);
         var state = new ClientStateInMemory(cfg.parentUid, List.of(cfg.registrationURI), null, cfg.cryptoLib);
@@ -156,7 +206,7 @@ public class CLI {
             printError("timeout exception");
         }
         show(state, cfg);
-        client.stop(cfg.timeout).waitDoneSeconds(cfg.timeout);
+        client.destroy(true).waitDoneSeconds(cfg.timeout);
         return state;
     }
 
@@ -176,14 +226,11 @@ public class CLI {
             return;
         }
         if (Objects.equals(args[0], "create")) {
-            new CLI().createClient(args);
+            new CLI().create(args);
         } else if (Objects.equals(args[0], "send")) {
             new CLI().sendMessage(args);
         } else if (Objects.equals(args[0], "get")) {
             new CLI().getMessages(args);
-            while (true) {
-                RU.sleep(1000);
-            }
         } else if (Objects.equals(args[0], "show")) {
             new CLI().show(args);
         }
@@ -243,6 +290,15 @@ public class CLI {
             }
         }
 
+        protected boolean getFlag(String[] args, String key) {
+            for (var e : args) {
+                if (e.equals(key)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         String getValue(String[] args, String key) {
             for (int i = 0; i < args.length; i++) {
                 if (Objects.equals(args[i], key)) {
@@ -258,6 +314,38 @@ public class CLI {
                 }
             }
             return null;
+        }
+    }
+
+    private static class ConfigCreateGroup extends Config {
+        File clientState;
+        boolean stdIn;
+        UUID owner;
+
+        public ConfigCreateGroup(String[] args) {
+            super(args);
+            var clientStateStr = getValue(args, "--state-bin");
+            if (clientStateStr != null) {
+                try {
+                    clientState = new File(clientStateStr);
+                    if (!clientState.exists()) {
+                        printError("Client state is not specified --state-bin\ndefault value: aether-client-state.bin");
+                    }
+                } catch (Exception e) {
+                    printError("Unparseable path file: " + clientStateStr);
+                }
+            } else {
+                clientState = new File("aether-client-state.bin");
+            }
+            var ownerStr = getValue(args, "--owner");
+            if (ownerStr != null) {
+                try {
+                    owner = UUID.fromString(ownerStr);
+                } catch (Exception e) {
+                    printError("Unparseable UUID: " + ownerStr);
+                }
+            }
+            stdIn = getFlag(args, "--stdIn");
         }
     }
 

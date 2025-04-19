@@ -12,12 +12,14 @@ import io.aether.logger.Log;
 import io.aether.net.ApiGate;
 import io.aether.net.Remote;
 import io.aether.net.StreamManager;
+import io.aether.utils.Destroyer;
 import io.aether.utils.RU;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
 import io.aether.utils.interfaces.ABiConsumer;
 import io.aether.utils.interfaces.AConsumer;
 import io.aether.utils.interfaces.AFunction;
+import io.aether.utils.interfaces.Destroyable;
 import io.aether.utils.slots.AMFuture;
 import io.aether.utils.slots.EventBiConsumer;
 import io.aether.utils.slots.EventConsumer;
@@ -27,16 +29,18 @@ import io.aether.utils.streams.MapBase;
 import io.aether.utils.streams.rcollections.RCol;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.*;
+import java.util.Collection;
+import java.util.Map;
+import java.util.Objects;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static io.aether.utils.flow.Flow.flow;
 
-public final class AetherCloudClient {
+public final class AetherCloudClient implements Destroyable {
     private static final Log.Node logClientContext = Log.createContext("SystemComponent", "Client");
     public final AFuture startFuture = new AFuture();
     public final EventConsumer<MessageNode> onClientStream = new EventConsumerWithQueue<>();
@@ -49,17 +53,13 @@ public final class AetherCloudClient {
     final EventConsumer<UUID> onNewChild = new EventConsumer<>();
     final EventBiConsumer<UUID, Remote<ServerApiByUid>> onNewChildApi = new EventBiConsumer<>();
     private final ClientState clientState;
-    private final Collection<ScheduledFuture<?>> scheduledFutures = new HashSet<>();
+    private final Destroyer destroyer = new Destroyer();
     private final AtomicBoolean startConnection = new AtomicBoolean();
     private final int timeout1 = 5;
     private String name;
 
     {
         lastSecond = System.currentTimeMillis() / 1000;
-    }
-
-    public ClientState getClientState() {
-        return clientState;
     }
 
     public AetherCloudClient(ClientState store) {
@@ -79,6 +79,10 @@ public final class AetherCloudClient {
             }));
             connect();
         }
+    }
+
+    public ClientState getClientState() {
+        return clientState;
     }
 
     public String getName() {
@@ -133,7 +137,9 @@ public final class AetherCloudClient {
             c = connections.computeIfAbsent((int) serverDescriptor.id(),
                     s -> {
                         try (var ln = Log.context(logClientContext)) {
-                            return new ConnectionWork(this, serverDescriptor);
+                            var res = new ConnectionWork(this, serverDescriptor);
+                            destroyer.add(res);
+                            return res;
                         }
                     });
         }
@@ -142,7 +148,7 @@ public final class AetherCloudClient {
 
     void startScheduledTask() {
         startFuture.to(() -> {
-            RU.scheduleAtFixedRate(scheduledFutures, getPingTime(), TimeUnit.MILLISECONDS, () -> {
+            RU.scheduleAtFixedRate(destroyer, getPingTime(), TimeUnit.MILLISECONDS, () -> {
                 if (getConnections().isEmpty()) {
                     getConnection(AConsumer.stub());
                 }
@@ -304,9 +310,9 @@ public final class AetherCloudClient {
         return openStreamToClientDetails(uid, MessageEventListener.DEFAULT).up();
     }
 
-    public AFuture stop(int secondsTimeOut) {
-        flow(scheduledFutures).foreach(f -> f.cancel(true));
-        return flow(connections.values()).map(c -> c.close(secondsTimeOut)).allMap(AFuture::all);
+    @Override
+    public AFuture destroy(boolean force) {
+        return destroyer.destroy(force);
     }
 
     public boolean isConnected() {

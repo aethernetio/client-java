@@ -11,10 +11,11 @@ import io.aether.net.meta.MetaApi;
 import io.aether.utils.RU;
 import io.aether.utils.SocketNIOStreamClient;
 import io.aether.utils.futures.AFuture;
+import io.aether.utils.interfaces.Destroyable;
 
 import java.net.URI;
 
-public abstract class Connection<LT, RT> {
+public abstract class Connection<LT, RT> implements Destroyable {
     protected final AetherCloudClient client;
     protected final URI uri;
     protected final AFuture connectFuture = new AFuture();
@@ -47,27 +48,26 @@ public abstract class Connection<LT, RT> {
         return uri.hashCode();
     }
 
-    public AFuture close(int time) {
+    @Override
+    public AFuture destroy(boolean force) {
         var res = new AFuture();
         socketStreamClient.close();
         connectFuture.to(() -> {
-                    try {
-                        apiRoot.close();
-                    } catch (Exception e) {
-                        Log.warn("close connection error", e);
-                    }
-                    try {
-                        socketStreamClient.close();
-                    } catch (Exception e) {
-                        Log.warn("close connection error", e);
-                    }
-                    res.done();
-                })
-                .timeout(time, () -> {
-                    Log.warn("timeout close socket", "connection", Connection.this);
-                });
+            try {
+                apiRoot.close();
+            } catch (Exception e) {
+                Log.warn("close connection error", e);
+            }
+            try {
+                socketStreamClient.close();
+            } catch (Exception e) {
+                Log.warn("close connection error", e);
+            }
+            res.done();
+        });
         return res;
     }
+
 
     protected void connect() {
         socketStreamClient = new SocketNIOStreamClient(uri, configurator);

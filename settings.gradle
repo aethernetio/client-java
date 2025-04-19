@@ -6,7 +6,3 @@ include ':client'
 include ':cli'
 include ':chat'
 include ':pointToPoint'
-
-//file('examples').eachDir { sub ->
-//    include (sub.name)
-//}
