@@ -1,51 +1,31 @@
-plugins {
-    id 'java-library'
-    id 'maven-publish'
-}
-repositories {
-    mavenCentral()
-    maven {
-        url 'http://nexus.aethernet.io/repository/maven-releases/'
-        allowInsecureProtocol = true
-    }
-}
-java {
-    sourceCompatibility = JavaVersion.VERSION_22
-    targetCompatibility = JavaVersion.VERSION_22
-}
+subprojects {
+    group 'io.aether'
+    version '0.0.37'
 
-group 'io.aether'
-version '0.0.20'
-dependencies {
-    if (findProject(":core") != null) {
-        api project(':core')
-    } else {
-        api 'io.aether:core:0.0.52'
+    repositories {
+        mavenCentral()
+        maven {
+            url 'http://nexus.aethernet.io/repository/maven-releases/'
+            allowInsecureProtocol = true
+        }
     }
-    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.9.2'
-    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine'
-}
-publishing {
-    publications {
-        mavenJava(MavenPublication) {
-            from components.java
-            pom {
-                name = "Aether Client"
-                description = "Aether Client"
-                url = "https://github.com/aethernet-io/aether-client-java"
-                licenses {
-                    license {
-                        name = "The Apache License, Version 2.0"
-                        url = "http://www.apache.org/licenses/LICENSE-2.0.txt"
-                    }
+    afterEvaluate {
+        if (it.plugins.hasPlugin('java')) {
+            java {
+                toolchain {
+                    languageVersion = JavaLanguageVersion.of(11)
                 }
+            }
+            dependencies {
+                testImplementation platform('org.junit:junit-bom:5.10.0')
+                testImplementation 'org.junit.jupiter:junit-jupiter'
+            }
+            test {
+                useJUnitPlatform()
+                testLogging.showStandardStreams = true
+                enableAssertions = true
             }
         }
     }
 
-}
-test {
-    useJUnitPlatform()
-    testLogging.showStandardStreams = true
-    enableAssertions = true
 }
