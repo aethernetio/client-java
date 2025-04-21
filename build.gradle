@@ -11,15 +11,37 @@ subprojects {
     }
     afterEvaluate {
         if (it.plugins.hasPlugin('java')) {
+            if (it.plugins.hasPlugin('maven-publish')) {
+                publishing {
+                    repositories {
+                        maven {
+                            def releasesUrl = uri("http://nexus.aethernet.io/repository/maven-releases/")
+                            def snapshotsUrl = uri("http://nexus.aethernet.io/repository/maven-snapshots/")
+                            if (version.toString().endsWith("SNAPSHOT")) {
+                                url(snapshotsUrl)
+                            } else {
+                                url(releasesUrl)
+                            }
+                            allowInsecureProtocol = true
+                            credentials {
+                                username "$System.env.AETHER_REPO_USER"
+                                password "$System.env.AETHER_REPO_PASSWORD"
+                            }
+                        }
+                    }
+                }
+            }
             java {
                 toolchain {
                     languageVersion = JavaLanguageVersion.of(11)
                 }
+                withJavadocJar()
+                withSourcesJar()
             }
             def isLib = it.plugins.hasPlugin('java-library')
-            it.compileJava.options.encoding = "UTF-8"
-            it.compileTestJava.options.encoding = "UTF-8"
-            it.dependencies {
+            compileJava.options.encoding = "UTF-8"
+            compileTestJava.options.encoding = "UTF-8"
+            dependencies {
                 if (isLib) {
                     api 'org.jetbrains:annotations:24.0.1'
                     api 'it.unimi.dsi:fastutil:8.5.12'
@@ -27,21 +49,20 @@ subprojects {
                     implementation 'org.jetbrains:annotations:24.0.1'
                     implementation 'it.unimi.dsi:fastutil:8.5.12'
                 }
-//                testImplementation platform('org.junit:junit-bom:5.10.0')
                 testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.0'
                 testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine'
             }
 
-            it.javadoc.options.addStringOption('Xdoclint:none', '-quiet')
-            it.test {
+            javadoc.options.addStringOption('Xdoclint:none', '-quiet')
+            test {
                 useJUnitPlatform()
                 testLogging.showStandardStreams = true
                 enableAssertions = true
             }
-            it.compileTestJava {
+            compileTestJava {
                 options.compilerArgs += ['-parameters']
             }
-            it.compileJava {
+            compileJava {
                 options.compilerArgs += ['-parameters',
                                          '-Xlint:unchecked',
                                          '-Xlint:deprecation'

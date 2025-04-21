@@ -1,7 +1,17 @@
 plugins {
     id 'java'
+    id 'maven-publish'
 }
 
 dependencies {
     implementation project(':client')
+}
+publishing {
+    publications {
+        mavenPublication(MavenPublication){
+            from components.java
+            groupId "io.aether"
+            artifactId "example-p2p"
+        }
+    }
 }

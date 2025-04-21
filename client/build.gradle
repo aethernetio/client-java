@@ -1,10 +1,20 @@
 plugins {
     id 'java-library'
+    id 'maven-publish'
 }
 
 dependencies {
-    def coreVersion = '0.0.69'
+    def coreVersion = '0.0.70'
     api "io.aether:client-server-api:${coreVersion}"
     api "io.aether:client-server-reg-api:${coreVersion}"
     api "io.aether:core:${coreVersion}"
+}
+publishing {
+    publications {
+        mavenPublication(MavenPublication){
+            from components.java
+            groupId "io.aether"
+            artifactId "cloud-client"
+        }
+    }
 }
