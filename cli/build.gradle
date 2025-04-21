@@ -3,9 +3,6 @@ plugins {
     id 'com.github.johnrengelman.shadow' version '7.1.0'
 }
 
-repositories {
-    mavenCentral()
-}
 application {
     mainClass = 'io.aether.cli.CLI'
 }
@@ -20,4 +17,3 @@ dependencies {
     implementation project(':client')
     implementation("org.slf4j:slf4j-nop:2.0.16")
 }
-

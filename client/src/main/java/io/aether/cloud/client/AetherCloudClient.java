@@ -29,10 +29,7 @@ import io.aether.utils.streams.MapBase;
 import io.aether.utils.streams.rcollections.RCol;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.Collection;
-import java.util.Map;
-import java.util.Objects;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -79,6 +76,22 @@ public final class AetherCloudClient implements Destroyable {
             }));
             connect();
         }
+    }
+
+    public ARFuture<Set<Long>> getClientGroups(UUID uid) {
+        return getAuthApi1(a -> a.getAccessGroups(uid));
+    }
+
+    public ARFuture<Set<UUID>> getAllAccessedClients(UUID uid) {
+        return getAuthApi1(a -> a.getAllAccessedClients(uid));
+    }
+
+    public ARFuture<Boolean> checkAccess(UUID uid1, UUID uid2) {
+        return getAuthApi1(a -> a.checkAccessForSendMessage2(uid1, uid2));
+    }
+
+    public ARFuture<AccessGroup> getGroup(long groupId) {
+        return getAuthApi1(a -> a.getAccessGroup(groupId));
     }
 
     public ClientState getClientState() {
@@ -407,6 +420,10 @@ public final class AetherCloudClient implements Destroyable {
             if (e.cryptoLib() == signedKey.cryptoLib() && e.check(signedKey)) return true;
         }
         return false;
+    }
+
+    public static AetherCloudClient of(ClientState state) {
+        return new AetherCloudClient(state);
     }
 
     private enum RegStatus {

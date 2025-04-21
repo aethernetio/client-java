@@ -16,14 +16,36 @@ subprojects {
                     languageVersion = JavaLanguageVersion.of(11)
                 }
             }
-            dependencies {
-                testImplementation platform('org.junit:junit-bom:5.10.0')
-                testImplementation 'org.junit.jupiter:junit-jupiter'
+            def isLib = it.plugins.hasPlugin('java-library')
+            it.compileJava.options.encoding = "UTF-8"
+            it.compileTestJava.options.encoding = "UTF-8"
+            it.dependencies {
+                if (isLib) {
+                    api 'org.jetbrains:annotations:24.0.1'
+                    api 'it.unimi.dsi:fastutil:8.5.12'
+                } else {
+                    implementation 'org.jetbrains:annotations:24.0.1'
+                    implementation 'it.unimi.dsi:fastutil:8.5.12'
+                }
+//                testImplementation platform('org.junit:junit-bom:5.10.0')
+                testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.0'
+                testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine'
             }
-            test {
+
+            it.javadoc.options.addStringOption('Xdoclint:none', '-quiet')
+            it.test {
                 useJUnitPlatform()
                 testLogging.showStandardStreams = true
                 enableAssertions = true
+            }
+            it.compileTestJava {
+                options.compilerArgs += ['-parameters']
+            }
+            it.compileJava {
+                options.compilerArgs += ['-parameters',
+                                         '-Xlint:unchecked',
+                                         '-Xlint:deprecation'
+                ]
             }
         }
     }
