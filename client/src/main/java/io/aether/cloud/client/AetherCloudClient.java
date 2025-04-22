@@ -308,6 +308,7 @@ public final class AetherCloudClient implements Destroyable {
     }
 
     MessageNode getMessageNode(@NotNull UUID uid, MessageEventListener strategy) {
+        Objects.requireNonNull(uid);
         return messageNodeMap.computeIfAbsent(uid, k -> {
             var res = new MessageNode(this, k, strategy);
             onClientStream.fire(res);
