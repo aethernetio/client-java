@@ -32,6 +32,8 @@ public abstract class Connection<LT, RT> implements Destroyable {
         this.apiRoot = ApiGate.of(this.lt, this.rt, StreamManager.forClient());
         this.uri = uri;
         this.client = client;
+        if (client.destroyer.isDestroyed()) return;
+        client.destroyer.add(this);
         apiRoot.linkLocalApi(RU.cast(this));
     }
 
@@ -70,6 +72,7 @@ public abstract class Connection<LT, RT> implements Destroyable {
 
 
     protected void connect() {
+        if (client.destroyer.isDestroyed()) return;
         socketStreamClient = new SocketNIOStreamClient(uri, configurator);
         connectFuture.done();
         apiRoot.down().link(socketStreamClient.up());

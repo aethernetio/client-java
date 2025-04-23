@@ -1,6 +1,7 @@
 plugins {
     id 'application'
     id 'com.github.johnrengelman.shadow' version '7.1.0'
+    id 'maven-publish'
 }
 
 application {
@@ -16,4 +17,13 @@ shadowJar {
 dependencies {
     implementation project(':client')
     implementation("org.slf4j:slf4j-nop:2.0.16")
+}
+publishing {
+    publications {
+        mavenPublication(MavenPublication){
+            from components.java
+            groupId "io.aether"
+            artifactId "cli"
+        }
+    }
 }

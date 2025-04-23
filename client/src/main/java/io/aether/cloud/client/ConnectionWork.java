@@ -8,6 +8,7 @@ import io.aether.common.AetherCodec;
 import io.aether.common.Cloud;
 import io.aether.common.ServerDescriptor;
 import io.aether.common.UUIDAndCloud;
+import io.aether.logger.Log;
 import io.aether.net.ApiGate;
 import io.aether.net.ApiLevelConsumer;
 import io.aether.net.Remote;
@@ -57,12 +58,12 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
     }
 
     @Override
-    public void sendSafeApiData(UUID uid, byte[] data) {
+    public void sendSafeApiData(UUID uid, Value<byte[]> data) {
         if (!Objects.equals(uid, client.getAlias())) {
             throw new IllegalStateException();
         }
         CryptoNode<?> cp = safeApiCon.findDown(CryptoNode.class);
-        cp.down().send(Value.of(data));
+        cp.down().send(data);
     }
 
     @Override
@@ -73,8 +74,17 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
                 CryptoNode.of(mk.getType().cryptoLib().env.symmetricForClient(mk, serverDescriptor.id())).setName("client to workServer"));
         CryptoNode<?> cp = safeApiCon.findDown(CryptoNode.class);
         cp.down().toSubApi(remoteApi, (a, v) -> a.loginByAlias2(client.getAlias(), v));
-        client.servers.addSourceHard().toMethod(safeApiCon, (a, sid) -> a.resolverServers(new short[]{sid.shortValue()}));
-        client.clouds.addSourceHard().toMethod(safeApiCon, (a, uid) -> a.resolverClouds(new UUID[]{uid}));
+        client.servers.addSourceHard().log("resolver servers", "client", "server")
+                .toMethod(safeApiCon, (a, sid) -> a.resolverServers(sid.map(new short[]{sid.data().shortValue()})));
+        client.clouds.addSourceHard().log("resolver clouds", "client", "server",
+                        v -> {
+                            Log.debug("");
+                        }, v -> {
+                            Log.debug("");
+                        })
+                .toMethod(safeApiCon, (a, uid) -> {
+                    a.resolverClouds(uid.map(new UUID[]{uid.data()}));
+                });
         ready.set(ConnectionWork.this);
     }
 
@@ -131,7 +141,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
         }
 
         @Override
-        public void sendMessage(UUID uid, byte[] data) {
+        public void sendMessage(UUID uid, Value<byte[]> data) {
             client.getMessageNode(uid, MessageEventListener.DEFAULT).sendMessageFromServerToClient(data);
         }
 

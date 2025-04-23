@@ -9,14 +9,28 @@ import io.aether.utils.consoleCanonical.ConsoleMgrCanonical;
 import io.aether.utils.flow.Flow;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.StandardOpenOption;
 import java.util.Map;
 
 public class CLI {
+    public final AetherApi api = new AetherApi();
 
-    public static void main(String... aa) {
+    public CLI(String... aa) {
         var c = new ConsoleMgrCanonical(aa);
         c.regConverter(CType.of(CryptoLib.class), CryptoLib::valueOf);
         c.regResultConverter("bin", CType.of(ClientStateInMemory.class), ClientStateInMemory::save);
+        c.regResultConverterCtx("bin", CType.of(AetherApi.ShowApi.Msg.class), (ctx,v)->{
+            ctx.setFileName(v.address.toString());
+            ctx.setFileMode(StandardOpenOption.TRUNCATE_EXISTING);
+            return v.data;
+        });
+        c.regResultConverter("json", CType.of(AetherApi.ShowApi.Msg.class), v->{
+            Map<String, Object> m = Map.of(
+                    "uid", v.address,
+                    "data", v.data
+            );
+            return RU.toJson(m).toString().getBytes(StandardCharsets.UTF_8);
+        });
         c.regResultConverter("json", CType.of(ClientStateInMemory.class), v -> {
             Map<String, Object> m = Map.of(
                     "uid", v.getUid(),
@@ -26,9 +40,12 @@ public class CLI {
             );
             return RU.toJson(m).toString().getBytes(StandardCharsets.UTF_8);
         });
-        c.execute(new AetherApi()).to(()->{
+        c.execute(api).to(() -> {
             System.out.println("DONE");
         }).waitDone();
+    }
 
+    public static void main(String... aa) {
+        new CLI(aa);
     }
 }

@@ -81,8 +81,8 @@ public class ConnectionRegistration extends Connection<io.aether.clientServerReg
     }
 
     @Override
-    public void enter(byte[] data) {
-        cp.down().send(Value.of(data));
+    public void enter(Value<byte[]> data) {
+        cp.down().send(data);
     }
 
     @Override

@@ -179,7 +179,9 @@ public class PointToPointTest {
         var chToc2 = client1.openStreamToClient(client2.getUid());
         chToc2.send(Value.ofForce(message));
 
-        checkReceiveMessage.waitDoneSeconds(100);
+        if(!checkReceiveMessage.waitDoneSeconds(10)){
+            throw new IllegalStateException();
+        }
         client1.destroy(true).waitDoneSeconds(5);
         client2.destroy(true).waitDoneSeconds(5);
     }
@@ -213,7 +215,9 @@ public class PointToPointTest {
         checkReceiveMessage.to(() -> {
             Log.info("TEST IS DONE!");
         });
-        checkReceiveMessage.waitDoneSeconds(1000);
+        if(!checkReceiveMessage.waitDoneSeconds(10)){
+            throw new IllegalStateException();
+        }
         client1.destroy(true).waitDoneSeconds(5);
         client2.destroy(true).waitDoneSeconds(5);
     }
@@ -245,7 +249,9 @@ public class PointToPointTest {
             checkReceiveMessage.to(() -> {
                 Log.info("TEST IS DONE!");
             });
-            checkReceiveMessage.waitDoneSeconds(1000);
+            if(!checkReceiveMessage.waitDoneSeconds(10)){
+                throw new IllegalStateException();
+            }
             client1.destroy(true).waitDoneSeconds(5);
             client2.destroy(true).waitDoneSeconds(5);
         }
@@ -273,7 +279,9 @@ public class PointToPointTest {
             checkReceiveMessage.to(() -> {
                 Log.info("TEST IS DONE!");
             });
-            checkReceiveMessage.waitDoneSeconds(1000);
+            if(!checkReceiveMessage.waitDoneSeconds(10)){
+                throw new IllegalStateException();
+            }
             client1.destroy(true).waitDoneSeconds(5);
             client2.destroy(true).waitDoneSeconds(5);
         }

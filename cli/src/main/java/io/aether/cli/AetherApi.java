@@ -6,12 +6,18 @@ import io.aether.cloud.client.ClientStateInMemory;
 import io.aether.common.AccessGroup;
 import io.aether.common.AccessGroupI;
 import io.aether.crypt.CryptoLib;
+import io.aether.utils.AString;
 import io.aether.utils.RU;
+import io.aether.utils.ToString;
 import io.aether.utils.consoleCanonical.ConsoleMgrCanonical.*;
 import io.aether.utils.flow.Flow;
+import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
+import io.aether.utils.slots.EventConsumer;
+import io.aether.utils.slots.EventConsumerWithQueue;
 import io.aether.utils.streams.Gate;
 import io.aether.utils.streams.Value;
+import io.aether.utils.streams.ValueListener;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -20,16 +26,19 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
 
 public class AetherApi {
+    public CreateApi createApi;
+    public ShowApi showApi;
+    public AetherCloudClient client;
+
     @Api
     public CreateApi create(
             @Doc("Specify a time limit for the time limit for object creation")
             @Optional("5")
             int timeout) {
-        return new CreateApi();
+        createApi = new CreateApi();
+        return createApi;
     }
 
     @Api
@@ -52,7 +61,7 @@ public class AetherApi {
 
     @Api
     public SendApi send(@Doc("Previously saved client state") @Optional(value = "state.bin") File state, UUID address) {
-        AetherCloudClient client = new AetherCloudClient(ClientStateInMemory.load(state));
+        client = new AetherCloudClient(ClientStateInMemory.load(state));
         var st = client.openStreamToClient(address);
         return new SendApi(st);
     }
@@ -62,12 +71,14 @@ public class AetherApi {
             @Doc("Previously saved client state")
             @Optional(value = "state.bin")
             File state) {
-        return new ShowApi(ClientStateInMemory.load(state));
+        showApi = new ShowApi(ClientStateInMemory.load(state));
+        return showApi;
     }
 
 
     public static class ShowApi {
         private final ClientStateInMemory state;
+        public EventConsumer<Msg> messages = new EventConsumerWithQueue<>();
 
         public ShowApi(ClientStateInMemory state) {
             this.state = state;
@@ -111,23 +122,24 @@ public class AetherApi {
             return client.getAllAccessedClients(targetClient);
         }
 
-        public BlockingQueue<Msg> messages(@Optional Set<UUID> filter, @Optional Set<UUID> not, @Optional long waitTime) {
-            BlockingQueue<Msg> result = new ArrayBlockingQueue<>(100);
+        public EventConsumer<Msg> messages(@Optional Set<UUID> filter, @Optional Set<UUID> not, @Optional("3000") long waitTime) {
             AetherCloudClient client = new AetherCloudClient(state);
             client.onClientStream(m -> {
-                if (filter != null && !filter.contains(m.getConsumerUUID())) return;
-                if (not != null && not.contains(m.getConsumerUUID())) return;
                 m.up().toConsumer(d -> {
-                    result.add(new Msg(m.getConsumerUUID(), d));
+                    if (filter != null && !filter.contains(m.getConsumerUUID())) return;
+                    if (not != null && not.contains(m.getConsumerUUID())) return;
+                    var msg = new Msg(m.getConsumerUUID(), d);
+                    messages.fire(msg);
                 });
             });
+            client.ping();
             client.startFuture.to(() -> {
-                RU.schedule(waitTime, () -> client.destroy(true));
+                RU.schedule(waitTime, () -> client.destroy(true).waitDone());
             });
-            return result;
+            return messages;
         }
 
-        public static class Msg {
+        public static class Msg implements ToString {
             public final UUID address;
             public final byte[] data;
 
@@ -135,34 +147,17 @@ public class AetherApi {
                 this.address = address;
                 this.data = data;
             }
-        }
-    }
 
-    public static class CreateApi {
-        @Doc("Create a new client")
-        public ARFuture<ClientState> client(UUID parent,
-                                            @Optional("tcp://registration.aethernet.io:9001") URI regUri,
-                                            @Optional("SODIUM") CryptoLib cryptoLib, @Optional("false") boolean dev
-        ) {
-            if (dev) {
-                regUri = URI.create("tcp://reg-dev.aethernet.io:9001");
+            @Override
+            public String toString() {
+                return toString2();
             }
-            var state = new ClientStateInMemory(parent, List.of(regUri), null, cryptoLib);
-            AetherCloudClient client = new AetherCloudClient(state);
-            return client.startFuture.apply(() -> client.destroy(true)).mapRFuture(() ->{
-                return state;
-            });
-        }
 
-        public ARFuture<Long> group(@Optional(value = "state.bin") File state, @Optional UUID owner, @Optional Set<UUID> uids) {
-            AetherCloudClient client = new AetherCloudClient(ClientStateInMemory.load(state));
-            if (owner == null) {
-                owner = client.getUid();
+            @Override
+            public AString toString(AString sb) {
+                sb.add(address).add(":").add(data);
+                return sb;
             }
-            var future = client.createAccessGroupWithOwner(owner, uids.toArray(new UUID[0]));
-            return future.map(AccessGroupI::getId).to(() -> {
-                client.destroy(true);
-            });
         }
     }
 
@@ -186,35 +181,88 @@ public class AetherApi {
             }
 
             @Doc("Add clients to access group")
-            public void add(@StdIn Set<UUID> uid) {
-                client.getGroup(id).to(g -> g.addAll(uid.toArray(new UUID[0])));
+            public AFuture add(@StdIn Set<UUID> uid) {
+                AFuture res = new AFuture();
+                client.getAuthApi(a -> {
+                    AFuture.all(Flow.flow(uid).map(u -> a.addToAccessGroup(id, u)).map(ARFuture::toFuture).toList()).to(res);
+                });
+                return res.apply(() -> client.destroy(true).waitDone());
             }
 
             @Doc("Remove clients from access group")
-            public void remove(Set<UUID> uid) {
-                client.getGroup(id).to(g -> g.removeAll(uid.toArray(new UUID[0])));
+            public AFuture remove(Set<UUID> uid) {
+                AFuture res = new AFuture();
+                client.getAuthApi(a -> {
+                    AFuture.all(Flow.flow(uid).map(u -> a.removeFromAccessGroup(id, u)).map(ARFuture::toFuture).toList()).to(res);
+                });
+                return res.apply(() -> client.destroy(true).waitDone());
             }
         }
     }
 
-    public static class SendApi {
+    public class CreateApi {
+
+        @Doc("Create a new client")
+        public ARFuture<ClientState> client(UUID parent,
+                                            @Optional("tcp://registration.aethernet.io:9010") URI regUri,
+                                            @Optional("SODIUM") CryptoLib cryptoLib, @Optional("false") boolean dev
+        ) {
+            if (dev) {
+                regUri = URI.create("tcp://reg-dev.aethernet.io:9010");
+            }
+            var state = new ClientStateInMemory(parent, List.of(regUri), null, cryptoLib);
+            client = new AetherCloudClient(state);
+            return client.startFuture.apply(() -> {
+                client.destroy(true).waitDone();
+            }).mapRFuture(() -> {
+                return state;
+            });
+        }
+
+        public ARFuture<Long> group(@Optional(value = "state.bin") File state, @Optional UUID owner, @Optional Set<UUID> uids) {
+            AetherCloudClient client = new AetherCloudClient(ClientStateInMemory.load(state));
+            if (owner == null) {
+                owner = client.getUid();
+            }
+            var future = client.createAccessGroupWithOwner(owner, uids.toArray(new UUID[0]));
+            return future.map(AccessGroupI::getId).apply(() -> {
+                client.destroy(true).waitDone();
+            });
+        }
+    }
+
+    public class SendApi {
         private final Gate<byte[], byte[]> st;
 
         public SendApi(Gate<byte[], byte[]> st) {
             this.st = st;
         }
 
-        public void text(String text) {
-            st.send(Value.ofForce(text.getBytes(StandardCharsets.UTF_8)));
+        public AFuture text(String text) {
+            AFuture res = new AFuture();
+            st.send(Value.ofForce(text.getBytes(StandardCharsets.UTF_8), new ValueListener() {
+                @Override
+                public void drop(Object owner) {
+                    res.done();
+                }
+            }));
+            return res;
         }
 
-        public void file(File file) {
+        public AFuture file(File file) {
+            AFuture res = new AFuture();
             try (var is = new FileInputStream(file)) {
                 var data = is.readAllBytes();
-                st.send(Value.ofForce(data));
+                st.send(Value.ofForce(data, new ValueListener() {
+                    @Override
+                    public void drop(Object owner) {
+                        res.done();
+                    }
+                }));
             } catch (Exception e) {
                 RU.error(e);
             }
+            return res.apply(() -> client.destroy(true).waitDone());
         }
 
         public void stdIn(@StdIn byte[] data) {

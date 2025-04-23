@@ -9,7 +9,9 @@ import io.aether.logger.Log;
 import io.aether.net.meta.ApiManager;
 import io.aether.net.meta.MetaType;
 import io.aether.net.serialization.SerializationContext;
+import io.aether.utils.AString;
 import io.aether.utils.ConcurrentHashSet;
+import io.aether.utils.ToString;
 import io.aether.utils.dataio.DataInOut;
 import io.aether.utils.dataio.DataInOutStatic;
 import io.aether.utils.flow.Flow;
@@ -24,7 +26,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-public class ClientStateInMemory implements ClientState {
+public class ClientStateInMemory implements ClientState , ToString {
     private final List<URI> registrationUri = new CopyOnWriteArrayList<>();
     private final Map<Integer, ServerInfo> servers = new ConcurrentHashMap<>();
     private final Map<UUID, ClientInfo> clients = new ConcurrentHashMap<>();
@@ -40,6 +42,26 @@ public class ClientStateInMemory implements ClientState {
 
     public ClientStateInMemory(UUID parentUid, List<URI> registrationUri, Set<SignChecker> rootSigners) {
         this(parentUid, registrationUri, rootSigners, CryptoLib.HYDROGEN);
+    }
+
+    @Override
+    public String toString() {
+        return toString2();
+    }
+
+    @Override
+    public AString toString(AString sb) {
+        sb.add("Client State:\n");
+        sb.add("uid: ").add(uid).add("\n");
+        sb.add("alias: ").add(alias).add("\n");
+        sb.add("parent: ").add(parentUid).add("\n");
+        sb.add("master key: ").add(masterKey).add("\n");
+        sb.add("crypto lib: ").add(cryptoLib).add("\n");
+        sb.add("cloud: ").add(getCloud(uid)).add("\n");
+        for(var c:getCloud(uid)){
+            sb.addSpace(4).add(getServerDescriptor(c)).add("\n");
+        }
+        return sb;
     }
 
     public ClientStateInMemory(UUID parentUid, List<URI> registrationUri, Set<SignChecker> rootSigners, CryptoLib cryptoLib) {

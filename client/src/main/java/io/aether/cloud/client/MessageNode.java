@@ -71,11 +71,15 @@ public class MessageNode implements NodeDown<byte[], byte[]> {
             public void send(Value<byte[]> value) {
                 for (var e : connectionsOut) {
                     if (e.socketStreamClient.up().isWritable()) {
-                        e.safeApiCon.getRemoteApi().run(a -> a.sendMessage(consumer, value.data()));
+                        if(value.force()){
+                            e.safeApiCon.getRemoteApi().run_flush(a -> a.sendMessage(consumer, value));
+                        }else{
+                            e.safeApiCon.getRemoteApi().run(a -> a.sendMessage(consumer, value));
+                        }
                         return;
                     }
                 }
-                Flow.flow(connectionsOut).random().safeApiCon.getRemoteApi().run(a -> a.sendMessage(consumer, value.data()));
+//                Flow.flow(connectionsOut).random().safeApiCon.getRemoteApi().run(a -> a.sendMessage(consumer, value.data()));
             }
 
             @Override
@@ -139,7 +143,7 @@ public class MessageNode implements NodeDown<byte[], byte[]> {
         connectionsIn.add(connectionWork);
     }
 
-    public void sendMessageFromServerToClient(byte[] data) {
-        buffer.down().send(Value.of(data));
+    public void sendMessageFromServerToClient(Value<byte[]> data) {
+        buffer.down().send(data);
     }
 }

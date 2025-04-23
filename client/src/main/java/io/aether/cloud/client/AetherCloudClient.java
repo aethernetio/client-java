@@ -41,6 +41,7 @@ public final class AetherCloudClient implements Destroyable {
     private static final Log.Node logClientContext = Log.createContext("SystemComponent", "Client");
     public final AFuture startFuture = new AFuture();
     public final EventConsumer<MessageNode> onClientStream = new EventConsumerWithQueue<>();
+    public final Destroyer destroyer = new Destroyer();
     final Map<Integer, ConnectionWork> connections = new ConcurrentHashMap<>();
     final MapBase<UUID, UUIDAndCloud> clouds = new MapBase<>(UUIDAndCloud::uid).withLog("client clouds");
     final AtomicReference<RegStatus> regStatus = new AtomicReference<>(RegStatus.NO);
@@ -50,7 +51,6 @@ public final class AetherCloudClient implements Destroyable {
     final EventConsumer<UUID> onNewChild = new EventConsumer<>();
     final EventBiConsumer<UUID, Remote<ServerApiByUid>> onNewChildApi = new EventBiConsumer<>();
     private final ClientState clientState;
-    private final Destroyer destroyer = new Destroyer();
     private final AtomicBoolean startConnection = new AtomicBoolean();
     private final int timeout1 = 5;
     private String name;
@@ -111,6 +111,7 @@ public final class AetherCloudClient implements Destroyable {
     }
 
     public void getServerDescriptorForUid(@NotNull UUID uid, AConsumer<ServerDescriptor> t) {
+        if (destroyer.isDestroyed()) return;
         if (uid.equals(getUid())) {
             var cloud = clouds.get(uid).getNow();
             for (var pp : cloud.cloud()) {
@@ -125,6 +126,7 @@ public final class AetherCloudClient implements Destroyable {
     }
 
     void getConnection(@NotNull UUID uid, @NotNull AConsumer<ConnectionWork> t) {
+        if (destroyer.isDestroyed()) return;
         if (uid.equals(getUid())) {
             UUIDAndCloud cloud0 = clouds.get(uid).getNow();
             Cloud cloud = null;
@@ -150,9 +152,7 @@ public final class AetherCloudClient implements Destroyable {
             c = connections.computeIfAbsent((int) serverDescriptor.id(),
                     s -> {
                         try (var ln = Log.context(logClientContext)) {
-                            var res = new ConnectionWork(this, serverDescriptor);
-                            destroyer.add(res);
-                            return res;
+                            return new ConnectionWork(this, serverDescriptor);
                         }
                     });
         }
@@ -167,6 +167,11 @@ public final class AetherCloudClient implements Destroyable {
                 }
                 for (ConnectionWork connection : getConnections()) {
                     connection.scheduledWork();
+                }
+            });
+            RU.scheduleAtFixedRate(destroyer, 5, TimeUnit.MILLISECONDS, () -> {
+                for (ConnectionWork connection : getConnections()) {
+                    connection.safeApiCon.flush();
                 }
             });
         });
@@ -195,7 +200,11 @@ public final class AetherCloudClient implements Destroyable {
             var countServersForRegistration = Math.min(uris.size(), clientState.getCountServersForRegistration());
             if (uris.isEmpty()) throw new RuntimeException("No urls");
             var startFutures = flow(uris).shuffle().limit(countServersForRegistration)
-                    .map(sd -> new ConnectionRegistration(this, sd).connectFuture)
+                    .map(sd -> {
+                        try (var ln = Log.context(logClientContext)) {
+                            return new ConnectionRegistration(this, sd).connectFuture;
+                        }
+                    })
                     .toList();
             AFuture.any(startFutures)
                     .to(this::startScheduledTask)
@@ -219,13 +228,15 @@ public final class AetherCloudClient implements Destroyable {
         return clientState.getUid();
     }
 
-    <T> ARFuture<T> getAuthApi1(@NotNull AFunction<AuthorizedApi, ARFuture<T>> t) {
+    public <T> ARFuture<T> getAuthApi1(@NotNull AFunction<AuthorizedApi, ARFuture<T>> t) {
+        if (destroyer.isDestroyed()) return ARFuture.canceled();
         ARFuture<T> res = new ARFuture<>();
         getAuthApi(a -> t.apply(a).to(res));
         return res;
     }
 
-    void getAuthApi(@NotNull AConsumer<AuthorizedApi> t) {
+    public void getAuthApi(@NotNull AConsumer<AuthorizedApi> t) {
+        if (destroyer.isDestroyed()) return;
         getConnection(c -> {
             var a = c.safeApiCon;
             if (a == null) {
@@ -238,7 +249,8 @@ public final class AetherCloudClient implements Destroyable {
         });
     }
 
-    <T> ARFuture<T> getAuthApi2(@NotNull AFunction<AuthorizedApi, T> t) {
+    public <T> ARFuture<T> getAuthApi2(@NotNull AFunction<AuthorizedApi, T> t) {
+        if (destroyer.isDestroyed()) return ARFuture.canceled();
         ARFuture<T> res = new ARFuture<>();
         getAuthApi(a -> res.done(t.apply(a)));
         return res;
@@ -257,6 +269,7 @@ public final class AetherCloudClient implements Destroyable {
     }
 
     void getConnection(@NotNull AConsumer<ConnectionWork> t) {
+        if (destroyer.isDestroyed()) return;
         var uid0 = getUid();
         getConnection(Objects.requireNonNull(uid0), c -> {
             c.setBasic(true);
@@ -270,7 +283,8 @@ public final class AetherCloudClient implements Destroyable {
     }
 
     public AMFuture<Cloud> getCloud(@NotNull UUID uid) {
-        var res = clouds.get(uid).map(UUIDAndCloud::cloud);
+        var f = clouds.get(uid);
+        var res = f.map(UUIDAndCloud::cloud);
         if (!res.isDone()) {
             if (!clouds.output.down().isWritable()) {
                 getConnection(conWork -> {
