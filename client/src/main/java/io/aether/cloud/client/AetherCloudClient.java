@@ -41,7 +41,7 @@ public final class AetherCloudClient implements Destroyable {
     private static final Log.Node logClientContext = Log.createContext("SystemComponent", "Client");
     public final AFuture startFuture = new AFuture();
     public final EventConsumer<MessageNode> onClientStream = new EventConsumerWithQueue<>();
-    public final Destroyer destroyer = new Destroyer();
+    public final Destroyer destroyer = new Destroyer(getClass().getSimpleName());
     final Map<Integer, ConnectionWork> connections = new ConcurrentHashMap<>();
     final MapBase<UUID, UUIDAndCloud> clouds = new MapBase<>(UUIDAndCloud::uid).withLog("client clouds");
     final AtomicReference<RegStatus> regStatus = new AtomicReference<>(RegStatus.NO);
@@ -177,8 +177,10 @@ public final class AetherCloudClient implements Destroyable {
         });
     }
 
-    public void ping() {
-        getConnection(ConnectionWork::ping);
+    public AFuture ping() {
+        AFuture res=new AFuture();
+        getConnection(connectionWork -> connectionWork.ping().to(res));
+        return res;
     }
 
     public AFuture connect() {

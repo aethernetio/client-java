@@ -6,6 +6,7 @@ import io.aether.logger.Log;
 import io.aether.net.ApiGate;
 import io.aether.net.Remote;
 import io.aether.utils.slots.EventConsumer;
+import io.aether.utils.slots.EventConsumerWithQueue;
 
 import java.net.URI;
 import java.util.List;
@@ -15,7 +16,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class ChatClient implements ServiceClientApi {
     public final AetherCloudClient aether;
-    public final EventConsumer<MessageDescriptor> onMessage = new EventConsumer<>();
+    public final EventConsumer<MessageDescriptor> onMessage = new EventConsumerWithQueue<>();
     private final Map<UUID, UserDescriptor> users = new ConcurrentHashMap<>();
     private final Remote<ServiceServerApi> service;
     private final ApiGate<ServiceClientApi, ServiceServerApi> apiNode;

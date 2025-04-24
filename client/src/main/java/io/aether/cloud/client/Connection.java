@@ -53,7 +53,7 @@ public abstract class Connection<LT, RT> implements Destroyable {
     @Override
     public AFuture destroy(boolean force) {
         var res = new AFuture();
-        socketStreamClient.close();
+        socketStreamClient.destroy(force);
         connectFuture.to(() -> {
             try {
                 apiRoot.close();
@@ -61,7 +61,7 @@ public abstract class Connection<LT, RT> implements Destroyable {
                 Log.warn("close connection error", e);
             }
             try {
-                socketStreamClient.close();
+                socketStreamClient.destroy(force);
             } catch (Exception e) {
                 Log.warn("close connection error", e);
             }

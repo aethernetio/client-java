@@ -10,14 +10,13 @@ import io.aether.common.ServerDescriptor;
 import io.aether.common.UUIDAndCloud;
 import io.aether.logger.Log;
 import io.aether.net.ApiGate;
-import io.aether.net.ApiLevelConsumer;
 import io.aether.net.Remote;
 import io.aether.net.StreamManager;
-import io.aether.net.serialization.ApiLevel;
-import io.aether.utils.Inject;
 import io.aether.utils.RU;
+import io.aether.utils.futures.AFuture;
 import io.aether.utils.slots.AMFuture;
 import io.aether.utils.streams.CryptoNode;
+import io.aether.utils.streams.SCD;
 import io.aether.utils.streams.Value;
 
 import java.util.Objects;
@@ -42,12 +41,14 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
         connect();
     }
 
-    public void ping() {
+    public AFuture ping() {
+        AFuture res = new AFuture();
         ready.toOnce((aa) -> {
             safeApiCon.getRemoteApi().run_flush(a -> {
-                a.ping(client.getPingTime());
+                a.ping(client.getPingTime()).to(res);
             });
         });
+        return res;
     }
 
     public void flush() {
@@ -62,7 +63,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
         if (!Objects.equals(uid, client.getAlias())) {
             throw new IllegalStateException();
         }
-        CryptoNode<?> cp = safeApiCon.findDown(CryptoNode.class);
+        CryptoNode cp = safeApiCon.findDown(CryptoNode.class);
         cp.down().send(data);
     }
 
@@ -72,8 +73,8 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
         safeApiCon = ApiGate.of(ClientApiSafe.META, AuthorizedApi.META,
                 new MyClientApiSafe(client), StreamManager.forClient(),
                 CryptoNode.of(mk.getType().cryptoLib().env.symmetricForClient(mk, serverDescriptor.id())).setName("client to workServer"));
-        CryptoNode<?> cp = safeApiCon.findDown(CryptoNode.class);
-        cp.down().toSubApi(remoteApi, (a, v) -> a.loginByAlias2(client.getAlias(), v));
+        CryptoNode cp = safeApiCon.findDown(CryptoNode.class);
+        cp.down().toSubApi(remoteApi, (a, v) -> a.loginByAlias2(client.getAlias(), SCD.of(v)));
         client.servers.addSourceHard().log("resolver servers", "client", "server")
                 .toMethod(safeApiCon, (a, sid) -> a.resolverServers(sid.map(new short[]{sid.data().shortValue()})));
         client.clouds.addSourceHard().log("resolver clouds", "client", "server",
@@ -121,10 +122,8 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
         }
     }
 
-    private static class MyClientApiSafe implements ClientApiSafe, ApiLevelConsumer {
+    private static class MyClientApiSafe implements ClientApiSafe {
         private final AetherCloudClient client;
-        @Inject
-        private ApiLevel apiProcessor;
 
         public MyClientApiSafe(AetherCloudClient client) {
             this.client = client;
@@ -142,6 +141,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
 
         @Override
         public void sendMessage(UUID uid, Value<byte[]> data) {
+            Log.trace("receive message $uid1 <- $uid2", "uid1", client.getUid(), "uid2", uid);
             client.getMessageNode(uid, MessageEventListener.DEFAULT).sendMessageFromServerToClient(data);
         }
 
@@ -158,11 +158,6 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
         @Override
         public void newChild(UUID uid) {
             client.onNewChild.fire(uid);
-        }
-
-        @Override
-        public void setApiLevel(ApiLevel apiLevel) {
-            this.apiProcessor = apiLevel;
         }
 
     }

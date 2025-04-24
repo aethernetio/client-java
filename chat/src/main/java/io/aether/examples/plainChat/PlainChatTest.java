@@ -17,14 +17,18 @@ public class PlainChatTest {
 
     public void start() {
         ChatService chatService = new ChatService(registrationUri);
-        chatService.aether.startFuture.waitDoneSeconds(10);
         ChatClient chatClient1 = new ChatClient(chatService.aether.getUid(), registrationUri, "client1");
         ChatClient chatClient2 = new ChatClient(chatService.aether.getUid(), registrationUri, "client2");
         AFuture.all(chatClient1.aether.startFuture, chatClient2.aether.startFuture).waitDoneSeconds(10);
         var future = new ARFuture<MessageDescriptor>();
-        chatClient2.onMessage.add(future::done);
+        chatClient2.onMessage.add(m -> {
+            Log.info("receive message: $msg", "msg", m);
+            future.tryDone(m);
+        });
         chatClient1.sendMessage("test");
         future.to((m) -> Log.info("The message has been received: $msg", "msg", m));
-        future.waitDoneSeconds(10);
+        if (!future.waitDoneSeconds(10)) {
+            throw new IllegalStateException("timeout receive message exception");
+        }
     }
 }

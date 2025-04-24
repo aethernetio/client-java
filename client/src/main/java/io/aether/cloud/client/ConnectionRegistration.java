@@ -19,8 +19,8 @@ import java.net.URI;
 
 public class ConnectionRegistration extends Connection<io.aether.clientServerRegApi.clientApi.ClientApiRegUnsafe, RegistrationRootApi> implements io.aether.clientServerRegApi.clientApi.ClientApiRegUnsafe {
 
-    volatile CryptoNode<?> cp;
-    volatile CryptoNode<?> gcp;
+    volatile CryptoNode cp;
+    volatile CryptoNode gcp;
 
     public ConnectionRegistration(AetherCloudClient client, URI uri) {
         super(client, uri, io.aether.clientServerRegApi.clientApi.ClientApiRegUnsafe.class, RegistrationRootApi.class);

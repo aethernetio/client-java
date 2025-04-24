@@ -11,6 +11,7 @@ import io.aether.net.meta.MetaType;
 import io.aether.net.serialization.SerializationContext;
 import io.aether.utils.AString;
 import io.aether.utils.ConcurrentHashSet;
+import io.aether.utils.RU;
 import io.aether.utils.ToString;
 import io.aether.utils.dataio.DataInOut;
 import io.aether.utils.dataio.DataInOutStatic;
@@ -245,13 +246,17 @@ public class ClientStateInMemory implements ClientState , ToString {
             return load(in.readAllBytes());
         } catch (IOException e) {
             Log.error("Cannot load state", e);
-            throw new RuntimeException(e);
+            return RU.error(e);
         }
     }
 
     public static ClientStateInMemory load(byte[] data) {
-        var dto = DTO.META.getDeserializer().put(SerializationContext.STUB, new DataInOutStatic(data));
-        return new ClientStateInMemory(dto);
+        try{
+            var dto = DTO.META.getDeserializer().put(SerializationContext.STUB, new DataInOutStatic(data));
+            return new ClientStateInMemory(dto);
+        }catch (Exception e){
+            throw new IllegalStateException("Unparsable format state");
+        }
     }
 
     private static class DTO {
