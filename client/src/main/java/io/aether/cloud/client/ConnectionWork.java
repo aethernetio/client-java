@@ -59,10 +59,16 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
     }
 
     @Override
-    public void sendSafeApiData(UUID uid, Value<byte[]> data) {
-        if (!Objects.equals(uid, client.getAlias())) {
+    public void sendSafeApiDataMulti(byte backId, Value<byte[]> data) {
+        if (!Objects.equals(backId, client.getAlias())) {
             throw new IllegalStateException();
         }
+        CryptoNode cp = safeApiCon.findDown(CryptoNode.class);
+        cp.down().send(data);
+    }
+
+    @Override
+    public void sendSafeApiData(Value<byte[]> data) {
         CryptoNode cp = safeApiCon.findDown(CryptoNode.class);
         cp.down().send(data);
     }
