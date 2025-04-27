@@ -1,7 +1,30 @@
-subprojects {
-    group 'io.aether'
-    version '0.0.38'
+if (gradle.parent != null) {
+    tasks.register("updateVersion") {
+        doLast {
+            var fVersion = new File(projectDir, "version");
+            var v = fVersion.getText('UTF-8').toInteger();
+            v++;
+            fVersion.write(v.toString());
+            rootProject.version '0.0.' + v
+            subprojects {
+                version rootProject.version
+            }
+        }
+    }
+    tasks.register("aetherPub") {
+        dependsOn("updateVersion")
+        dependsOn(":client:publish")
+        dependsOn(":pointToPoint:publish")
+        dependsOn(":cli:publish")
+        dependsOn(":chat:publish")
+    }
+}
 
+group 'io.aether'
+version '0.0.' + (new File(projectDir, "version").getText('UTF-8'))
+subprojects {
+    group rootProject.group
+    version rootProject.version
     repositories {
         mavenCentral()
         maven {
@@ -10,7 +33,7 @@ subprojects {
         }
     }
     afterEvaluate {
-        if (it.plugins.hasPlugin('java')) {
+        if (gradle.parent != null) {
             if (it.plugins.hasPlugin('maven-publish')) {
                 publishing {
                     repositories {
@@ -23,14 +46,17 @@ subprojects {
                                 url(releasesUrl)
                             }
                             allowInsecureProtocol = true
+
                             credentials {
-                                username "$System.env.AETHER_REPO_USER"
-                                password "$System.env.AETHER_REPO_PASSWORD"
+                                username gradle.parent.rootProject.properties["aetherRepoUser"] as String
+                                password gradle.parent.rootProject.properties["aetherRepoPassword"] as String
                             }
                         }
                     }
                 }
             }
+        }
+        if (it.plugins.hasPlugin('java')) {
             java {
                 toolchain {
                     languageVersion = JavaLanguageVersion.of(11)

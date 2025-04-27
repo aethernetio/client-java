@@ -3,15 +3,15 @@ plugins {
     id 'maven-publish'
 }
 
+def coreVersion = gradle.parent == null ? '0.0.72' : gradle.parent.rootProject.version
 dependencies {
-    def coreVersion = '0.0.71'
     api "io.aether:client-server-api:${coreVersion}"
     api "io.aether:client-server-reg-api:${coreVersion}"
     api "io.aether:core:${coreVersion}"
 }
 publishing {
     publications {
-        mavenPublication(MavenPublication){
+        mavenPublication(MavenPublication) {
             from components.java
             groupId "io.aether"
             artifactId "cloud-client"
