@@ -10,8 +10,8 @@ public class UserDescriptor implements ToString {
     public final String name;
 
     @Override
-    public AString toString(AString sb) {
-        return sb.add(uid).add(':').add(name);
+    public void toString(AString sb) {
+         sb.add(uid).add(':').add(name);
     }
 
     public UserDescriptor(UUID uid, String name) {

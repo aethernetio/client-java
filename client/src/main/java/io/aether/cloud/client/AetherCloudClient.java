@@ -296,7 +296,7 @@ public final class AetherCloudClient implements Destroyable {
         var f = clouds.get(uid);
         var res = f.map(UUIDAndCloud::cloud);
         if (!res.isDone()) {
-            if (!clouds.output.down().isWritable()) {
+            if (connections.isEmpty()) {
                 getConnection(conWork -> {
                     clouds.flush();
                     conWork.flush();

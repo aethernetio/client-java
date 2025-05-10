@@ -82,7 +82,8 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
         CryptoNode cp = safeApiCon.findDown(CryptoNode.class);
         cp.down().toSubApi(remoteApi, (a, v) -> a.loginByAlias2(client.getAlias(), SCD.of(v)));
         client.servers.addSourceHard().log("resolver servers", "client", "server")
-                .toMethod(safeApiCon, (a, sid) -> a.resolverServers(sid.map(new short[]{sid.data().shortValue()})));
+                .toMethod(safeApiCon, (a, sid) ->
+                        a.resolverServers(sid.map2(new short[]{sid.data().shortValue()})));
         client.clouds.addSourceHard().log("resolver clouds", "client", "server",
                         v -> {
                             Log.debug("");
@@ -90,7 +91,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
                             Log.debug("");
                         })
                 .toMethod(safeApiCon, (a, uid) -> {
-                    a.resolverClouds(uid.map(new UUID[]{uid.data()}));
+                    a.resolverClouds(uid.map2(new UUID[]{uid.data()}));
                 });
         ready.set(ConnectionWork.this);
     }

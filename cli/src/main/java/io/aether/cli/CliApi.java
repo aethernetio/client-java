@@ -18,7 +18,6 @@ import io.aether.utils.slots.EventConsumer;
 import io.aether.utils.slots.EventConsumerWithQueue;
 import io.aether.utils.streams.Gate;
 import io.aether.utils.streams.Value;
-import io.aether.utils.streams.ValueListener;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -107,9 +106,8 @@ public class CliApi {
         }
 
         @Override
-        public AString toString(AString sb) {
+        public void toString(AString sb) {
             sb.add(address).add(":").add(data);
-            return sb;
         }
     }
 
@@ -280,11 +278,8 @@ public class CliApi {
 
         public AFuture text(String text) {
             AFuture res = new AFuture();
-            st.send(Value.ofForce(text.getBytes(StandardCharsets.UTF_8), new ValueListener() {
-                @Override
-                public void drop(Object owner) {
+            st.send(Value.ofForce(text.getBytes(StandardCharsets.UTF_8),(o)-> {
                     res.done();
-                }
             }));
             return res;
         }
@@ -293,11 +288,8 @@ public class CliApi {
             AFuture res = new AFuture();
             try (var is = new FileInputStream(file)) {
                 var data = is.readAllBytes();
-                st.send(Value.ofForce(data, new ValueListener() {
-                    @Override
-                    public void drop(Object owner) {
-                        res.done();
-                    }
+                st.send(Value.ofForce(data, (o)-> {
+                    res.done();
                 }));
             } catch (Exception e) {
                 RU.error(e);

@@ -34,7 +34,7 @@ public class CLI {
                 if (ctx.getFileName() == null) {
                     ctx.setFileName(v.address.toString());
                 } else {
-                    AString.of().replaceVars(ctx.getFileName(), vv -> {
+                    AString.of().addVars(ctx.getFileName(), vv -> {
                         switch (vv.toString()) {
                             case "uid":
                                 return v.address;
@@ -50,7 +50,7 @@ public class CLI {
                 if (ctx.getFileName() == null) {
                     ctx.setFileName(v.address.toString());
                 } else {
-                    AString.of().replaceVars(ctx.getFileName(), vv -> {
+                    AString.of().addVars(ctx.getFileName(), vv -> {
                         switch (vv.toString()) {
                             case "uid":
                                 return v.address;
@@ -70,7 +70,7 @@ public class CLI {
                 if (ctx.getFileName() == null) {
                     ctx.setFileName(v.address.toString());
                 } else {
-                    AString.of().replaceVars(ctx.getFileName(), vv -> {
+                    AString.of().addVars(ctx.getFileName(), vv -> {
                         switch (vv.toString()) {
                             case "uid":
                                 return v.address;

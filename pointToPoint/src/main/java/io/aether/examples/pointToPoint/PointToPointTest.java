@@ -78,11 +78,15 @@ public class PointToPointTest {
         var data = new byte[10000];
         var timeBegin = RU.time();
         while (receiveCounter.get() < total) {
-            if (!ch1.isWritable()) {
-                RU.sleep(1);
-                continue;
+            var v = Value.ofForce(data);
+            boolean[] abortFlag = new boolean[1];
+            v.linkOnAbort(o -> {
+                abortFlag[0] = true;
+            });
+            ch1.send(v);
+            if (!abortFlag[0]) {
+                RU.sleep(10);
             }
-            ch1.send(Value.ofForce(data));
         }
         var timeEnd = RU.time();
         var duration = timeBegin - timeEnd;

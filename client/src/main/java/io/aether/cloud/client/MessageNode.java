@@ -3,9 +3,7 @@ package io.aether.cloud.client;
 import io.aether.common.Cloud;
 import io.aether.common.ServerDescriptor;
 import io.aether.utils.AString;
-import io.aether.utils.CType;
 import io.aether.utils.ConcurrentHashSet;
-import io.aether.utils.flow.Flow;
 import io.aether.utils.slots.AMFuture;
 import io.aether.utils.slots.EventConsumer;
 import io.aether.utils.streams.*;
@@ -20,11 +18,7 @@ public class MessageNode implements NodeDown<byte[], byte[]> {
     private final AMFuture<Cloud> consumerCloud;
     private final Set<ConnectionWork> connectionsOut = new ConcurrentHashSet<>();
     private final Set<ConnectionWork> connectionsIn = new ConcurrentHashSet<>();
-    private final BufferNode<byte[], byte[]> buffer = new BufferNode<byte[],byte[]>() {
-        @Override
-        public Object findByOwner(Class<?> t) {
-            return t.isInstance(this) ? this : null;
-        }
+    private final BufferNode<byte[], byte[]> buffer = new BufferNode<byte[], byte[]>() {
 
         @Override
         protected BufferNode<byte[], byte[]>.BGateUp initUp() {
@@ -37,10 +31,6 @@ public class MessageNode implements NodeDown<byte[], byte[]> {
             return "MessageNode(input buffer)";
         }
 
-        @Override
-        public <T> T findByOwner(CType<T> t) {
-            return t.isInstance(this) ? t.cast(this) : null;
-        }
     };
     private volatile MessageEventListener strategy;
 
@@ -50,11 +40,11 @@ public class MessageNode implements NodeDown<byte[], byte[]> {
         this.consumer = consumer;
         consumerCloud = client.getCloud(consumer);
         consumerCloud.add(c -> this.strategy.setConsumerCloud(this, c));
-        buffer.down().link(FGate.<byte[], byte[], Acceptor<byte[]>>of(new Acceptor<>(this) {
+        buffer.down().link(FGate.of(new AcceptorI<byte[], byte[]>() {
 
             @Override
-            public AString toString(AString sb) {
-                return sb.add("MessageNode(input buffer acceptor)");
+            public void toString(AString sb) {
+                sb.add("MessageNode(input buffer acceptor)");
             }
 
             @Override
@@ -63,49 +53,40 @@ public class MessageNode implements NodeDown<byte[], byte[]> {
             }
 
             @Override
-            public boolean isWritable() {
-                return !connectionsOut.isEmpty();
-            }
-
-            @Override
-            public void send(Value<byte[]> value) {
-                for (var e : connectionsOut) {
-                    if (e.socketStreamClient.up().isWritable()) {
-                        if(value.force()){
+            public void send(FGate<byte[], byte[]> fGate, Value<byte[]> value) {
+                if (connectionsOut.isEmpty()) {
+                    value.abort(this);
+                }
+                if (value.isData()) {
+                    for (var e : connectionsOut) {
+                        if (value.isForce()) {
                             e.safeApiCon.getRemoteApi().run_flush(a -> a.sendMessage(consumer, value));
-                        }else{
+                        } else {
                             e.safeApiCon.getRemoteApi().run(a -> a.sendMessage(consumer, value));
                         }
                         return;
                     }
                 }
-//                Flow.flow(connectionsOut).random().safeApiCon.getRemoteApi().run(a -> a.sendMessage(consumer, value.data()));
-            }
-
-            @Override
-            public void close() {
-
-            }
-
-            @Override
-            public void requestData() {
-                for (var e : connectionsIn) {
-                    e.ready.toOnce((c) -> {
-                        c.safeApiCon.getRemoteApi().run(a -> a.ping(client.getPingTime()));
-                    });
+                if (value.isRequestData()) {
+                    for (var e : connectionsIn) {
+                        e.ready.toOnce((c) -> {
+                            c.safeApiCon.getRemoteApi().run(a -> a.ping(client.getPingTime()));
+                        });
+                    }
                 }
             }
+
         }).outSide());
     }
 
     @Override
-    public AString toString(AString sb) {
-        return sb.add("MessageNode(").add(consumer).add(")");
+    public void toString(AString sb) {
+        sb.add("MessageNode(").add(consumer).add(")");
     }
 
     @Override
     public String toString() {
-        return toString(AString.of()).toString();
+        return toString2();
     }
 
     public MessageEventListener getStrategy() {
@@ -117,7 +98,7 @@ public class MessageNode implements NodeDown<byte[], byte[]> {
     }
 
     @Override
-    public FGate<byte[], byte[], ?> gUp() {
+    public FGate<byte[], byte[]> gUp() {
         return buffer.gUp();
     }
 
@@ -135,7 +116,7 @@ public class MessageNode implements NodeDown<byte[], byte[]> {
 
     public void addConsumerConnectionOut(ConnectionWork connectionWork) {
         if (connectionsOut.add(connectionWork)) {
-            buffer.down().requestData();
+            buffer.down().send(Value.ofRequest());
         }
     }
 

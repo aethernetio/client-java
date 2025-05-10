@@ -51,7 +51,7 @@ public class ClientStateInMemory implements ClientState , ToString {
     }
 
     @Override
-    public AString toString(AString sb) {
+    public void toString(AString sb) {
         sb.add("Client State:\n");
         sb.add("uid: ").add(uid).add("\n");
         sb.add("alias: ").add(alias).add("\n");
@@ -62,7 +62,6 @@ public class ClientStateInMemory implements ClientState , ToString {
         for(var c:getCloud(uid)){
             sb.addSpace(4).add(getServerDescriptor(c)).add("\n");
         }
-        return sb;
     }
 
     public ClientStateInMemory(UUID parentUid, List<URI> registrationUri, Set<SignChecker> rootSigners, CryptoLib cryptoLib) {
