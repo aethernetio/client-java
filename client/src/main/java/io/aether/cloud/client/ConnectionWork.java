@@ -162,6 +162,11 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
         }
 
         @Override
+        public void requestTelemetric() {
+
+        }
+
+        @Override
         public void newChild(UUID uid) {
             client.onNewChild.fire(uid);
         }
