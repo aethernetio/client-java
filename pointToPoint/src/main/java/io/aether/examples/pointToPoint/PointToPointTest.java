@@ -80,7 +80,7 @@ public class PointToPointTest {
         while (receiveCounter.get() < total) {
             var v = Value.ofForce(data);
             boolean[] abortFlag = new boolean[1];
-            v.linkOnAbort(o -> {
+            v.onAbort(o -> {
                 abortFlag[0] = true;
             });
             ch1.send(v);
