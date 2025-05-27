@@ -38,21 +38,16 @@ public class PointToPointTest {
             clientConfig2 = new ClientStateInMemory(parent, registrationUri, null, CryptoLib.HYDROGEN);
         AetherCloudClient client1 = new AetherCloudClient(clientConfig1);
         AetherCloudClient client2 = new AetherCloudClient(clientConfig2);
-        if(!AFuture.all(client1.startFuture, client2.startFuture).waitDoneSeconds(1000)){
+        if (!AFuture.all(client1.startFuture, client2.startFuture).waitDoneSeconds(1000)) {
             throw new IllegalStateException("Timeout connect to Aether");
         }
         Log.info("clients is registered uid1: $uid1 uid2: $uid2", "uid1", client1.getUid(), "uid2", client2.getUid());
         AFuture checkReceiveMessage = new AFuture();
         var message = new byte[]{1, 2, 3, 4};
-        client2.onClientStream((st) -> {
-            st.up().toConsumer(newMessage -> {
-                checkReceiveMessage.done();
-            });
-        });
+        client2.onMessage((uid, msg) -> checkReceiveMessage.done());
         Log.info("START two clients!");
-        var chToc2 = client1.openStreamToClient(client2.getUid());
         Thread.currentThread().setName("MAIN THREAD");
-        chToc2.send(Value.ofForce(message));
+        AFuture f = client1.sendMessage(client2.getUid(), message);
         checkReceiveMessage.to(() -> {
             Log.info("TEST IS DONE!");
         });
@@ -106,7 +101,7 @@ public class PointToPointTest {
             clientConfig2 = new ClientStateInMemory(parent, registrationUri, null, CryptoLib.HYDROGEN);
         AetherCloudClient client1 = new AetherCloudClient(clientConfig1);
         AetherCloudClient client2 = new AetherCloudClient(clientConfig2);
-        if(!AFuture.all(client1.startFuture, client2.startFuture).waitDoneSeconds(1000)){
+        if (!AFuture.all(client1.startFuture, client2.startFuture).waitDoneSeconds(1000)) {
             throw new IllegalStateException();
         }
         Log.info("clients is registered uid1: $uid1 uid2: $uid2", "uid1", client1.getUid(), "uid2", client2.getUid());
@@ -130,7 +125,7 @@ public class PointToPointTest {
         checkReceiveMessageBack.to(() -> {
             Log.info("TEST IS DONE!");
         });
-        if(!checkReceiveMessageBack.waitDoneSeconds(10)){
+        if (!checkReceiveMessageBack.waitDoneSeconds(10)) {
             throw new IllegalStateException();
         }
         client1.destroy(true).waitDoneSeconds(5);
@@ -179,7 +174,7 @@ public class PointToPointTest {
         var chToc2 = client1.openStreamToClient(client2.getUid());
         chToc2.send(Value.ofForce(message));
 
-        if(!checkReceiveMessage.waitDoneSeconds(10)){
+        if (!checkReceiveMessage.waitDoneSeconds(10)) {
             throw new IllegalStateException();
         }
         client1.destroy(true).waitDoneSeconds(5);
@@ -215,7 +210,7 @@ public class PointToPointTest {
         checkReceiveMessage.to(() -> {
             Log.info("TEST IS DONE!");
         });
-        if(!checkReceiveMessage.waitDoneSeconds(10)){
+        if (!checkReceiveMessage.waitDoneSeconds(10)) {
             throw new IllegalStateException();
         }
         client1.destroy(true).waitDoneSeconds(5);
@@ -249,7 +244,7 @@ public class PointToPointTest {
             checkReceiveMessage.to(() -> {
                 Log.info("TEST IS DONE!");
             });
-            if(!checkReceiveMessage.waitDoneSeconds(10)){
+            if (!checkReceiveMessage.waitDoneSeconds(10)) {
                 throw new IllegalStateException();
             }
             client1.destroy(true).waitDoneSeconds(5);
@@ -279,7 +274,7 @@ public class PointToPointTest {
             checkReceiveMessage.to(() -> {
                 Log.info("TEST IS DONE!");
             });
-            if(!checkReceiveMessage.waitDoneSeconds(10)){
+            if (!checkReceiveMessage.waitDoneSeconds(10)) {
                 throw new IllegalStateException();
             }
             client1.destroy(true).waitDoneSeconds(5);

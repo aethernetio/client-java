@@ -1,5 +1,6 @@
 package io.aether.cloud.client;
 
+import io.aether.StandardUUIDs;
 import io.aether.clientServerApi.serverApi.AuthorizedApi;
 import io.aether.clientServerApi.serverApi.ServerApiByUid;
 import io.aether.clientServerApi.serverApi.ServerApiByUidClient;
@@ -26,9 +27,12 @@ import io.aether.utils.slots.EventConsumer;
 import io.aether.utils.slots.EventConsumerWithQueue;
 import io.aether.utils.streams.Gate;
 import io.aether.utils.streams.MapBase;
+import io.aether.utils.streams.Value;
+import io.aether.utils.streams.ValueListener;
 import io.aether.utils.streams.rcollections.RCol;
 import org.jetbrains.annotations.NotNull;
 
+import java.net.URI;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -57,6 +61,10 @@ public final class AetherCloudClient implements Destroyable {
 
     {
         lastSecond = System.currentTimeMillis() / 1000;
+    }
+
+    public AetherCloudClient() {
+        this(new ClientStateInMemory(StandardUUIDs.ANONYMOUS_UID, List.of(URI.create("tcp://registration.aethernet.io:9010"))));
     }
 
     public AetherCloudClient(ClientState store) {
@@ -178,7 +186,7 @@ public final class AetherCloudClient implements Destroyable {
     }
 
     public AFuture ping() {
-        AFuture res=new AFuture();
+        AFuture res = new AFuture();
         getConnection(connectionWork -> connectionWork.ping().to(res));
         return res;
     }
@@ -377,6 +385,14 @@ public final class AetherCloudClient implements Destroyable {
         return clientState.getAlias();
     }
 
+    public void onMessage(ABiConsumer<UUID, byte[]> consumer) {
+        onClientStream(m -> {
+            m.up().toConsumer(d -> {
+                consumer.accept(m.getConsumerUUID(), d);
+            });
+        });
+    }
+
     public void onClientStream(AConsumer<MessageNode> consumer) {
         onClientStream.add(consumer);
         ping();
@@ -437,6 +453,17 @@ public final class AetherCloudClient implements Destroyable {
             if (e.cryptoLib() == signedKey.cryptoLib() && e.check(signedKey)) return true;
         }
         return false;
+    }
+
+    public AFuture sendMessage(UUID uid, byte[] message) {
+        AFuture res = new AFuture();
+        openStreamToClient(uid).send(Value.ofForce(message).link(new ValueListener() {
+            @Override
+            public void drop(Object owner) {
+                res.done();
+            }
+        }));
+        return res;
     }
 
     public static AetherCloudClient of(ClientState state) {

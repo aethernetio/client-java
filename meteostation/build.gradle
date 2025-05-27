@@ -1,0 +1,16 @@
+plugins {
+    id 'java'
+    id 'maven-publish'
+}
+publishing {
+    publications {
+        mavenPublication(MavenPublication){
+            from components.java
+            groupId "io.aether"
+            artifactId "example-meteostation"
+        }
+    }
+}
+dependencies {
+    implementation project(':client')
+}
