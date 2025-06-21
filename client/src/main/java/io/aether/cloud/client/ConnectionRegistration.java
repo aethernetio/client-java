@@ -89,7 +89,9 @@ public class ConnectionRegistration extends Connection<io.aether.clientServerReg
     protected void onConnect(Remote<RegistrationRootApi> remoteApi) {
         Log.info("request asym public key");
         remoteApi.run_flush(a -> {
-            a.getAsymmetricPublicKey(client.getCryptLib()).to(sk -> workStep1(remoteApi, sk));
+            a.getAsymmetricPublicKey(client.getCryptLib()).to(sk -> {
+                workStep1(remoteApi, sk);
+            });
         });
     }
 

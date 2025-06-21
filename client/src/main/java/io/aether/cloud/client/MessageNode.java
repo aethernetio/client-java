@@ -51,11 +51,11 @@ public class MessageNode implements NodeDown<byte[], byte[]> {
             public String toString() {
                 return "MessageNode(input buffer acceptor)";
             }
-
+            final StreamLocker streamLocker=()-> !connectionsOut.isEmpty();
             @Override
             public void send(FGate<byte[], byte[]> fGate, Value<byte[]> value) {
                 if (connectionsOut.isEmpty()) {
-                    value.abort(this);
+                    value.abort(streamLocker);
                 }
                 if (value.isData()) {
                     for (var e : connectionsOut) {

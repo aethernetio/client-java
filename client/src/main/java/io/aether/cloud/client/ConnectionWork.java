@@ -147,6 +147,11 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
         }
 
         @Override
+        public void requestTelemetric() {
+
+        }
+
+        @Override
         public void sendMessage(UUID uid, Value<byte[]> data) {
             Log.trace("receive message $uid1 <- $uid2", "uid1", client.getUid(), "uid2", uid);
             client.getMessageNode(uid, MessageEventListener.DEFAULT).sendMessageFromServerToClient(data);

@@ -214,7 +214,7 @@ public class CliApi {
             client = new AetherCloudClient(state);
             destroyer.add(client);
             client.onClientStream(m -> {
-                m.up().toConsumer(d -> {
+                m.up().toConsumer("c1",d -> {
                     if (filter != null && !filter.contains(m.getConsumerUUID())) return;
                     if (not != null && not.contains(m.getConsumerUUID())) return;
                     var msg = new Msg(m.getConsumerUUID(), d);

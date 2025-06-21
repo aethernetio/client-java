@@ -38,7 +38,9 @@ public class PointToPointTest {
             clientConfig2 = new ClientStateInMemory(parent, registrationUri, null, CryptoLib.HYDROGEN);
         AetherCloudClient client1 = new AetherCloudClient(clientConfig1);
         AetherCloudClient client2 = new AetherCloudClient(clientConfig2);
-        if (!AFuture.all(client1.startFuture, client2.startFuture).waitDoneSeconds(1000)) {
+        client1.startFuture.to(() -> Log.info("client is registered uid1: $uid1", "uid1", client1.getUid()));
+        client2.startFuture.to(() -> Log.info("client is registered uid2: $uid2", "uid2", client2.getUid()));
+        if (!AFuture.all(client1.startFuture, client2.startFuture).waitDoneSeconds(5)) {
             throw new IllegalStateException("Timeout connect to Aether");
         }
         Log.info("clients is registered uid1: $uid1 uid2: $uid2", "uid1", client1.getUid(), "uid2", client2.getUid());
@@ -51,7 +53,9 @@ public class PointToPointTest {
         checkReceiveMessage.to(() -> {
             Log.info("TEST IS DONE!");
         });
-        checkReceiveMessage.waitDoneSeconds(1000);
+        if (!checkReceiveMessage.waitDoneSeconds(1000)) {
+            throw new IllegalStateException();
+        }
         client1.destroy(true).waitDoneSeconds(5);
         client2.destroy(true).waitDoneSeconds(5);
     }
@@ -70,7 +74,7 @@ public class PointToPointTest {
         final var total = 1000000L;
         AtomicLong receiveCounter = new AtomicLong(0);
         client2.onClientStream((g) -> {
-            g.up().toConsumer(d -> {
+            g.up().toConsumer("timeOneMessage", d -> {
                 receiveCounter.addAndGet(d.length);
             });
         });
@@ -113,12 +117,12 @@ public class PointToPointTest {
         var message = new byte[]{1, 2, 3, 4};
         var messageBack = new byte[]{1, 1, 1, 1};
         client2.onClientStream((st) -> {
-            st.up().toConsumer(newMessage -> {
+            st.up().toConsumer("p2pAndBack c2", newMessage -> {
                 st.up().send(Value.of(messageBack));
             });
         });
         client1.onClientStream((st) -> {
-            st.up().toConsumer(newMessage -> {
+            st.up().toConsumer("p2pAndBack c1", newMessage -> {
                 checkReceiveMessageBack.done();
             });
         });
@@ -170,7 +174,7 @@ public class PointToPointTest {
         AFuture checkReceiveMessage = new AFuture();
         var message = new byte[]{0, 0, 0, 0};
         client2.onClientStream((st) -> {
-            st.up().toConsumer(newMessage -> {
+            st.up().toConsumer("pointToPointWithService c2", newMessage -> {
                 checkReceiveMessage.done();
             });
         });
@@ -199,7 +203,7 @@ public class PointToPointTest {
         var message = new byte[]{1, 2, 3, 4};
         AtomicInteger counter = new AtomicInteger(1000);
         client2.onClientStream((st) -> {
-            st.up().toConsumer(newMessage -> {
+            st.up().toConsumer("p2pMany c2", newMessage -> {
                 if (counter.addAndGet(-1) == 0) {
                     checkReceiveMessage.done();
                 }
@@ -237,7 +241,7 @@ public class PointToPointTest {
             AFuture checkReceiveMessage = new AFuture();
             var message = new byte[]{1, 1, 1, 1};
             client2.onClientStream((st) -> {
-                st.up().toConsumer(newMessage -> {
+                st.up().toConsumer("pointToPointWithReconnect c2", newMessage -> {
                     checkReceiveMessage.done();
                 });
             });
@@ -267,7 +271,7 @@ public class PointToPointTest {
             AFuture checkReceiveMessage = new AFuture();
             var message = new byte[]{2, 2, 2, 2};
             client2.onClientStream((st) -> {
-                st.up().toConsumer(newMessage -> {
+                st.up().toConsumer("pointToPointWithReconnect c2 it2", newMessage -> {
                     checkReceiveMessage.done();
                 });
             });

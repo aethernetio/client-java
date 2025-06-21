@@ -75,7 +75,7 @@ public abstract class Connection<LT, RT> implements Destroyable {
         if (client.destroyer.isDestroyed()) return;
         socketStreamClient = new SocketNIOStreamClient(uri, configurator);
         connectFuture.done();
-        apiRoot.down().link(socketStreamClient.up());
+        apiRoot.down().link(socketStreamClient.up().buffer());
         var remApi = apiRoot.getRemoteApi();
         onConnect(remApi);
     }

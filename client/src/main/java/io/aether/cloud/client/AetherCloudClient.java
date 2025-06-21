@@ -70,8 +70,8 @@ public final class AetherCloudClient implements Destroyable {
     public AetherCloudClient(ClientState store) {
         try (var ln = Log.context(logClientContext)) {
             this.clientState = store;
-            clouds.input.linkUpHard().toConsumer(uu -> store.setCloud(uu.uid, uu.cloud));
-            servers.input.linkUpHard().toConsumer(s -> {
+            clouds.addInputHard().toConsumer("Client clouds map input up hard",uu -> store.setCloud(uu.uid, uu.cloud));
+            servers.addInputHard().toConsumer("Client servers map input up hard",s -> {
                 var ss = store.getServerInfo(s.idAsInt());
                 ss.setDescriptor(s);
             });
