@@ -3,20 +3,20 @@ package io.aether.examples.pointToPoint;
 import io.aether.StandardUUIDs;
 import io.aether.cloud.client.AetherCloudClient;
 import io.aether.cloud.client.ClientStateInMemory;
+import io.aether.cloud.client.MessageEventListener;
 import io.aether.common.AccessGroupI;
 import io.aether.crypt.CryptoLib;
 import io.aether.logger.Log;
 import io.aether.utils.ConcurrentHashSet;
 import io.aether.utils.RU;
+import io.aether.utils.flow.Flow;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
 import io.aether.utils.streams.Value;
+import io.aether.utils.streams.ValueOfData;
 
 import java.net.URI;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -36,9 +36,9 @@ public class PointToPointTest {
             clientConfig1 = new ClientStateInMemory(parent, registrationUri, null, CryptoLib.HYDROGEN);
         if (clientConfig2 == null)
             clientConfig2 = new ClientStateInMemory(parent, registrationUri, null, CryptoLib.HYDROGEN);
-        AetherCloudClient client1 = new AetherCloudClient(clientConfig1);
-        AetherCloudClient client2 = new AetherCloudClient(clientConfig2);
-        client1.startFuture.to(() -> Log.info("client is registered uid1: $uid1", "uid1", client1.getUid()));
+        AetherCloudClient client1 = new AetherCloudClient(clientConfig1, "client1");
+        AetherCloudClient client2 = new AetherCloudClient(clientConfig2, "client2");
+        client1.startFuture.to(() -> Log.info("client is registered uid2: $uid1", "uid1", client1.getUid()));
         client2.startFuture.to(() -> Log.info("client is registered uid2: $uid2", "uid2", client2.getUid()));
         if (!AFuture.all(client1.startFuture, client2.startFuture).waitDoneSeconds(5)) {
             throw new IllegalStateException("Timeout connect to Aether");
@@ -84,7 +84,7 @@ public class PointToPointTest {
         while (receiveCounter.get() < total) {
             var v = Value.ofForce(data);
             boolean[] abortFlag = new boolean[1];
-            v.onAbort(o -> {
+            v.onAbort((o, id) -> {
                 abortFlag[0] = true;
             });
             ch1.send(v);
@@ -107,8 +107,8 @@ public class PointToPointTest {
             clientConfig1 = new ClientStateInMemory(parent, registrationUri, null, CryptoLib.HYDROGEN);
         if (clientConfig2 == null)
             clientConfig2 = new ClientStateInMemory(parent, registrationUri, null, CryptoLib.HYDROGEN);
-        AetherCloudClient client1 = new AetherCloudClient(clientConfig1);
-        AetherCloudClient client2 = new AetherCloudClient(clientConfig2);
+        AetherCloudClient client1 = new AetherCloudClient(clientConfig1, "client1");
+        AetherCloudClient client2 = new AetherCloudClient(clientConfig2, "client2");
         if (!AFuture.all(client1.startFuture, client2.startFuture).waitDoneSeconds(1000)) {
             throw new IllegalStateException();
         }
@@ -195,30 +195,39 @@ public class PointToPointTest {
             clientConfig1 = new ClientStateInMemory(parent, registrationUri, null, CryptoLib.HYDROGEN);
         if (clientConfig2 == null)
             clientConfig2 = new ClientStateInMemory(parent, registrationUri, null, CryptoLib.HYDROGEN);
-        AetherCloudClient client1 = new AetherCloudClient(clientConfig1);
-        AetherCloudClient client2 = new AetherCloudClient(clientConfig2);
+        AetherCloudClient client1 = new AetherCloudClient(clientConfig1, "client1");
+        AetherCloudClient client2 = new AetherCloudClient(clientConfig2, "client2");
         AFuture.all(client1.startFuture, client2.startFuture).waitDoneSeconds(1000);
         Log.info("clients is registered uid1: $uid1 uid2: $uid2", "uid1", client1.getUid(), "uid2", client2.getUid());
         AFuture checkReceiveMessage = new AFuture();
         var message = new byte[]{1, 2, 3, 4};
-        AtomicInteger counter = new AtomicInteger(1000);
+        int ITERATIONS = 10;
+        List<MValue> values = new ArrayList<>();
+        for (int i = 0; i < ITERATIONS; i++) {
+            values.add(new MValue(message));
+        }
+        AtomicInteger counter = new AtomicInteger(ITERATIONS);
         client2.onClientStream((st) -> {
+            Log.debug("onClientStream");
             st.up().toConsumer("p2pMany c2", newMessage -> {
+                Log.debug("on new message");
                 if (counter.addAndGet(-1) == 0) {
                     checkReceiveMessage.done();
                 }
             });
         });
         Log.info("START two clients!");
-        var chToc2 = client1.openStreamToClient(client2.getUid());
+        var chToc2n = client1.openStreamToClientDetails(client2.getUid(), MessageEventListener.DEFAULT);
+        var chToc2 = chToc2n.up();
         Thread.currentThread().setName("MAIN THREAD");
-        for (int i = 0; i < 1000; i++) {
-            chToc2.send(Value.ofForce(message));
+        for (var v : values) {
+            chToc2.send(v);
         }
         checkReceiveMessage.to(() -> {
             Log.info("TEST IS DONE!");
         });
-        if (!checkReceiveMessage.waitDoneSeconds(10)) {
+        if (!checkReceiveMessage.waitDoneSeconds(5)) {
+            Flow.flow(values).map(e -> (e.abort ? "abort" : (e.drop ? "drop" : "")) + ": " + Flow.flow(e.enters).mapToString().join(", ")).distinct().to(System.out::println);
             throw new IllegalStateException();
         }
         client1.destroy(true).waitDoneSeconds(5);
@@ -234,8 +243,8 @@ public class PointToPointTest {
                 clientConfig1 = new ClientStateInMemory(StandardUUIDs.TEST_UID, registrationUri, null, CryptoLib.HYDROGEN);
             if (clientConfig2 == null)
                 clientConfig2 = new ClientStateInMemory(StandardUUIDs.TEST_UID, registrationUri, null, CryptoLib.HYDROGEN);
-            AetherCloudClient client1 = new AetherCloudClient(clientConfig1);
-            AetherCloudClient client2 = new AetherCloudClient(clientConfig2);
+            AetherCloudClient client1 = new AetherCloudClient(clientConfig1, "client1");
+            AetherCloudClient client2 = new AetherCloudClient(clientConfig2, "client2");
             AFuture.all(client1.startFuture, client2.startFuture).waitDoneSeconds(1000);
             Log.info("clients is registered uid1: $uid1 uid2: $uid2", "uid1", client1.getUid(), "uid2", client2.getUid());
             AFuture checkReceiveMessage = new AFuture();
@@ -287,6 +296,34 @@ public class PointToPointTest {
             }
             client1.destroy(true).waitDoneSeconds(5);
             client2.destroy(true).waitDoneSeconds(5);
+        }
+    }
+
+    private static class MValue extends ValueOfData<byte[]> {
+        public final List<Object> enters;
+        volatile boolean abort;
+        volatile boolean drop;
+
+        public MValue(byte[] message) {
+            super(message);
+            enters = new ArrayList<>();
+        }
+
+        @Override
+        public void abort(Object owner, long blockId) {
+            enters.add(owner);
+            abort = true;
+        }
+
+        @Override
+        public void drop(Object owner) {
+            enters.add(owner);
+            drop = true;
+        }
+
+        @Override
+        public void enter(Object owner) {
+            enters.add(owner);
         }
     }
 }

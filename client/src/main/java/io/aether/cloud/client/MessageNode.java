@@ -2,6 +2,7 @@ package io.aether.cloud.client;
 
 import io.aether.common.Cloud;
 import io.aether.common.ServerDescriptor;
+import io.aether.logger.Log;
 import io.aether.utils.AString;
 import io.aether.utils.ConcurrentHashSet;
 import io.aether.utils.slots.AMFuture;
@@ -35,11 +36,14 @@ public class MessageNode implements NodeDown<byte[], byte[]> {
     private volatile MessageEventListener strategy;
 
     public MessageNode(AetherCloudClient client, UUID consumer, MessageEventListener strategy) {
+        Log.trace("open message node ($client) from $uidFrom to $uidTo", "client", client.getName(), "uidTo", consumer, "uidFrom", client.getUid());
         this.client = client;
         this.strategy = strategy;
         this.consumer = consumer;
         consumerCloud = client.getCloud(consumer);
-        consumerCloud.add(c -> this.strategy.setConsumerCloud(this, c));
+        consumerCloud.add(c ->{
+            this.strategy.setConsumerCloud(this, c);
+        });
         buffer.down().link(FGate.of(new AcceptorI<byte[], byte[]>() {
 
             @Override
@@ -51,11 +55,12 @@ public class MessageNode implements NodeDown<byte[], byte[]> {
             public String toString() {
                 return "MessageNode(input buffer acceptor)";
             }
-            final StreamLocker streamLocker=()-> !connectionsOut.isEmpty();
+
             @Override
             public void send(FGate<byte[], byte[]> fGate, Value<byte[]> value) {
                 if (connectionsOut.isEmpty()) {
-                    value.abort(streamLocker);
+                    value.abort(MessageNode.this);
+                    return;
                 }
                 if (value.isData()) {
                     for (var e : connectionsOut) {

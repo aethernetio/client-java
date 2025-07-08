@@ -28,7 +28,6 @@ import io.aether.utils.slots.EventConsumerWithQueue;
 import io.aether.utils.streams.Gate;
 import io.aether.utils.streams.MapBase;
 import io.aether.utils.streams.Value;
-import io.aether.utils.streams.ValueListener;
 import io.aether.utils.streams.rcollections.RCol;
 import org.jetbrains.annotations.NotNull;
 
@@ -42,7 +41,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static io.aether.utils.flow.Flow.flow;
 
 public final class AetherCloudClient implements Destroyable {
-    private static final Log.Node logClientContext = Log.createContext("SystemComponent", "Client");
+    private final Log.Node logClientContext;
     public final AFuture startFuture = new AFuture();
     public final EventConsumer<MessageNode> onClientStream = new EventConsumerWithQueue<>();
     public final Destroyer destroyer = new Destroyer(getClass().getSimpleName());
@@ -68,10 +67,15 @@ public final class AetherCloudClient implements Destroyable {
     }
 
     public AetherCloudClient(ClientState store) {
+        this(store, null);
+    }
+
+    public AetherCloudClient(ClientState store, String name) {
+        logClientContext = Log.createContext("SystemComponent", "Client", "ClientName", name);
         try (var ln = Log.context(logClientContext)) {
             this.clientState = store;
-            clouds.addInputHard().toConsumer("Client clouds map input up hard",uu -> store.setCloud(uu.uid, uu.cloud));
-            servers.addInputHard().toConsumer("Client servers map input up hard",s -> {
+            clouds.addInputHard().toConsumer("Client clouds map input up hard", uu -> store.setCloud(uu.uid, uu.cloud));
+            servers.addInputHard().toConsumer("Client servers map input up hard", s -> {
                 var ss = store.getServerInfo(s.idAsInt());
                 ss.setDescriptor(s);
             });
@@ -332,6 +336,7 @@ public final class AetherCloudClient implements Destroyable {
     }
 
     MessageNode getMessageNode(@NotNull UUID uid, MessageEventListener strategy) {
+        Log.debug("getMessageNode for: $uid", "uid", uid);
         Objects.requireNonNull(uid);
         return messageNodeMap.computeIfAbsent(uid, k -> {
             var res = new MessageNode(this, k, strategy);
@@ -387,7 +392,7 @@ public final class AetherCloudClient implements Destroyable {
 
     public void onMessage(ABiConsumer<UUID, byte[]> consumer) {
         onClientStream(m -> {
-            m.up().toConsumer(d -> {
+            m.up().toConsumer("onMessageM1", d -> {
                 consumer.accept(m.getConsumerUUID(), d);
             });
         });
@@ -457,11 +462,8 @@ public final class AetherCloudClient implements Destroyable {
 
     public AFuture sendMessage(UUID uid, byte[] message) {
         AFuture res = new AFuture();
-        openStreamToClient(uid).send(Value.ofForce(message).link(new ValueListener() {
-            @Override
-            public void drop(Object owner) {
-                res.done();
-            }
+        openStreamToClient(uid).send(Value.ofForce(message).onDrop((o) -> {
+            res.done();
         }));
         return res;
     }

@@ -5,8 +5,11 @@ import io.aether.cloud.client.ClientStateInMemory;
 import io.aether.logger.Log;
 import io.aether.net.ApiGate;
 import io.aether.net.Remote;
+import io.aether.utils.RU;
+import io.aether.utils.futures.ARFuture;
 import io.aether.utils.slots.EventConsumer;
 import io.aether.utils.slots.EventConsumerWithQueue;
+import io.aether.utils.streams.Value;
 
 import java.net.URI;
 import java.util.List;
@@ -18,17 +21,26 @@ public class ChatClient implements ServiceClientApi {
     public final AetherCloudClient aether;
     public final EventConsumer<MessageDescriptor> onMessage = new EventConsumerWithQueue<>();
     private final Map<UUID, UserDescriptor> users = new ConcurrentHashMap<>();
-    private final Remote<ServiceServerApi> service;
-    private final ApiGate<ServiceClientApi, ServiceServerApi> apiNode;
+    private final ARFuture<Remote<ServiceServerApi>> service = new ARFuture<>();
     private final String name;
 
     public ChatClient(UUID chatService, List<URI> regUri, String name) {
         this.name = name;
-        aether = new AetherCloudClient(new ClientStateInMemory(chatService, regUri))
-                .waitStart(10);
-        this.apiNode = aether.openStreamToClient(chatService).bufferAutoFlush().toApi(ServiceClientApi.META, ServiceServerApi.META, this);
-        service = apiNode.getRemoteApi();
-        service.run_flush(a -> a.registration(name));
+        aether = new AetherCloudClient(new ClientStateInMemory(chatService, regUri), name);
+        aether.startFuture.to(() -> {
+            try {
+                var apiNode = aether.openStreamToClient(chatService)
+                        .toApi(ServiceClientApi.META, ServiceServerApi.META, this);
+                var s = apiNode.getRemoteApi();
+                s.run_flush(a -> {
+                    a.registration(name).timeout(3, () -> Log.warn("registration timeout: $name", "name", name));
+                });
+                service.done(s);
+            } catch (Exception e) {
+                Log.error(e);
+            }
+        }).timeout(3, () -> Log.warn("create aether client timeout: $name", "name", name));
+        service.timeout(4, () -> Log.warn("get chat service timeout $name", "name", name));
     }
 
 
@@ -43,8 +55,11 @@ public class ChatClient implements ServiceClientApi {
         return users;
     }
 
-    public void sendMessage(String message) {
-        service.run_flush(a -> a.sendMessage(message));
+    public void sendMessage(Value<String> message) {
+        service.to(s -> s.run_flush(a -> a.sendMessage(message)))
+                .timeout(5, () -> {
+                    Log.warn("send chat message timeout for: $name", "name", name);
+                });
     }
 
     @Override
