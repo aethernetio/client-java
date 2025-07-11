@@ -35,7 +35,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
     volatile ApiGate<ClientApiSafe, AuthorizedApi> safeApiCon;
 
     public ConnectionWork(AetherCloudClient client, ServerDescriptor s) {
-        super(client, s.ipAddress.getURI(AetherCodec.TCP), ClientApiUnsafe.class, LoginApi.class);
+        super(client, s.ipAddress.getURI(AetherCodec.UDP), ClientApiUnsafe.class, LoginApi.class);
         serverDescriptor = s;
         this.basicStatus = false;
         connect();
