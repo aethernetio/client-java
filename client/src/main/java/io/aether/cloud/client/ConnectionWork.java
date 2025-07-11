@@ -35,7 +35,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
     volatile ApiGate<ClientApiSafe, AuthorizedApi> safeApiCon;
 
     public ConnectionWork(AetherCloudClient client, ServerDescriptor s) {
-        super(client, s.ipAddress.getURI(AetherCodec.BINARY), ClientApiUnsafe.class, LoginApi.class);
+        super(client, s.ipAddress.getURI(AetherCodec.TCP), ClientApiUnsafe.class, LoginApi.class);
         serverDescriptor = s;
         this.basicStatus = false;
         connect();
@@ -75,25 +75,27 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
 
     @Override
     protected void onConnect(Remote<LoginApi> remoteApi) {
-        var mk = client.getMasterKey();
-        safeApiCon = ApiGate.of(ClientApiSafe.META, AuthorizedApi.META,
-                new MyClientApiSafe(client), StreamManager.forClient(),
-                CryptoNode.of(mk.getType().cryptoLib().env.symmetricForClient(mk, serverDescriptor.id())).setName("client to workServer"));
-        CryptoNode cp = safeApiCon.findDown(CryptoNode.class);
-        cp.down().toSubApi(remoteApi, (a, v) -> a.loginByAlias2(client.getAlias(), SCD.of(v)));
-        client.servers.addSourceHard().log("resolver servers", "client", "server")
-                .toMethod(safeApiCon, (a, sid) ->
-                        a.resolverServers(sid.map2(new short[]{sid.data().shortValue()})));
-        client.clouds.addSourceHard().log("resolver clouds", "client", "server",
-                        v -> {
-                            Log.debug("");
-                        }, v -> {
-                            Log.debug("");
-                        })
-                .toMethod(safeApiCon, (a, uid) -> {
-                    a.resolverClouds(uid.map2(new UUID[]{uid.data()}));
-                });
-        ready.set(ConnectionWork.this);
+        try (var ln = Log.context(client.logClientContext)) {
+            var mk = client.getMasterKey();
+            safeApiCon = ApiGate.of(ClientApiSafe.META, AuthorizedApi.META,
+                    new MyClientApiSafe(client), StreamManager.forClient(),
+                    CryptoNode.of(mk.getType().cryptoLib().env.symmetricForClient(mk, serverDescriptor.id())).setName("client to workServer"));
+            CryptoNode cp = safeApiCon.findDown(CryptoNode.class);
+            cp.down().toSubApi(remoteApi, (a, v) -> a.loginByAlias2(client.getAlias(), SCD.of(v)));
+            client.servers.addSourceHard().log("resolver servers", "client", "server")
+                    .toMethod(safeApiCon, (a, sid) ->
+                            a.resolverServers(sid.map2(new short[]{sid.data().shortValue()})));
+            client.clouds.addSourceHard().log("resolver clouds", "client", "server",
+                            v -> {
+                                Log.debug("");
+                            }, v -> {
+                                Log.debug("");
+                            })
+                    .toMethod(safeApiCon, (a, uid) -> {
+                        a.resolverClouds(uid.map(v -> new UUID[]{v}));
+                    });
+            ready.set(ConnectionWork.this);
+        }
     }
 
     public ServerDescriptor getServerDescriptor() {

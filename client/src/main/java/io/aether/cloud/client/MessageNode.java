@@ -59,7 +59,7 @@ public class MessageNode implements NodeDown<byte[], byte[]> {
             @Override
             public void send(FGate<byte[], byte[]> fGate, Value<byte[]> value) {
                 if (connectionsOut.isEmpty()) {
-                    value.abort(MessageNode.this);
+                    value.reject(MessageNode.this);
                     return;
                 }
                 if (value.isData()) {

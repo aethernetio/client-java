@@ -41,7 +41,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static io.aether.utils.flow.Flow.flow;
 
 public final class AetherCloudClient implements Destroyable {
-    private final Log.Node logClientContext;
+    final Log.Node logClientContext;
     public final AFuture startFuture = new AFuture();
     public final EventConsumer<MessageNode> onClientStream = new EventConsumerWithQueue<>();
     public final Destroyer destroyer = new Destroyer(getClass().getSimpleName());
@@ -181,11 +181,11 @@ public final class AetherCloudClient implements Destroyable {
                     connection.scheduledWork();
                 }
             });
-            RU.scheduleAtFixedRate(destroyer, 5, TimeUnit.MILLISECONDS, () -> {
-                for (ConnectionWork connection : getConnections()) {
-                    connection.safeApiCon.flush();
-                }
-            });
+//            RU.scheduleAtFixedRate(destroyer, 5, TimeUnit.MILLISECONDS, () -> {
+//                for (ConnectionWork connection : getConnections()) {
+//                    connection.safeApiCon.flush();
+//                }
+//            });
         });
     }
 
@@ -462,7 +462,7 @@ public final class AetherCloudClient implements Destroyable {
 
     public AFuture sendMessage(UUID uid, byte[] message) {
         AFuture res = new AFuture();
-        openStreamToClient(uid).send(Value.ofForce(message).onDrop((o) -> {
+        openStreamToClient(uid).send(Value.ofForce(message).onSuccess((o) -> {
             res.done();
         }));
         return res;

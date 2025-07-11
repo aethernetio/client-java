@@ -77,7 +77,7 @@ public class ChatService {
         public void sendMessage(Value<String> msg) {
             Log.info("send message to chat: $msg", "msg", msg.data());
             var md = new MessageDescriptor(uid, msg.data());
-            msg.drop(this);
+            msg.success(this);
             allMessages.add(md);
             var vv = users.values();
             if (vv.isEmpty()) {

@@ -19,7 +19,6 @@ public abstract class Connection<LT, RT> implements Destroyable {
     protected final AetherCloudClient client;
     protected final URI uri;
     protected final AFuture connectFuture = new AFuture();
-    final NetworkConfigurator configurator = AetherCodec.BINARY.getNetworkConfigurator();
     private final MetaApi<LT> lt;
     private final MetaApi<RT> rt;
     protected ApiGate<LT, RT> apiRoot;
@@ -73,7 +72,7 @@ public abstract class Connection<LT, RT> implements Destroyable {
 
     protected void connect() {
         if (client.destroyer.isDestroyed()) return;
-        socketStreamClient = new SocketNIOStreamClient(uri, configurator);
+        socketStreamClient = new SocketNIOStreamClient(uri);
         connectFuture.done();
         apiRoot.down().link(socketStreamClient.up().buffer());
         var remApi = apiRoot.getRemoteApi();
