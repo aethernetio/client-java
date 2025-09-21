@@ -1,11 +1,11 @@
 package io.aether.cli;
 
+import io.aether.api.common.AccessGroup;
+import io.aether.api.common.CryptoLib;
 import io.aether.cloud.client.AetherCloudClient;
 import io.aether.cloud.client.ClientState;
 import io.aether.cloud.client.ClientStateInMemory;
-import io.aether.common.AccessGroup;
 import io.aether.common.AccessGroupI;
-import io.aether.crypt.CryptoLib;
 import io.aether.utils.AString;
 import io.aether.utils.Destroyer;
 import io.aether.utils.RU;
@@ -221,12 +221,12 @@ public class CliApi {
                     messages.fire(msg);
                 });
             });
-            client.ping().to(() -> {
-                RU.schedule(waitTime, () -> {
-                    client.destroy(true).waitDone();
-                    System.exit(0);
-                });
-            });
+//            client.ping().to(() -> {
+//                RU.schedule(waitTime, () -> {
+//                    client.destroy(true).waitDone();
+//                    System.exit(0);
+//                });
+//            });
             return messages;
         }
 

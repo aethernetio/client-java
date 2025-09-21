@@ -1,101 +1,99 @@
 package io.aether.cloud.client;
 
-import io.aether.clientServerRegApi.WorkProofUtil;
-import io.aether.clientServerRegApi.clientApi.ClientApiRegSafe;
-import io.aether.clientServerRegApi.clientApi.GlobalRegClientApi;
-import io.aether.clientServerRegApi.serverRegistryApi.GlobalRegServerApi;
-import io.aether.clientServerRegApi.serverRegistryApi.PowMethod;
-import io.aether.clientServerRegApi.serverRegistryApi.RegistrationRootApi;
-import io.aether.clientServerRegApi.serverRegistryApi.ServerRegistrationApi;
-import io.aether.crypt.Key;
-import io.aether.crypt.SignedKey;
+import io.aether.api.clientserverregapi.*;
+import io.aether.api.common.*;
+import io.aether.crypto.AKey;
+import io.aether.crypto.CryptoEngine;
+import io.aether.crypto.CryptoProviderFactory;
 import io.aether.logger.Log;
-import io.aether.net.Remote;
-import io.aether.net.StreamManager;
-import io.aether.utils.streams.CryptoNode;
+import io.aether.net.fastMeta.FastApiContext;
+import io.aether.utils.WorkProofUtil;
+import io.aether.utils.futures.AFuture;
 import io.aether.utils.streams.Value;
 
 import java.net.URI;
 
-public class ConnectionRegistration extends Connection<io.aether.clientServerRegApi.clientApi.ClientApiRegUnsafe, RegistrationRootApi> implements io.aether.clientServerRegApi.clientApi.ClientApiRegUnsafe {
-
-    volatile CryptoNode cp;
-    volatile CryptoNode gcp;
+public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, RegistrationRootApi,RegistrationRootApiRemote> implements ClientApiRegUnsafe {
 
     public ConnectionRegistration(AetherCloudClient client, URI uri) {
-        super(client, uri, io.aether.clientServerRegApi.clientApi.ClientApiRegUnsafe.class, RegistrationRootApi.class);
+        super(client, uri, ClientApiRegUnsafe.META, RegistrationRootApi.META);
         connect();
     }
 
-    private void workStep3(Remote<ServerRegistrationApi> api, Remote<GlobalRegServerApi> gapi) {
-        Log.trace("registration step 3");
-        gapi.run_flush(a -> {
-            a.setMasterKey(client.getMasterKey());
-            a.finish().to(d -> {
-                Log.trace("registration step finish");
-                api.run_flush(aa -> aa.resolveServers(d.cloud).to(ss -> {
-                    Log.trace("registration step resolve servers: $servers", "servers", ss);
-                    for (var s : ss) {
-                        client.servers.set(s);
-                    }
-                    client.confirmRegistration(d);
-                }));
-            });
+    private final AKey.Symmetric tempKey = CryptoProviderFactory.getProvider(client.getCryptLib().name()).createSymmetricKey();
+    private final KeySymmetric tempKeyNative = KeyUtil.of(tempKey);
+    private final CryptoEngine tempKeyCp = tempKey.toCryptoEngine();
+    private final FastApiContext ctxSafe = new FastApiContext() {
+        @Override
+        public AFuture flush() {
+            return null;
+        }
+    };
+    private final FastApiContext globalCtx = new FastApiContext() {
+        @Override
+        public AFuture flush() {
+            return null;
+        }
+    };
+    private CryptoEngine gcp;
+
+    private void connect() {
+        rootApi.getAsymmetricPublicKey(client.getCryptLib()).to(this::regProcess);
+        rootApiContext.flushToGate(d->{
+            AFuture res = new AFuture();
+            gate.send(Value.of(d).linkFuture(res));
+            return res;
         });
     }
 
-    private void workStep2(Remote<ServerRegistrationApi> api, Key tempKey) {
-        api.run_flush(a -> {
-            a.requestWorkProofData(client.getParent(), PowMethod.AE_BCRYPT_CRC32, tempKey)
-                    .to(wpd -> {
-                        Log.info("WorkProofData has been received");
-                        var passwords = WorkProofUtil.generateProofOfWorkPool(
-                                wpd.salt,
-                                wpd.suffix,
-                                wpd.maxHashVal,
-                                wpd.poolSize,
-                                5000);
-                        if (!client.verifySign(wpd.globalKey)) {
-                            throw new RuntimeException();
-                        }
-                        gcp = CryptoNode.of(wpd.globalKey.key().asymmetricProvider(), client.getMasterKey().symmetricProvider(), api,
-                                        (a2, v) -> a2.registration(wpd.salt, wpd.suffix, passwords, client.getParent(), tempKey, v))
-                                .setName("cloud client registration. global api");
-                        workStep3(api, gcp.up().toApi(GlobalRegClientApi.META, GlobalRegServerApi.META, GlobalRegClientApi.EMPTY, StreamManager.forClient()).getRemoteApi());
-                    }, 5, () -> Log.warn("timeout requestWorkProofData"));
-        });
-    }
-
-    private void workStep1(Remote<RegistrationRootApi> remoteApi, SignedKey signedKey) {
+    private void regProcess(SignedKey signedKey) {
         Log.info("asym public key was got");
         if (!client.verifySign(signedKey)) {
             throw new IllegalStateException("Key verification exception");
         }
-        var tempKey = client.getCryptLib().env.makeSymmetricKey();
-        cp = CryptoNode.of(
-                        signedKey.key().getType().cryptoLib().env.asymmetric(signedKey.key()),
-                        tempKey.symmetricProvider(), remoteApi, (a, v) -> a.enter(client.getCryptLib(), v))
-                .setName("cloud client auth");
-        var api = cp.up().toApi(ClientApiRegSafe.META, ServerRegistrationApi.META, r -> gcp.down().send(Value.of(r)), StreamManager.forClient());
-        workStep2(api.getRemoteApi(), tempKey);
+
+        rootApi.enter(client.getCryptLib(), new StreamStreamEnterRegistrationRootApi(ctxSafe, tempKeyCp::encrypt, api -> {
+            api.requestWorkProofData(client.getParent(), PowMethod.AE_BCRYPT_CRC32, tempKeyNative)
+                    .to(wpd -> {
+                        Log.info("WorkProofData has been received");
+                        var passwords = WorkProofUtil.generateProofOfWorkPool(
+                                wpd.getSalt(),
+                                wpd.getSuffix(),
+                                wpd.getMaxHashVal(),
+                                wpd.getPoolSize(),
+                                5000);
+                        if (!client.verifySign(wpd.getGlobalKey())) {
+                            throw new RuntimeException();
+                        }
+                        gcp = CryptoEngine.of(KeyUtil.of(wpd.getGlobalKey().getKey()).asAsymmetric().toCryptoEngine(), client.getMasterKey().toCryptoEngine());
+                        rootApi.enter(client.getCryptLib(), new StreamStreamEnterRegistrationRootApi(ctxSafe, tempKeyCp::encrypt,
+                                a2 -> a2.registration(wpd.getSalt(), wpd.getSuffix(), passwords, client.getParent(), tempKeyNative,
+                                        new GlobalApiStream(globalCtx, gcp::encrypt, gapi -> {
+                                            gapi.setMasterKey(KeyUtil.of(client.getMasterKey()));
+                                            gapi.finish()
+                                                    .to(d -> {
+                                                        Log.trace("registration step finish");
+                                                        rootApi.enter(client.getCryptLib(), new StreamStreamEnterRegistrationRootApi(rootApiContext, tempKeyCp::encrypt, a3 -> {
+                                                            Log.trace("registration step resolve servers: $servers", "servers", d.getCloud());
+                                                            a3.resolveServers(d.getCloud()).to(ss -> {
+                                                                for (var s : ss) {
+                                                                    client.servers.set(s);
+                                                                }
+                                                                client.confirmRegistration(d);
+                                                            });
+                                                        }));
+                                                    });
+                                        }))));
+                        rootApi.flush();
+                    }, 5, () -> Log.warn("timeout requestWorkProofData"));
+        }));
+        rootApi.flush();
     }
 
     @Override
-    public void enter(Value<byte[]> data) {
-        cp.down().send(data);
-    }
-
-    @Override
-    protected void onConnect(Remote<RegistrationRootApi> remoteApi) {
-        Log.info("request asym public key");
-        remoteApi.run_flush(a -> {
-            Log.debug("request asym public key (work)");
-            a.getAsymmetricPublicKey(client.getCryptLib()).to(sk -> {
-                workStep1(remoteApi, sk);
-            }).timeout(5, () -> {
-                Log.warn("getAsymmetricPublicKey timeout");
-            });
-        });
+    public void enter(StreamStreamEnter stream) {
+        stream.accept(ctxSafe, tempKeyCp::decrypt,
+                stream1 -> stream1.accept(globalCtx, gcp::encrypt, GlobalRegClientApi.EMPTY));
     }
 
 }

@@ -1,15 +1,13 @@
 package io.aether.examples.plainChat;
 
+import io.aether.api.chatdsl.*;
 import io.aether.cloud.client.AetherCloudClient;
 import io.aether.cloud.client.ClientStateInMemory;
 import io.aether.common.AccessGroupI;
 import io.aether.logger.Log;
-import io.aether.net.ApiGate;
-import io.aether.net.Remote;
 import io.aether.utils.flow.Flow;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
-import io.aether.utils.streams.Value;
 
 import java.net.URI;
 import java.util.List;
@@ -22,7 +20,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 public class ChatService {
     public static final ARFuture<UUID> uid = new ARFuture<>();
     public final AetherCloudClient aether;
-    public final Map<UUID, ApiGate<ServiceServerApi, ServiceClientApi>> clients = new ConcurrentHashMap<>();
+    public final Map<UUID, ServiceClientApiRemote> clients = new ConcurrentHashMap<>();
     final Queue<MessageDescriptor> allMessages = new ConcurrentLinkedQueue<>();
     private final Map<UUID, UserDescriptor> users = new ConcurrentHashMap<>();
 
@@ -40,17 +38,21 @@ public class ChatService {
             });
         });
         aether.onClientStream((s) -> {
-            var api = s.up().bufferAutoFlush().toApi(ServiceServerApi.META, ServiceClientApi.META, new MyServiceServerApi(s.getConsumerUUID()));
-            clients.put(s.getConsumerUUID(), api);
+            var api = s.up().bufferAutoFlush().toApiR(ServiceServerApi.META,
+                    c -> {
+                        var r = c.makeRemote(ServiceClientApi.META);
+                        clients.put(s.getConsumerUUID(), r);
+                        return new MyServiceServerApi(s.getConsumerUUID(), r);
+                    });
         });
     }
 
-    private class MyServiceServerApi implements ServiceServerApi {
+    private class MyServiceServerApi extends ServiceServerApiLocal<ServiceClientApiRemote> {
         private final UUID uid;
-        Remote<ServiceClientApi> remoteApi;
 
-        public MyServiceServerApi(UUID uid) {
-            this.uid = uid;
+        public MyServiceServerApi(UUID consumerUUID, ServiceClientApiRemote remoteApi) {
+            super(remoteApi);
+            this.uid = consumerUUID;
         }
 
         @Override
@@ -59,25 +61,20 @@ public class ChatService {
             var u = new UserDescriptor(uid, name);
             users.put(uid, u);
             for (var uu : users.values()) {
-                var r = clients.get(uu.uid);
+                var r = clients.get(uu.getUid());
                 if (r != null) {
-                    r.getRemoteApi().run_flush(a -> {
-                        a.addNewUsers(new UserDescriptor[]{u});
-                    });
+                    r.addNewUsers(new UserDescriptor[]{u});
                 }
             }
-            remoteApi.run_flush(a -> {
-                a.addNewUsers(Flow.flow(users.values()).toArray(UserDescriptor.class));
-                a.newMessages(Flow.flow(allMessages).toArray(MessageDescriptor.class));
-            });
+            remoteApi.addNewUsers(Flow.flow(users.values()).toArray(UserDescriptor.class));
+            remoteApi.newMessages(Flow.flow(allMessages).toArray(MessageDescriptor.class));
             return AFuture.completed();
         }
 
         @Override
-        public void sendMessage(Value<String> msg) {
-            Log.info("send message to chat: $msg", "msg", msg.data());
-            var md = new MessageDescriptor(uid, msg.data());
-            msg.success(this);
+        public void sendMessage(String msg) {
+            Log.info("send message to chat: $msg", "msg", msg);
+            var md = new MessageDescriptor(uid, msg);
             allMessages.add(md);
             var vv = users.values();
             if (vv.isEmpty()) {
@@ -86,12 +83,11 @@ public class ChatService {
                 Log.info("Task chat message: $msg -> [$users]", "msg", msg, "users", vv);
             }
             for (var u : vv) {
-                var r = clients.get(u.uid);
-                Log.info("try send newMessages to remote: $uid", "uid", u.uid);
-                r.getRemoteApi().run_flush(a -> {
-                    Log.info("send newMessages to remote: $uid", "uid", u.uid);
-                    a.newMessages(new MessageDescriptor[]{md});
-                });
+                var r = clients.get(u.getUid());
+                Log.info("try send newMessages to remote: $uid", "uid", u.getUid());
+
+                Log.info("send newMessages to remote: $uid", "uid", u.getUid());
+                r.newMessages(new MessageDescriptor[]{md});
             }
         }
     }

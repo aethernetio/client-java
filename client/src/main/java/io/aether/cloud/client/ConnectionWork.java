@@ -1,30 +1,28 @@
 package io.aether.cloud.client;
 
-import io.aether.clientServerApi.clientApi.ClientApiSafe;
-import io.aether.clientServerApi.clientApi.ClientApiUnsafe;
-import io.aether.clientServerApi.serverApi.AuthorizedApi;
-import io.aether.clientServerApi.serverApi.LoginApi;
-import io.aether.common.AetherCodec;
-import io.aether.common.Cloud;
-import io.aether.common.ServerDescriptor;
-import io.aether.common.UUIDAndCloud;
+import io.aether.api.clientserverapi.*;
+import io.aether.api.common.AetherCodec;
+import io.aether.api.common.Cloud;
+import io.aether.api.common.ServerDescriptor;
+import io.aether.api.common.UUIDAndCloud;
+import io.aether.crypto.CryptoEngine;
 import io.aether.logger.Log;
-import io.aether.net.ApiGate;
-import io.aether.net.Remote;
-import io.aether.net.StreamManager;
+import io.aether.net.fastMeta.FastApiContext;
+import io.aether.net.fastMeta.RemoteApiFuture;
 import io.aether.utils.RU;
+import io.aether.utils.flow.Flow;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.slots.AMFuture;
-import io.aether.utils.streams.CryptoNode;
-import io.aether.utils.streams.SCD;
 import io.aether.utils.streams.Value;
+import it.unimi.dsi.fastutil.shorts.ShortArrayList;
+import it.unimi.dsi.fastutil.shorts.ShortList;
 
-import java.util.Objects;
-import java.util.UUID;
+import java.util.*;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
-public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implements ClientApiUnsafe {
+public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi, LoginApiRemote> implements ClientApiUnsafe {
     //region counters
     public final AtomicLong lastBackPing = new AtomicLong(Long.MAX_VALUE);
     public final AMFuture<ConnectionWork> ready = new AMFuture<>();
@@ -32,70 +30,58 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
     final private AtomicBoolean inProcess = new AtomicBoolean();
     boolean basicStatus;
     long lastWorkTime;
-    volatile ApiGate<ClientApiSafe, AuthorizedApi> safeApiCon;
+    final ClientApiSafe apiSafe = new MyClientApiSafe(client);
+    final FastApiContext apiSafeCtx;
+    final CryptoEngine cryptoEngine;
+    final RemoteApiFuture<AuthorizedApi> remoteApiFuture = new RemoteApiFuture<>();
 
     public ConnectionWork(AetherCloudClient client, ServerDescriptor s) {
-        super(client, s.ipAddress.getURI(AetherCodec.UDP), ClientApiUnsafe.class, LoginApi.class);
+        super(client, s.getIpAddress().getURI(AetherCodec.UDP), ClientApiUnsafe.META, LoginApi.META);
+        cryptoEngine = client.getCryptoEngineForServer(s.getId());
         serverDescriptor = s;
         this.basicStatus = false;
-        connect();
+        remoteApiFuture.addPermanent(this::flushBackgroundRequests);
+        apiSafeCtx = new FastApiContext() {
+            @Override
+            public AFuture flush() {
+                var e = new LoginStream(this, cryptoEngine::encrypt, remoteApiFuture::flush);
+                if (e.data == null || e.data.length == 0) return AFuture.completed();
+                rootApi.loginByAlias(client.getAlias(), e);
+                return rootApiContext.flush();
+            }
+        };
     }
 
-    public AFuture ping() {
-        AFuture res = new AFuture();
-        ready.toOnce((aa) -> {
-            safeApiCon.getRemoteApi().run_flush(a -> {
-                a.ping(client.getPingTime()).to(res);
-            });
-        });
-        return res;
-    }
+    public final Queue<Message> messageNodeQueue = new ConcurrentLinkedQueue<>();
 
-    public void flush() {
-        var api = safeApiCon;
-        if (api != null) {
-            api.flush();
+    private void flushBackgroundRequests(AuthorizedApi a) {
+        List<UUID> requestCloud = new ArrayList<>(client.requestCloud);
+        if (!requestCloud.isEmpty()) {
+            client.requestCloud.removeAll(requestCloud);
+            a.resolverClouds(requestCloud.toArray(new UUID[0]));
+        }
+        ShortList requestServers = new ShortArrayList(client.requestServers);
+        if (!requestServers.isEmpty()) {
+            client.requestServers.removeAll(requestServers);
+            a.resolverServers(Flow.flow(requestServers).mapToShort(Short::shortValue).toArray());
+        }
+        List<Message> mm = new ArrayList<>();
+        RU.readAll(messageNodeQueue, mm::add);
+        a.sendMessages(mm.toArray(new Message[0]));
+        var p = client.ping;
+        if (p != 0) {
+            a.ping(p);
         }
     }
 
     @Override
-    public void sendSafeApiDataMulti(byte backId, Value<byte[]> data) {
-        if (!Objects.equals(backId, client.getAlias())) {
-            throw new IllegalStateException();
-        }
-        CryptoNode cp = safeApiCon.findDown(CryptoNode.class);
-        cp.down().send(data);
+    public void sendSafeApiDataMulti(byte backId, LoginClientStream data) {
+        throw new UnsupportedOperationException();
     }
 
     @Override
-    public void sendSafeApiData(Value<byte[]> data) {
-        CryptoNode cp = safeApiCon.findDown(CryptoNode.class);
-        cp.down().send(data);
-    }
-
-    @Override
-    protected void onConnect(Remote<LoginApi> remoteApi) {
-        try (var ln = Log.context(client.logClientContext)) {
-            var mk = client.getMasterKey();
-            safeApiCon = ApiGate.of(ClientApiSafe.META, AuthorizedApi.META,
-                    new MyClientApiSafe(client), StreamManager.forClient(),
-                    CryptoNode.of(mk.getType().cryptoLib().env.symmetricForClient(mk, serverDescriptor.id())).setName("client to workServer"));
-            CryptoNode cp = safeApiCon.findDown(CryptoNode.class);
-            cp.down().toSubApi(remoteApi, (a, v) -> a.loginByAlias2(client.getAlias(), SCD.of(v)));
-            client.servers.addSourceHard().log("resolver servers", "client", "server")
-                    .toMethod(safeApiCon, (a, sid) ->
-                            a.resolverServers(sid.map2(new short[]{sid.data().shortValue()})));
-            client.clouds.addSourceHard().log("resolver clouds", "client", "server",
-                            v -> {
-                                Log.debug("");
-                            }, v -> {
-                                Log.debug("");
-                            })
-                    .toMethod(safeApiCon, (a, uid) -> {
-                        a.resolverClouds(uid.map(v -> new UUID[]{v}));
-                    });
-            ready.set(ConnectionWork.this);
-        }
+    public void sendSafeApiData(LoginClientStream data) {
+        data.accept(apiSafeCtx, cryptoEngine::decrypt, apiSafe);
     }
 
     public ServerDescriptor getServerDescriptor() {
@@ -120,12 +106,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
         if ((t - lastWorkTime < client.getPingTime() || !inProcess.compareAndSet(false, true))) return;
         try {
             lastWorkTime = t;
-            var c = safeApiCon;
-            if (c.getRemoteApiMgr().isEmpty()) {
-                ping();
-            } else {
-                c.flush();
-            }
+            apiSafeCtx.flush();
         } finally {
             inProcess.set(false);
         }
@@ -149,14 +130,16 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi> implem
         }
 
         @Override
-        public void requestTelemetric() {
+        public void requestTelemetry() {
 
         }
 
         @Override
-        public void sendMessage(UUID uid, Value<byte[]> data) {
-            Log.trace("receive message $uid1 <- $uid2", "uid1", client.getUid(), "uid2", uid);
-            client.getMessageNode(uid, MessageEventListener.DEFAULT).sendMessageFromServerToClient(data);
+        public void sendMessages(Message[] msg) {
+            for (var m : msg) {
+                Log.trace("receive message $uid1 <- $uid2", "uid1", client.getUid(), "uid2", m.getUid());
+                client.getMessageNode(m.getUid(), MessageEventListener.DEFAULT).sendMessageFromServerToClient(Value.of(m.getData()));
+            }
         }
 
         @Override

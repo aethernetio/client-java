@@ -1,11 +1,11 @@
 package io.aether.examples.pointToPoint;
 
 import io.aether.StandardUUIDs;
+import io.aether.api.common.CryptoLib;
 import io.aether.cloud.client.AetherCloudClient;
 import io.aether.cloud.client.ClientStateInMemory;
 import io.aether.cloud.client.MessageEventListener;
 import io.aether.common.AccessGroupI;
-import io.aether.crypt.CryptoLib;
 import io.aether.logger.Log;
 import io.aether.utils.ConcurrentHashSet;
 import io.aether.utils.RU;
@@ -80,7 +80,6 @@ public class PointToPointTest {
                 receiveCounter.addAndGet(d.length);
             });
         });
-        client2.ping();
         var data = new byte[10000];
         var timeBegin = RU.time();
         while (receiveCounter.get() < total) {
@@ -156,12 +155,12 @@ public class PointToPointTest {
         ARFuture<AccessGroupI> groupFuture = service.createAccessGroup();
         service.onNewChildren((u) -> {
             groupFuture.to(group -> {
-                service.getClientApi(u).to(api -> {
-                    api.run_flush(a -> a.addAccessGroup(group.getId()).to(f -> {
+                service.getClientApi(u, a -> {
+                    a.addAccessGroup(group.getId()).to(f -> {
                         allChildren.add(u);
                         Log.info("NEW CHILD DONE: $uid", "uid", u, "result", f);
-                    }));
-                }, 5, () -> Log.warn("timeout get client api for $uid", "uid", u));
+                    });
+                });
                 Log.info("NEW CHILD: $uid", "uid", u);
             });
         });
@@ -300,7 +299,7 @@ public class PointToPointTest {
             if (!checkReceiveMessage.waitDoneSeconds(10)) {
                 throw new IllegalStateException();
             }
-            AFuture.all(client1.destroy(true),client2.destroy(true)).waitDoneSeconds(5);
+            AFuture.all(client1.destroy(true), client2.destroy(true)).waitDoneSeconds(5);
         }
     }
 

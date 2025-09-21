@@ -1,0 +1,81 @@
+types:
+  Metric:
+    fields:
+      id: intpack
+      value: Variant
+  MetricFull:
+    parent: Metric
+    fields:
+      time: Date
+      producer: UUID
+  SensorDescriptor:
+    fields:
+      id: intpack
+      name: string
+  Variant:
+    abstract: true
+  VariantByte:
+    parent: Variant
+    fields:
+      value: byte
+  VariantShort:
+    parent: Variant
+    fields:
+      value: short
+  VariantInt:
+    parent: Variant
+    fields:
+      value: int
+  VariantLong:
+    parent: Variant
+    fields:
+      value: long
+  VariantBoolean:
+    parent: Variant
+    fields:
+      value: boolean
+  VariantFloat:
+    parent: Variant
+    fields:
+      value: float
+  VariantDouble:
+    parent: Variant
+    fields:
+      value: double
+  VariantString:
+    parent: Variant
+    fields:
+      value: string
+  VariantUUID:
+    parent: Variant
+    fields:
+      value: uuid
+  VariantDate:
+    parent: Variant
+    fields:
+      value: date
+api:
+  MeteostationServiceApi:
+    methods:
+      registrationSensor:
+        returns: intpack
+        params:
+          sensorDescriptor: SensorDescriptor
+      registrationControl:
+        returns: intpack
+        params:
+          name: string
+      sendMetric:
+        params:
+          metric: Metric
+      registration:
+        params:
+          name: string
+  MetestationClientApi:
+    methods:
+      addMetricDescriptor:
+        params:
+          sensorDescriptors: SensorDescriptor
+      addMetrics:
+        params:
+          metrics: MetricFull

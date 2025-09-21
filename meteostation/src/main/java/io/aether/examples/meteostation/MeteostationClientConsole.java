@@ -1,10 +1,10 @@
 package io.aether.examples.meteostation;
 
+import io.aether.api.metestation.*;
 import io.aether.cloud.client.AetherCloudClient;
 import io.aether.cloud.client.ClientStateInMemory;
+import io.aether.cloud.client.Remote;
 import io.aether.logger.Log;
-import io.aether.net.ApiGate;
-import io.aether.net.Remote;
 import io.aether.utils.slots.EventConsumer;
 import io.aether.utils.slots.EventConsumerWithQueue;
 

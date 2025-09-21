@@ -1,0 +1,21 @@
+include:
+  - common
+types:
+  ClientInfo:
+    fields:
+      uid: UUID
+      cloud: Cloud
+  ClientStateForSave:
+    fields:
+      registrationUri: URI[]
+      servers: ServerDescriptor[]
+      clients: ClientInfo[]
+      rootSigners: String
+      cryptoLib: CryptoLib
+      pingDuration: long
+      parentUid: UUID
+      countServersForRegistration: int
+      timeoutForConnectToRegistrationServer: int
+      uid: UUID
+      alias: UUID
+      masterKey: Key

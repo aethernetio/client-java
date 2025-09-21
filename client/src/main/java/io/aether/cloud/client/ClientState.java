@@ -1,10 +1,7 @@
 package io.aether.cloud.client;
 
-import io.aether.common.Cloud;
-import io.aether.common.ServerDescriptor;
-import io.aether.crypt.CryptoLib;
-import io.aether.crypt.Key;
-import io.aether.crypt.SignChecker;
+import io.aether.api.common.*;
+import io.aether.crypto.SignChecker;
 import io.aether.utils.slots.AMFuture;
 
 import java.net.URI;
@@ -50,7 +47,7 @@ public interface ClientState {
 
     void setParentUid(UUID uid);
 
-    Key getMasterKey();
+    io.aether.api.common.Key getMasterKey();
 
     CryptoLib getCryptoLib();
 

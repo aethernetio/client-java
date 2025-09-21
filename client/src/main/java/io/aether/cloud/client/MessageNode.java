@@ -1,7 +1,7 @@
 package io.aether.cloud.client;
 
-import io.aether.common.Cloud;
-import io.aether.common.ServerDescriptor;
+import io.aether.api.clientserverapi.Message;
+import io.aether.api.common.*;
 import io.aether.logger.Log;
 import io.aether.utils.AString;
 import io.aether.utils.ConcurrentHashSet;
@@ -64,19 +64,7 @@ public class MessageNode implements NodeDown<byte[], byte[]> {
                 }
                 if (value.isData()) {
                     for (var e : connectionsOut) {
-                        if (value.isForce()) {
-                            e.safeApiCon.getRemoteApi().run_flush(a -> a.sendMessage(consumer, value));
-                        } else {
-                            e.safeApiCon.getRemoteApi().run(a -> a.sendMessage(consumer, value));
-                        }
-                        return;
-                    }
-                }
-                if (value.isRequestData()) {
-                    for (var e : connectionsIn) {
-                        e.ready.toOnce((c) -> {
-                            c.safeApiCon.getRemoteApi().run(a -> a.ping(client.getPingTime()));
-                        });
+                        e.messageNodeQueue.add(new Message(consumer, value.data()));
                     }
                 }
             }

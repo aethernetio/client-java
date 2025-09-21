@@ -1,21 +1,19 @@
 package io.aether.cloud.client;
 
-import io.aether.common.Cloud;
-import io.aether.common.ServerDescriptor;
-import io.aether.crypt.CryptoLib;
-import io.aether.crypt.Key;
-import io.aether.crypt.SignChecker;
+import io.aether.api.clienttypes.ClientStateForSave;
+import io.aether.api.common.Cloud;
+import io.aether.api.common.CryptoLib;
+import io.aether.api.common.Key;
+import io.aether.api.common.ServerDescriptor;
+import io.aether.crypto.SignChecker;
 import io.aether.logger.Log;
-import io.aether.net.meta.ApiManager;
-import io.aether.net.meta.MetaType;
-import io.aether.net.serialization.SerializationContext;
+import io.aether.net.fastMeta.FastFutureContext;
 import io.aether.utils.AString;
 import io.aether.utils.ConcurrentHashSet;
 import io.aether.utils.RU;
 import io.aether.utils.ToString;
 import io.aether.utils.dataio.DataInOut;
 import io.aether.utils.dataio.DataInOutStatic;
-import io.aether.utils.flow.Flow;
 import io.aether.utils.slots.AMFuture;
 
 import java.io.File;
@@ -27,10 +25,12 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-public class ClientStateInMemory implements ClientState , ToString {
+import static io.aether.utils.flow.Flow.flow;
+
+public class ClientStateInMemory implements ClientState, ToString {
     private final List<URI> registrationUri = new CopyOnWriteArrayList<>();
     private final Map<Integer, ServerInfo> servers = new ConcurrentHashMap<>();
-    private final Map<UUID, ClientInfo> clients = new ConcurrentHashMap<>();
+    private final Map<UUID, ClientInfoMutable> clients = new ConcurrentHashMap<>();
     private final Set<SignChecker> rootSigners = new ConcurrentHashSet<>();
     private final CryptoLib cryptoLib;
     private final AMFuture<Long> pingDuration = new AMFuture<>(1000L);
@@ -59,7 +59,7 @@ public class ClientStateInMemory implements ClientState , ToString {
         sb.add("master key: ").add(masterKey).add("\n");
         sb.add("crypto lib: ").add(cryptoLib).add("\n");
         sb.add("cloud: ").add(getCloud(uid)).add("\n");
-        for(var c:getCloud(uid)){
+        for (var c : getCloud(uid).getData()) {
             sb.addSpace(4).add(getServerDescriptor(c)).add("\n");
         }
     }
@@ -71,8 +71,8 @@ public class ClientStateInMemory implements ClientState , ToString {
         this.registrationUri.addAll(registrationUri);
         if (rootSigners != null) this.rootSigners.addAll(rootSigners);
         this.rootSigners.addAll(Set.of(
-                SignChecker.of("SODIUM_SIGN_PUBLIC:4F202A94AB729FE9B381613AE77A8A7D89EDAB9299C3320D1A0B994BA710CCEB"),
-                SignChecker.of("HYDROGEN_SIGN_PUBLIC:883B4D7E0FB04A38CA12B3A451B00942048858263EE6E6D61150F2EF15F40343")
+                SignChecker.of("SODIUM:4F202A94AB729FE9B381613AE77A8A7D89EDAB9299C3320D1A0B994BA710CCEB"),
+                SignChecker.of("HYDROGEN:883B4D7E0FB04A38CA12B3A451B00942048858263EE6E6D61150F2EF15F40343")
         ));
     }
 
@@ -80,19 +80,19 @@ public class ClientStateInMemory implements ClientState , ToString {
         this(parentUid, registrationUri, null);
     }
 
-    private ClientStateInMemory(DTO dto) {
-        this.uid = dto.uid;
-        this.alias = dto.alias;
-        Flow.flow(dto.clients).toMapExtractKey(clients, ClientInfo::getUid);
-        Flow.flow(dto.servers).toMapExtractKey(servers, ServerInfo::getServerId);
-        this.parentUid = dto.parentUid;
-        this.masterKey = dto.masterKey;
-        this.cryptoLib = dto.cryptoLib;
-        this.rootSigners.addAll(Flow.flow(dto.rootSigners).map(SignChecker::of).toSet());
-        this.countServersForRegistration = dto.countServersForRegistration;
-        this.timeoutForConnectToRegistrationServer = dto.timeoutForConnectToRegistrationServer;
-        this.registrationUri.addAll(dto.registrationUri);
-        this.pingDuration.set(dto.pingDuration);
+    private ClientStateInMemory(ClientStateForSave dto) {
+        this.uid = dto.getUid();
+        this.alias = dto.getAlias();
+        flow(dto.getClients()).map(ClientInfoMutable::new).toMapExtractKey(clients, ClientInfoMutable::getUid);
+        flow(dto.getServers()).map(ServerInfo::new).toMapExtractKey(servers, ServerInfo::getServerId);
+        this.parentUid = dto.getParentUid();
+        this.masterKey = dto.getMasterKey();
+        this.cryptoLib = dto.getCryptoLib();
+        this.rootSigners.addAll(flow(dto.getRootSigners()).map(SignChecker::of).toSet());
+        this.countServersForRegistration = dto.getCountServersForRegistration();
+        this.timeoutForConnectToRegistrationServer = dto.getTimeoutForConnectToRegistrationServer();
+        this.registrationUri.addAll(Arrays.asList(dto.getRegistrationUri()));
+        this.pingDuration.set(dto.getPingDuration());
     }
 
     @Override
@@ -117,7 +117,7 @@ public class ClientStateInMemory implements ClientState , ToString {
 
     @Override
     public ClientState.ClientInfo getClientInfo(UUID uid) {
-        return clients.computeIfAbsent(uid, ClientInfo::new);
+        return clients.computeIfAbsent(uid, ClientInfoMutable::new);
     }
 
     @Override
@@ -192,9 +192,9 @@ public class ClientStateInMemory implements ClientState , ToString {
         getUidInfo(uid).cloud = cloud;
     }
 
-    public ClientInfo getUidInfo(UUID uid) {
+    public ClientInfoMutable getUidInfo(UUID uid) {
         assert uid != null;
-        return clients.computeIfAbsent(uid, ClientInfo::new);
+        return clients.computeIfAbsent(uid, ClientInfoMutable::new);
     }
 
     public void setCloud(UUID uid, Cloud cloud) {
@@ -210,7 +210,7 @@ public class ClientStateInMemory implements ClientState , ToString {
 
     public byte[] save() {
         DataInOut d = new DataInOut();
-        DTO.META.getSerializer().put(SerializationContext.STUB, d, toDTO());
+        ClientStateForSave.META.serialize(FastFutureContext.STUB, toDTO(), d);
         return d.toArray();
     }
 
@@ -223,12 +223,15 @@ public class ClientStateInMemory implements ClientState , ToString {
         }
     }
 
-    private DTO toDTO() {
-        return new DTO(
-                registrationUri,
-                new HashSet<>(servers.values()),
-                new HashSet<>(clients.values()),
-                rootSigners,
+    private ClientStateForSave toDTO() {
+        return new ClientStateForSave(
+                flow(registrationUri).toArray(URI.class),
+                flow(servers.values()).map(s -> s.descriptor).filterNotNull().toArray(ServerDescriptor.class),
+                flow(clients.values())
+                        .filter(s -> s.getCloud() != null)
+                        .map(s -> new io.aether.api.clienttypes.ClientInfo(s.getUid(), s.getCloud()))
+                        .toArray(io.aether.api.clienttypes.ClientInfo.class),
+                flow(rootSigners).join(", "),
                 cryptoLib,
                 pingDuration.getNow(),
                 parentUid,
@@ -250,56 +253,11 @@ public class ClientStateInMemory implements ClientState , ToString {
     }
 
     public static ClientStateInMemory load(byte[] data) {
-        try{
-            var dto = DTO.META.getDeserializer().put(SerializationContext.STUB, new DataInOutStatic(data));
+        try {
+            var dto = ClientStateForSave.META.deserialize(FastFutureContext.STUB, new DataInOutStatic(data));
             return new ClientStateInMemory(dto);
-        }catch (Exception e){
+        } catch (Exception e) {
             throw new IllegalStateException("Unparsable format state");
-        }
-    }
-
-    private static class DTO {
-        static final MetaType<DTO> META = ApiManager.getType(DTO.class);
-        List<URI> registrationUri;
-        Set<ServerInfo> servers;
-        Set<ClientInfo> clients;
-        Set<String> rootSigners;
-        CryptoLib cryptoLib;
-        long pingDuration;
-        UUID parentUid;
-        int countServersForRegistration = 1;
-        int timeoutForConnectToRegistrationServer = 10;
-        UUID uid;
-        UUID alias;
-        Key masterKey;
-
-        public DTO() {
-        }
-
-        public DTO(List<URI> registrationUri,
-                   Set<ServerInfo> servers,
-                   Set<ClientInfo> clients,
-                   Set<SignChecker> rootSigners,
-                   CryptoLib cryptoLib,
-                   long pingDuration,
-                   UUID parentUid,
-                   int countServersForRegistration,
-                   int timeoutForConnectToRegistrationServer,
-                   UUID uid,
-                   UUID alias,
-                   Key masterKey) {
-            this.registrationUri = registrationUri;
-            this.servers = servers;
-            this.clients = clients;
-            this.rootSigners = Flow.flow(rootSigners).mapToString().toSet();
-            this.cryptoLib = cryptoLib;
-            this.pingDuration = pingDuration;
-            this.parentUid = parentUid;
-            this.countServersForRegistration = countServersForRegistration;
-            this.timeoutForConnectToRegistrationServer = timeoutForConnectToRegistrationServer;
-            this.uid = uid;
-            this.alias = alias;
-            this.masterKey = masterKey;
         }
     }
 
@@ -312,7 +270,7 @@ public class ClientStateInMemory implements ClientState , ToString {
         }
 
         public ServerInfo(ServerDescriptor descriptor) {
-            this(descriptor.id());
+            this(descriptor.getId());
             this.descriptor = descriptor;
         }
 
@@ -332,11 +290,20 @@ public class ClientStateInMemory implements ClientState , ToString {
         }
     }
 
-    public static class ClientInfo implements ClientState.ClientInfo {
+    public static class ClientInfoMutable implements ClientState.ClientInfo {
         public final UUID uid;
         public volatile Cloud cloud;
 
-        public ClientInfo(UUID uid) {
+        public ClientInfoMutable(io.aether.api.clienttypes.ClientInfo c) {
+            this(c.getUid(), c.getCloud());
+        }
+
+        public ClientInfoMutable(UUID uid, Cloud cloud) {
+            this.uid = uid;
+            this.cloud = cloud;
+        }
+
+        public ClientInfoMutable(UUID uid) {
             this.uid = uid;
         }
 

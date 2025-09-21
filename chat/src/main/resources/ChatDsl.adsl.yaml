@@ -1,0 +1,29 @@
+name: ChatDsl
+
+types:
+  UserDescriptor:
+    fields:
+      uid: uuid
+      name: string
+  MessageDescriptor:
+    fields:
+      uid: uuid
+      message: string
+api:
+  ServiceClientApi:
+    methods:
+      addNewUsers:
+        params:
+          users: UserDescriptor[]
+      newMessages:
+        params:
+          messages: MessageDescriptor[]
+  ServiceServerApi:
+    methods:
+      registration:
+        returns: void
+        params:
+          name: string
+      sendMessage:
+        params:
+          msg: string

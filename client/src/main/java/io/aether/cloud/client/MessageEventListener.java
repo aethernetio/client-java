@@ -1,13 +1,12 @@
 package io.aether.cloud.client;
 
-import io.aether.common.Cloud;
-import io.aether.common.ServerDescriptor;
+import io.aether.api.common.*;
 
 public interface MessageEventListener {
     MessageEventListener DEFAULT = new MessageEventListener() {
         @Override
         public void setConsumerCloud(MessageNode messageNode, Cloud cloud) {
-            messageNode.addConsumerServerOut(cloud.data()[0]);
+            messageNode.addConsumerServerOut(cloud.getData()[0]);
         }
 
         @Override

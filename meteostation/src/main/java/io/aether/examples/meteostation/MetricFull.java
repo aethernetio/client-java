@@ -1,6 +1,6 @@
 package io.aether.examples.meteostation;
 
-import io.aether.net.meta.Pack;
+import io.aether.net.fastMeta.Pack;
 import io.aether.net.meta.Variant;
 import io.aether.utils.AString;
 
