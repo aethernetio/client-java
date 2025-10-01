@@ -13,12 +13,7 @@ import io.aether.utils.streams.Value;
 
 import java.net.URI;
 
-public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, RegistrationRootApi,RegistrationRootApiRemote> implements ClientApiRegUnsafe {
-
-    public ConnectionRegistration(AetherCloudClient client, URI uri) {
-        super(client, uri, ClientApiRegUnsafe.META, RegistrationRootApi.META);
-        connect();
-    }
+public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, RegistrationRootApi, RegistrationRootApiRemote> implements ClientApiRegUnsafe {
 
     private final AKey.Symmetric tempKey = CryptoProviderFactory.getProvider(client.getCryptLib().name()).createSymmetricKey();
     private final KeySymmetric tempKeyNative = KeyUtil.of(tempKey);
@@ -37,11 +32,16 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
     };
     private CryptoEngine gcp;
 
+    public ConnectionRegistration(AetherCloudClient client, URI uri) {
+        super(client, uri, ClientApiRegUnsafe.META, RegistrationRootApi.META);
+        connect();
+    }
+
     private void connect() {
         rootApi.getAsymmetricPublicKey(client.getCryptLib()).to(this::regProcess);
-        rootApiContext.flushToGate(d->{
+        rootApiContext.flushToGate(d -> {
             AFuture res = new AFuture();
-            gate.send(Value.of(d).linkFuture(res));
+            gate.send(Value.ofForce(d).linkFuture(res));
             return res;
         });
     }
@@ -51,8 +51,8 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
         if (!client.verifySign(signedKey)) {
             throw new IllegalStateException("Key verification exception");
         }
-
-        rootApi.enter(client.getCryptLib(), new StreamStreamEnterRegistrationRootApi(ctxSafe, tempKeyCp::encrypt, api -> {
+        var asymCE = SignedKeyUtil.of(signedKey).key().asAsymmetric().toCryptoEngine();
+        rootApi.enter(client.getCryptLib(), new ServerRegistrationApiStream(ctxSafe, asymCE::encrypt, api -> {
             api.requestWorkProofData(client.getParent(), PowMethod.AE_BCRYPT_CRC32, tempKeyNative)
                     .to(wpd -> {
                         Log.info("WorkProofData has been received");
@@ -66,22 +66,23 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
                             throw new RuntimeException();
                         }
                         gcp = CryptoEngine.of(KeyUtil.of(wpd.getGlobalKey().getKey()).asAsymmetric().toCryptoEngine(), client.getMasterKey().toCryptoEngine());
-                        rootApi.enter(client.getCryptLib(), new StreamStreamEnterRegistrationRootApi(ctxSafe, tempKeyCp::encrypt,
+                        rootApi.enter(client.getCryptLib(), new ServerRegistrationApiStream(ctxSafe, asymCE::encrypt,
                                 a2 -> a2.registration(wpd.getSalt(), wpd.getSuffix(), passwords, client.getParent(), tempKeyNative,
                                         new GlobalApiStream(globalCtx, gcp::encrypt, gapi -> {
                                             gapi.setMasterKey(KeyUtil.of(client.getMasterKey()));
                                             gapi.finish()
                                                     .to(d -> {
                                                         Log.trace("registration step finish");
-                                                        rootApi.enter(client.getCryptLib(), new StreamStreamEnterRegistrationRootApi(rootApiContext, tempKeyCp::encrypt, a3 -> {
+                                                        rootApi.enter(client.getCryptLib(), new ServerRegistrationApiStream(ctxSafe, asymCE::encrypt, a3 -> {
                                                             Log.trace("registration step resolve servers: $servers", "servers", d.getCloud());
                                                             a3.resolveServers(d.getCloud()).to(ss -> {
                                                                 for (var s : ss) {
-                                                                    client.servers.set(s);
+                                                                    client.servers.put((int) s.getId(), s);
                                                                 }
                                                                 client.confirmRegistration(d);
                                                             });
                                                         }));
+                                                        rootApi.flush();
                                                     });
                                         }))));
                         rootApi.flush();
@@ -91,9 +92,13 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
     }
 
     @Override
-    public void enter(StreamStreamEnter stream) {
-        stream.accept(ctxSafe, tempKeyCp::decrypt,
-                stream1 -> stream1.accept(globalCtx, gcp::encrypt, GlobalRegClientApi.EMPTY));
+    public void enterGlobal(GlobalRegClientApiStream stream) {
+        stream.accept(globalCtx, gcp::decrypt, GlobalRegClientApi.EMPTY);
+    }
+
+    @Override
+    public void enter(ClientApiRegSafeStream stream) {
+        stream.accept(ctxSafe, tempKeyCp::decrypt, ClientApiRegSafe.EMPTY);
     }
 
 }

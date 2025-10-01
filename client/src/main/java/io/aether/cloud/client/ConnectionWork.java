@@ -14,11 +14,13 @@ import io.aether.utils.flow.Flow;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.slots.AMFuture;
 import io.aether.utils.streams.Value;
+import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import it.unimi.dsi.fastutil.shorts.ShortArrayList;
 import it.unimi.dsi.fastutil.shorts.ShortList;
 
-import java.util.*;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -26,25 +28,30 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi, LoginA
     //region counters
     public final AtomicLong lastBackPing = new AtomicLong(Long.MAX_VALUE);
     public final AMFuture<ConnectionWork> ready = new AMFuture<>();
-    private final ServerDescriptor serverDescriptor;
-    final private AtomicBoolean inProcess = new AtomicBoolean();
-    boolean basicStatus;
-    long lastWorkTime;
     final ClientApiSafe apiSafe = new MyClientApiSafe(client);
     final FastApiContext apiSafeCtx;
     final CryptoEngine cryptoEngine;
     final RemoteApiFuture<AuthorizedApi> remoteApiFuture = new RemoteApiFuture<>();
+    private final ServerDescriptor serverDescriptor;
+    final private AtomicBoolean inProcess = new AtomicBoolean();
+    boolean basicStatus;
+    long lastWorkTime;
 
     public ConnectionWork(AetherCloudClient client, ServerDescriptor s) {
-        super(client, s.getIpAddress().getURI(AetherCodec.UDP), ClientApiUnsafe.META, LoginApi.META);
+        super(client, s.getIpAddress().getURI(AetherCodec.TCP), ClientApiUnsafe.META, LoginApi.META);
         cryptoEngine = client.getCryptoEngineForServer(s.getId());
         serverDescriptor = s;
         this.basicStatus = false;
-        remoteApiFuture.addPermanent(this::flushBackgroundRequests);
+        remoteApiFuture.addPermanent((a, f) -> {
+            try (var ln = Log.context(client.logClientContext)) {
+                flushBackgroundRequests(a, f);
+            }
+        });
         apiSafeCtx = new FastApiContext() {
             @Override
             public AFuture flush() {
-                var e = new LoginStream(this, cryptoEngine::encrypt, remoteApiFuture::flush);
+                if (remoteApiFuture.isEmpty()) return AFuture.completed();
+                var e = new LoginStream(this, cryptoEngine::encrypt, remoteApiFuture);
                 if (e.data == null || e.data.length == 0) return AFuture.completed();
                 rootApi.loginByAlias(client.getAlias(), e);
                 return rootApiContext.flush();
@@ -52,22 +59,43 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi, LoginA
         };
     }
 
-    public final Queue<Message> messageNodeQueue = new ConcurrentLinkedQueue<>();
-
-    private void flushBackgroundRequests(AuthorizedApi a) {
-        List<UUID> requestCloud = new ArrayList<>(client.requestCloud);
-        if (!requestCloud.isEmpty()) {
-            client.requestCloud.removeAll(requestCloud);
-            a.resolverClouds(requestCloud.toArray(new UUID[0]));
+    private void flushBackgroundRequests(AuthorizedApi a, AFuture sendFuture) {
+        if (!client.requestCloud.isEmpty()) {
+            List<UUID> requestCloud = new ArrayList<>(client.requestCloud);
+            if (!requestCloud.isEmpty()) {
+                client.requestCloud.removeAll(requestCloud);
+                a.resolverClouds(requestCloud.toArray(new UUID[0]));
+            }
         }
-        ShortList requestServers = new ShortArrayList(client.requestServers);
-        if (!requestServers.isEmpty()) {
-            client.requestServers.removeAll(requestServers);
-            a.resolverServers(Flow.flow(requestServers).mapToShort(Short::shortValue).toArray());
+        if (!client.requestServers.isEmpty()) {
+            ShortList requestServers = new ShortArrayList(client.requestServers);
+            if (!requestServers.isEmpty()) {
+                client.requestServers.removeAll(requestServers);
+                a.resolverServers(Flow.flow(requestServers).mapToShort(Short::shortValue).toArray());
+            }
         }
-        List<Message> mm = new ArrayList<>();
-        RU.readAll(messageNodeQueue, mm::add);
-        a.sendMessages(mm.toArray(new Message[0]));
+        List<Message> messageForSend = null;
+        for (var m : client.messageNodeMap.values()) {
+            if (m.connectionsOut.contains(this)) {
+                if (messageForSend == null) {
+                    messageForSend = new ObjectArrayList<>();
+                }
+                List<Value<byte[]>> mm = new ArrayList<>();
+                RU.readAll(m.bufferOut, mm::add);
+                Log.debug("message client to server: $uidFrom -> $uidTo",
+                        "uidFrom", client.getUid(),
+                        "uidTo", m.consumer);
+                Flow.flow(mm)
+                        .map(v -> new Message(m.consumer, v.data()))
+                        .toCollection(messageForSend);
+                sendFuture.onCancel(() -> {
+                    m.bufferOut.addAll(mm);
+                });
+            }
+        }
+        if (messageForSend != null) {
+            a.sendMessages(messageForSend.toArray(new Message[0]));
+        }
         var p = client.ping;
         if (p != 0) {
             a.ping(p);
@@ -112,6 +140,17 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi, LoginA
         }
     }
 
+    public void flush() {
+        if (!inProcess.compareAndSet(false, true)) return;
+        var t = RU.time();
+        try {
+            lastWorkTime = t;
+            apiSafeCtx.flush();
+        } finally {
+            inProcess.set(false);
+        }
+    }
+
     private static class MyClientApiSafe implements ClientApiSafe {
         private final AetherCloudClient client;
 
@@ -144,12 +183,26 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi, LoginA
 
         @Override
         public void sendServerDescriptor(ServerDescriptor v) {
-            client.servers.set(v);
+            client.servers.put((int) v.getId(), v);
         }
 
         @Override
         public void sendCloud(UUID uid, Cloud cloud) {
-            client.clouds.set(new UUIDAndCloud(uid, cloud));
+            client.clouds.put(uid, new UUIDAndCloud(uid, cloud));
+        }
+
+        @Override
+        public void sendServerDescriptors(ServerDescriptor[] serverDescriptors) {
+            for (var c : serverDescriptors) {
+                sendServerDescriptor(c);
+            }
+        }
+
+        @Override
+        public void sendClouds(UUIDAndCloud[] clouds) {
+            for (var c : clouds) {
+                sendCloud(c.getUid(), c.getCloud());
+            }
         }
 
         @Override

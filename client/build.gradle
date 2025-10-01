@@ -6,7 +6,6 @@ plugins {
 
 def coreVersion = '0.0.72'
 dependencies {
-    api "io.aether:client-server-api:${coreVersion}"
     api "io.aether:client-server-reg-api:${coreVersion}"
     api "io.aether:client-server-work-api:${coreVersion}"
     api "io.aether:core:${coreVersion}"

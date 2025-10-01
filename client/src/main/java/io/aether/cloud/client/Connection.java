@@ -32,7 +32,8 @@ public abstract class Connection<LT, RT, RT2 extends RT> implements Destroyable 
         }
         client.destroyer.add(this);
         socketStreamClient = new SocketNIOStreamClient(uri);
-        gate = socketStreamClient.up().buffer();
+        socketStreamClient.connectedFuture.to(connectFuture);
+        gate = socketStreamClient.up().bufferAutoFlush();
         this.rootApiContext = gate.toApiR(lt, c->RU.cast(this));
         rootApi = rootApiContext.makeRemote(rt);
     }

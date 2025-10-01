@@ -16,7 +16,10 @@ import io.aether.utils.streams.Value;
 import io.aether.utils.streams.ValueOfData;
 
 import java.net.URI;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -51,11 +54,14 @@ public class PointToPointTest {
         client2.onMessage((uid, msg) -> checkReceiveMessage.done());
         Log.info("START two clients!");
         Thread.currentThread().setName("MAIN THREAD");
-        AFuture f = client1.sendMessage(client2.getUid(), message);
+        var m = Value.of(message).timeout(30000, (v) -> {
+            Log.error("timeout message: $v", "v", v);
+        });
+        client1.sendMessage(client2.getUid(), m);
         checkReceiveMessage.to(() -> {
             Log.info("TEST IS DONE!");
         });
-        if (!checkReceiveMessage.waitDoneSeconds(1000)) {
+        if (!checkReceiveMessage.waitDoneSeconds(10)) {
             throw new IllegalStateException();
         }
         client1.destroy(true).waitDoneSeconds(5);
@@ -72,11 +78,11 @@ public class PointToPointTest {
         AetherCloudClient client1 = new AetherCloudClient(clientConfig1);
         AetherCloudClient client2 = new AetherCloudClient(clientConfig2);
         AFuture.all(client1.startFuture, client2.startFuture).waitDoneSeconds(10);
-        var ch1 = client1.openStreamToClient(client2.getUid());
+        var ch1 = client1.getMessageNode(client2.getUid());
         final var total = 1000000L;
         AtomicLong receiveCounter = new AtomicLong(0);
         client2.onClientStream((g) -> {
-            g.up().toConsumer("timeOneMessage", d -> {
+            g.toConsumer( d -> {
                 receiveCounter.addAndGet(d.length);
             });
         });
@@ -118,17 +124,17 @@ public class PointToPointTest {
         var message = new byte[]{1, 2, 3, 4};
         var messageBack = new byte[]{1, 1, 1, 1};
         client2.onClientStream((st) -> {
-            st.up().toConsumer("p2pAndBack c2", newMessage -> {
-                st.up().send(Value.of(messageBack));
+            st.toConsumer( newMessage -> {
+                st.send(Value.of(messageBack));
             });
         });
         client1.onClientStream((st) -> {
-            st.up().toConsumer("p2pAndBack c1", newMessage -> {
+            st.toConsumer( newMessage -> {
                 checkReceiveMessageBack.done();
             });
         });
         Log.info("START two clients!");
-        var chToc2 = client1.openStreamToClient(client2.getUid());
+        var chToc2 = client1.getMessageNode(client2.getUid());
         Thread.currentThread().setName("MAIN THREAD");
         chToc2.send(Value.ofForce(message));
         checkReceiveMessageBack.to(() -> {
@@ -175,12 +181,12 @@ public class PointToPointTest {
         AFuture checkReceiveMessage = new AFuture();
         var message = new byte[]{0, 0, 0, 0};
         client2.onClientStream((st) -> {
-            st.up().toConsumer("pointToPointWithService c2", newMessage -> {
+            st.toConsumer( newMessage -> {
                 checkReceiveMessage.done();
             });
         });
         Log.info("START!");
-        var chToc2 = client1.openStreamToClient(client2.getUid());
+        var chToc2 = client1.getMessageNode(client2.getUid());
         chToc2.send(Value.ofForce(message));
 
         if (!checkReceiveMessage.waitDoneSeconds(10)) {
@@ -210,7 +216,7 @@ public class PointToPointTest {
         AtomicInteger counter = new AtomicInteger(ITERATIONS);
         client2.onClientStream((st) -> {
             Log.debug("onClientStream");
-            st.up().toConsumer("p2pMany c2", newMessage -> {
+            st.toConsumer( newMessage -> {
                 Log.debug("on new message");
                 if (counter.addAndGet(-1) == 0) {
                     checkReceiveMessage.done();
@@ -219,10 +225,9 @@ public class PointToPointTest {
         });
         Log.info("START two clients!");
         var chToc2n = client1.openStreamToClientDetails(client2.getUid(), MessageEventListener.DEFAULT);
-        var chToc2 = chToc2n.up();
         Thread.currentThread().setName("MAIN THREAD");
         for (var v : values) {
-            chToc2.send(v);
+            chToc2n.send(v);
         }
         checkReceiveMessage.to(() -> {
             Log.info("TEST IS DONE!");
@@ -251,12 +256,12 @@ public class PointToPointTest {
             AFuture checkReceiveMessage = new AFuture();
             var message = new byte[]{1, 1, 1, 1};
             client2.onClientStream((st) -> {
-                st.up().toConsumer("pointToPointWithReconnect c2", newMessage -> {
+                st.toConsumer(newMessage -> {
                     checkReceiveMessage.done();
                 });
             });
             Log.info("START two clients!");
-            var chToc2 = client1.openStreamToClient(client2.getUid());
+            var chToc2 = client1.getMessageNode(client2.getUid());
             Thread.currentThread().setName("MAIN THREAD");
             chToc2.send(Value.ofForce(message));
             checkReceiveMessage.to(() -> {
@@ -285,12 +290,12 @@ public class PointToPointTest {
             AFuture checkReceiveMessage = new AFuture();
             var message = new byte[]{2, 2, 2, 2};
             client2.onClientStream((st) -> {
-                st.up().toConsumer("pointToPointWithReconnect c2 it2", newMessage -> {
+                st.toConsumer( newMessage -> {
                     checkReceiveMessage.done();
                 });
             });
             Log.info("START two clients!");
-            var chToc2 = client1.openStreamToClient(client2.getUid());
+            var chToc2 = client1.getMessageNode(client2.getUid());
             Thread.currentThread().setName("MAIN THREAD");
             chToc2.send(Value.ofForce(message));
             checkReceiveMessage.to(() -> {

@@ -2,9 +2,7 @@ package io.aether.cli;
 
 import io.aether.api.common.AccessGroup;
 import io.aether.api.common.CryptoLib;
-import io.aether.cloud.client.AetherCloudClient;
-import io.aether.cloud.client.ClientState;
-import io.aether.cloud.client.ClientStateInMemory;
+import io.aether.cloud.client.*;
 import io.aether.common.AccessGroupI;
 import io.aether.utils.AString;
 import io.aether.utils.Destroyer;
@@ -16,7 +14,6 @@ import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
 import io.aether.utils.slots.EventConsumer;
 import io.aether.utils.slots.EventConsumerWithQueue;
-import io.aether.utils.streams.Gate;
 import io.aether.utils.streams.Value;
 
 import java.io.BufferedReader;
@@ -78,7 +75,7 @@ public class CliApi {
     public SendApi send(@Doc("Previously saved client state") @Optional(value = "state.bin") File state, UUID address) {
         client = new AetherCloudClient(ClientStateInMemory.load(state));
         destroyer.add(client);
-        var st = client.openStreamToClient(address);
+        var st = client.getMessageNode(address, MessageEventListener.DEFAULT);
         return new SendApi(st);
     }
 
@@ -214,7 +211,7 @@ public class CliApi {
             client = new AetherCloudClient(state);
             destroyer.add(client);
             client.onClientStream(m -> {
-                m.up().toConsumer("c1",d -> {
+                m.toConsumer(d -> {
                     if (filter != null && !filter.contains(m.getConsumerUUID())) return;
                     if (not != null && not.contains(m.getConsumerUUID())) return;
                     var msg = new Msg(m.getConsumerUUID(), d);
@@ -270,9 +267,9 @@ public class CliApi {
     }
 
     public class SendApi {
-        private final Gate<byte[], byte[]> st;
+        private final MessageNode st;
 
-        public SendApi(Gate<byte[], byte[]> st) {
+        public SendApi(MessageNode st) {
             this.st = st;
         }
 

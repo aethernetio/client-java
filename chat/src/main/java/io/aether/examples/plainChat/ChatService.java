@@ -38,7 +38,7 @@ public class ChatService {
             });
         });
         aether.onClientStream((s) -> {
-            var api = s.up().bufferAutoFlush().toApiR(ServiceServerApi.META,
+            var api = s.toApiR(ServiceServerApi.META,
                     c -> {
                         var r = c.makeRemote(ServiceClientApi.META);
                         clients.put(s.getConsumerUUID(), r);

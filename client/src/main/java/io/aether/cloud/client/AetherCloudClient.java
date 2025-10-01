@@ -5,9 +5,10 @@ import io.aether.api.clientserverapi.AuthorizedApi;
 import io.aether.api.clientserverapi.ServerApiByUid;
 import io.aether.api.clientserverregapi.FinishResult;
 import io.aether.api.common.*;
-import io.aether.api.common.SignedKey;
 import io.aether.common.AccessGroupI;
-import io.aether.crypto.*;
+import io.aether.crypto.AKey;
+import io.aether.crypto.CryptoEngine;
+import io.aether.crypto.CryptoProviderFactory;
 import io.aether.logger.Log;
 import io.aether.utils.ConcurrentHashSet;
 import io.aether.utils.Destroyer;
@@ -18,12 +19,12 @@ import io.aether.utils.interfaces.ABiConsumer;
 import io.aether.utils.interfaces.AConsumer;
 import io.aether.utils.interfaces.AFunction;
 import io.aether.utils.interfaces.Destroyable;
-import io.aether.utils.slots.AMFuture;
+import io.aether.utils.rcollections.RCol;
+import io.aether.utils.rcollections.RFMap;
+import io.aether.utils.rcollections.RMap;
 import io.aether.utils.slots.EventBiConsumer;
 import io.aether.utils.slots.EventConsumer;
 import io.aether.utils.slots.EventConsumerWithQueue;
-import io.aether.utils.streams.Gate;
-import io.aether.utils.streams.MapBase;
 import io.aether.utils.streams.Value;
 import it.unimi.dsi.fastutil.longs.LongSet;
 import it.unimi.dsi.fastutil.objects.ObjectSet;
@@ -40,21 +41,30 @@ import java.util.concurrent.atomic.AtomicReference;
 import static io.aether.utils.flow.Flow.flow;
 
 public final class AetherCloudClient implements Destroyable {
-    final Log.Node logClientContext;
     public final AFuture startFuture = new AFuture();
     public final EventConsumer<MessageNode> onClientStream = new EventConsumerWithQueue<>();
     public final Destroyer destroyer = new Destroyer(getClass().getSimpleName());
+    final Log.Node logClientContext;
     final Map<Integer, ConnectionWork> connections = new ConcurrentHashMap<>();
-    final MapBase<UUID, UUIDAndCloud> clouds = new MapBase<>(UUIDAndCloud::getUid).withLog("client clouds");
+    final RMap<UUID, UUIDAndCloud> clouds = RCol.map();
+    final RFMap<UUID, UUIDAndCloud> cloudsFutures = clouds.mapToFutures();
     final AtomicReference<RegStatus> regStatus = new AtomicReference<>(RegStatus.NO);
-    final MapBase<Integer, ServerDescriptor> servers = new MapBase<>((ServerDescriptor serverDescriptor) -> (int) serverDescriptor.getId());
+    final RMap<Integer, ServerDescriptor> servers = RCol.map();
+    final RFMap<Integer, ServerDescriptor> serversFutures = servers.mapToFutures();
     final long lastSecond;
     final Map<UUID, MessageNode> messageNodeMap = new ConcurrentHashMap<>();
     final EventConsumer<UUID> onNewChild = new EventConsumer<>();
     final EventBiConsumer<UUID, ServerApiByUid> onNewChildApi = new EventBiConsumer<>();
+    final Queue<AConsumer<AuthorizedApi>> queueAuth = new ConcurrentLinkedQueue<>();
+    final Set<UUID> requestCloud = new ConcurrentHashSet<>();
+    final Set<Short> requestServers = new ConcurrentHashSet<>();
+    final Map<Long, Map<UUID, ARFuture<Boolean>>> accessOperationsAdd = new ConcurrentHashMap<>();
+    final Map<Long, Map<UUID, ARFuture<Boolean>>> accessOperationsRemove = new ConcurrentHashMap<>();
+    final Queue<ClientTask> clientTasks = new ConcurrentLinkedQueue<>();
     private final ClientState clientState;
     private final AtomicBoolean startConnection = new AtomicBoolean();
     private final int timeout1 = 5;
+    public volatile long ping;
     private String name;
 
     {
@@ -73,10 +83,10 @@ public final class AetherCloudClient implements Destroyable {
         logClientContext = Log.createContext("SystemComponent", "Client", "ClientName", name);
         try (var ln = Log.context(logClientContext)) {
             this.clientState = store;
-            clouds.addInputHard().toConsumer("Client clouds map input up hard", uu -> store.setCloud(uu.getUid(), uu.getCloud()));
-            servers.addInputHard().toConsumer("Client servers map input up hard", s -> {
-                var ss = store.getServerInfo(s.getId());
-                ss.setDescriptor(s);
+            clouds.forUpdate().add(uu -> store.setCloud(uu.key, uu.newValue.getCloud()));
+            servers.forUpdate().add(s -> {
+                var ss = store.getServerInfo(s.key);
+                ss.setDescriptor(s.newValue);
             });
             onNewChild.add(u -> getConnection(c -> {
                 if (onNewChildApi.hasListener()) {
@@ -117,21 +127,27 @@ public final class AetherCloudClient implements Destroyable {
         this.name = name;
     }
 
-    public AMFuture<ServerDescriptor> getServer(int id) {
-        return servers.get(id);
+    public ARFuture<ServerDescriptor> getServer(int id) {
+        var res = serversFutures.get(id);
+        if (!res.isDone()) {
+            requestServers.add((short) id);
+            flush();
+        }
+        res.timeoutError(5, "timeout get server description: " + id);
+        return res;
     }
 
     public void getServerDescriptorForUid(@NotNull UUID uid, AConsumer<ServerDescriptor> t) {
         if (destroyer.isDestroyed()) return;
         if (uid.equals(getUid())) {
-            var cloud = clouds.get(uid).getNow();
+            var cloud = clouds.get(uid);
             for (var pp : cloud.getCloud().getData()) {
-                t.accept(servers.get((int) pp).getNow());
+                t.accept(servers.get((int) pp));
             }
         }
-        getCloud(uid).once(p -> {
+        getCloud(uid).to(p -> {
             for (var pp : p.getData()) {
-                servers.get((int) pp).once(t, timeout1, () -> Log.warn("timeout server resolve"));
+                serversFutures.get((int) pp).to(t, timeout1, () -> Log.warn("timeout server resolve"));
             }
         }, timeout1, () -> Log.warn("timeout cloud resolve: $uid", "uid", uid));
     }
@@ -139,14 +155,14 @@ public final class AetherCloudClient implements Destroyable {
     void getConnection(@NotNull UUID uid, @NotNull AConsumer<ConnectionWork> t) {
         if (destroyer.isDestroyed()) return;
         if (uid.equals(getUid())) {
-            UUIDAndCloud cloud0 = clouds.get(uid).getNow();
+            UUIDAndCloud cloud0 = clouds.get(uid);
             Cloud cloud = null;
             if (cloud0 == null) {
                 cloud = clientState.getCloud(uid);
             } else {
                 cloud = cloud0.getCloud();
             }
-            var s = servers.get((int) cloud.getData()[0]).getNow();
+            var s = servers.get((int) cloud.getData()[0]);
             t.accept(getConnection(s));
             return;
         }
@@ -157,7 +173,7 @@ public final class AetherCloudClient implements Destroyable {
     }
 
     ConnectionWork getConnection(@NotNull ServerDescriptor serverDescriptor) {
-        servers.set((int) serverDescriptor.getId(), serverDescriptor);
+        servers.put((int) serverDescriptor.getId(), serverDescriptor);
         var c = connections.get((int) serverDescriptor.getId());
         if (c == null) {
             c = connections.computeIfAbsent((int) serverDescriptor.getId(),
@@ -191,6 +207,9 @@ public final class AetherCloudClient implements Destroyable {
     public AFuture connect() {
         if (!startConnection.compareAndSet(false, true)) return startFuture;
         connect(10);
+        startFuture.to(() -> {
+            RU.scheduleAtFixedRate(destroyer, 3, TimeUnit.MILLISECONDS, this::flush);
+        });
         return startFuture;
     }
 
@@ -242,8 +261,6 @@ public final class AetherCloudClient implements Destroyable {
         return res;
     }
 
-    final Queue<AConsumer<AuthorizedApi>> queueAuth = new ConcurrentLinkedQueue<>();
-
     public void getAuthApi(@NotNull AConsumer<AuthorizedApi> t) {
         if (destroyer.isDestroyed()) return;
         queueAuth.add(a -> {
@@ -253,7 +270,19 @@ public final class AetherCloudClient implements Destroyable {
     }
 
     public void flush() {
-
+        if (connections.isEmpty()) {
+            if (!messageNodeMap.isEmpty() || !requestServers.isEmpty() || !requestCloud.isEmpty()) {
+                AFuture f = new AFuture();
+                getConnection(connectionWork -> {
+                    f.done();
+                    connectionWork.flush();
+                });
+                f.timeoutError(2, "timeout get first connection");
+            }
+        }
+        for (var c : connections.values()) {
+            c.flush();
+        }
     }
 
     void getConnection(@NotNull AConsumer<ConnectionWork> t) {
@@ -269,17 +298,16 @@ public final class AetherCloudClient implements Destroyable {
         return connections.values();
     }
 
-    final Set<UUID> requestCloud = new ConcurrentHashSet<>();
-    final Set<Short> requestServers = new ConcurrentHashSet<>();
-    final Map<Long, Map<UUID, ARFuture<Boolean>>> accessOperationsAdd = new ConcurrentHashMap<>();
-    final Map<Long, Map<UUID, ARFuture<Boolean>>> accessOperationsRemove = new ConcurrentHashMap<>();
-
-    public AMFuture<Cloud> getCloud(@NotNull UUID uid) {
-        var f = clouds.get(uid);
+    public ARFuture<Cloud> getCloud(@NotNull UUID uid) {
+        var f = cloudsFutures.get(uid);
         var res = f.map(UUIDAndCloud::getCloud);
         if (!res.isDone()) {
             requestCloud.add(uid);
+            flush();
         }
+        res.timeout(4, () -> {
+            Log.error("timeout get cloud: $uid", "uid", uid, "client", AetherCloudClient.this);
+        });
         return res;
     }
 
@@ -294,19 +322,22 @@ public final class AetherCloudClient implements Destroyable {
     public void confirmRegistration(FinishResult regResp) {
         assert !isRegistered();
         if (!regStatus.compareAndSet(RegStatus.BEGIN, RegStatus.CONFIRM)) return;
-        clouds.set(new UUIDAndCloud(regResp.getUid(), regResp.getCloud()));
+        clouds.put(regResp.getUid(), new UUIDAndCloud(regResp.getUid(), regResp.getCloud()));
         clientState.setUid(regResp.getUid());
         clientState.setAlias(regResp.getAlias());
         assert isRegistered();
         Log.info("receive my cloud: $cloud", "cloud", regResp.getCloud());
         for (var c : regResp.getCloud().getData()) {
-            servers.get((int) c).once(cl -> Log.info("resolve server", "server", cl), 5, () -> Log.warn("timeout resolve server"));
+            serversFutures.get((int) c).to(cl -> Log.info("resolve server", "server", cl), 5, () -> Log.warn("timeout resolve server"));
         }
-        servers.flush();
         startFuture.done();
     }
 
-    MessageNode getMessageNode(@NotNull UUID uid, MessageEventListener strategy) {
+    public MessageNode getMessageNode(@NotNull UUID uid) {
+        return getMessageNode(uid, MessageEventListener.DEFAULT);
+    }
+
+    public MessageNode getMessageNode(@NotNull UUID uid, MessageEventListener strategy) {
         Log.debug("getMessageNode for: $uid", "uid", uid);
         Objects.requireNonNull(uid);
         return messageNodeMap.computeIfAbsent(uid, k -> {
@@ -318,10 +349,6 @@ public final class AetherCloudClient implements Destroyable {
 
     public MessageNode openStreamToClientDetails(@NotNull UUID uid, MessageEventListener strategy) {
         return getMessageNode(uid, strategy);
-    }
-
-    public Gate<byte[], byte[]> openStreamToClient(@NotNull UUID uid) {
-        return openStreamToClientDetails(uid, MessageEventListener.DEFAULT).up();
     }
 
     @Override
@@ -362,8 +389,8 @@ public final class AetherCloudClient implements Destroyable {
 
     public void onMessage(ABiConsumer<UUID, byte[]> consumer) {
         onClientStream(m -> {
-            m.up().toConsumer("onMessageM1", d -> {
-                consumer.accept(m.getConsumerUUID(), d);
+            m.bufferIn.add(d -> {
+                consumer.accept(m.getConsumerUUID(), d.data());
             });
         });
     }
@@ -375,8 +402,6 @@ public final class AetherCloudClient implements Destroyable {
     public void onNewChildren(AConsumer<UUID> consumer) {
         onNewChild.add(consumer);
     }
-
-    public volatile long ping;
 
     public ARFuture<AccessGroupI> createAccessGroup(UUID... uids) {
         return createAccessGroupWithOwner(getUid(), uids);
@@ -403,29 +428,21 @@ public final class AetherCloudClient implements Destroyable {
                 });
     }
 
-    final Queue<ClientTask> clientTasks = new ConcurrentLinkedQueue<>();
-
-    private static class ClientTask {
-        final UUID uid;
-        final AConsumer<ServerApiByUid> task;
-
-        public ClientTask(UUID uid, AConsumer<ServerApiByUid> task) {
-            this.uid = uid;
-            this.task = task;
-        }
-    }
-
     public void getClientApi(UUID uid, AConsumer<ServerApiByUid> c) {
         clientTasks.add(new ClientTask(uid, c));
     }
 
     public boolean verifySign(SignedKey signedKey) {
-        return SignedKeyUtil.verifySign(signedKey,clientState.getRootSigners());
+        return SignedKeyUtil.verifySign(signedKey, clientState.getRootSigners());
+    }
+
+    public void sendMessage(UUID uid, Value<byte[]> message) {
+        getMessageNode(uid, MessageEventListener.DEFAULT).send(message);
     }
 
     public AFuture sendMessage(UUID uid, byte[] message) {
         AFuture res = new AFuture();
-        openStreamToClient(uid).send(Value.ofForce(message).onSuccess((o) -> {
+        sendMessage(uid, Value.of(message).onSuccess((o) -> {
             res.done();
         }));
         return res;
@@ -433,7 +450,7 @@ public final class AetherCloudClient implements Destroyable {
 
     public CryptoEngine getCryptoEngineForServer(short serverId) {
         var k = getMasterKey();
-        return k.getCryptoProvider().createKeyForClient(k,serverId).asSymmetric().toCryptoEngine();
+        return k.getCryptoProvider().createKeyForClient(k, serverId).asSymmetric().toCryptoEngine();
     }
 
     public static AetherCloudClient of(ClientState state) {
@@ -444,5 +461,15 @@ public final class AetherCloudClient implements Destroyable {
         NO,
         BEGIN,
         CONFIRM
+    }
+
+    private static class ClientTask {
+        final UUID uid;
+        final AConsumer<ServerApiByUid> task;
+
+        public ClientTask(UUID uid, AConsumer<ServerApiByUid> task) {
+            this.uid = uid;
+            this.task = task;
+        }
     }
 }

@@ -3,6 +3,7 @@ package io.aether.examples.plainChat;
 import io.aether.api.chatdsl.*;
 import io.aether.cloud.client.AetherCloudClient;
 import io.aether.cloud.client.ClientStateInMemory;
+import io.aether.cloud.client.MessageEventListener;
 import io.aether.logger.Log;
 import io.aether.utils.futures.ARFuture;
 import io.aether.utils.slots.EventConsumer;
@@ -26,7 +27,7 @@ public class ChatClient implements ServiceClientApi {
         aether = new AetherCloudClient(new ClientStateInMemory(chatService, regUri), name);
         aether.startFuture.to(() -> {
             try {
-                var s = aether.openStreamToClient(chatService)
+                var s = aether.getMessageNode(chatService)
                         .toApiR(ServiceClientApi.META, c->{
                             service.done(c.makeRemote(ServiceServerApi.META));
                             return this;
