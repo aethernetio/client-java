@@ -1,48 +1,81 @@
 package io.aether.cloud.client;
 
 import io.aether.logger.Log;
-import io.aether.net.fastMeta.FastApiContext;
-import io.aether.net.fastMeta.FastApiContextLocal;
 import io.aether.net.fastMeta.FastMetaApi;
+import io.aether.net.fastMeta.FastMetaClient;
+import io.aether.net.fastMeta.RemoteApi;
+import io.aether.net.fastMeta.nio.NIOFastMetaClient;
 import io.aether.utils.RU;
-import io.aether.utils.SocketNIOStreamClient;
 import io.aether.utils.futures.AFuture;
+import io.aether.utils.futures.ARFuture;
 import io.aether.utils.interfaces.Destroyable;
-import io.aether.utils.streams.Gate;
 
 import java.net.URI;
 
-public abstract class Connection<LT, RT, RT2 extends RT> implements Destroyable {
+public abstract class Connection<LT, RT extends RemoteApi> implements Destroyable {
+
     protected final AetherCloudClient client;
     protected final URI uri;
-    protected final AFuture connectFuture = new AFuture();
-    protected FastApiContextLocal<LT> rootApiContext;
-    final SocketNIOStreamClient socketStreamClient;
-    protected final RT2 rootApi;
+    protected final ARFuture<RT> connectFuture = ARFuture.of();
+    protected final FastMetaClient<LT, RT> fastMetaClient;
+    protected volatile RT rootApi;
 
-    public Connection(AetherCloudClient client, URI uri, FastMetaApi<LT, ? extends LT> lt, FastMetaApi<RT, RT2> rt) {
+    protected Connection(
+            AetherCloudClient client,
+            URI uri,
+            FastMetaApi<LT, ?> localApiMeta,
+            FastMetaApi<?, RT> remoteApiMeta,
+            FastMetaClient<LT, RT> clientImpl
+    ) {
         assert uri != null;
         this.uri = uri;
         this.client = client;
+        this.fastMetaClient = clientImpl;
+
         if (client.destroyer.isDestroyed()) {
+            fastMetaClient.close();
+            connectFuture.cancel();
             rootApi = null;
-            gate = null;
-            socketStreamClient = null;
             return;
         }
+
         client.destroyer.add(this);
-        socketStreamClient = new SocketNIOStreamClient(uri);
-        socketStreamClient.connectedFuture.to(connectFuture);
-        gate = socketStreamClient.up().bufferAutoFlush();
-        this.rootApiContext = gate.toApiR(lt, c->RU.cast(this));
-        rootApi = rootApiContext.makeRemote(rt);
+        client.destroyer.add(fastMetaClient);
+
+        LT localApi = RU.cast(this);
+
+        fastMetaClient.connect(uri, localApiMeta, remoteApiMeta, r -> {
+            rootApi = r;
+            return localApi;
+        }).map(remoteApiMeta::makeRemote).to(connectFuture);
+
+    }
+
+    public Connection(
+            AetherCloudClient client,
+            URI uri,
+            FastMetaApi<LT, ?> localApiMeta,
+            FastMetaApi<?, RT> remoteApiMeta
+    ) {
+        this(client, uri, localApiMeta, remoteApiMeta, new NIOFastMetaClient<>());
+    }
+
+    public RT getRootApi() {
+        if (!connectFuture.isDone()) {
+            Log.warn("Accessing rootApi before connection is established: " + uri);
+        }
+        return rootApi;
+    }
+
+    public ARFuture<RT> getRootApiFuture() {
+        return connectFuture;
     }
 
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
-        var that = (Connection<?, ?, ?>) o;
+        var that = (Connection<?, ?>) o;
         return uri.equals(that.uri);
     }
 
@@ -53,24 +86,7 @@ public abstract class Connection<LT, RT, RT2 extends RT> implements Destroyable 
 
     @Override
     public AFuture destroy(boolean force) {
-        var res = new AFuture();
-        socketStreamClient.destroy(force);
-        connectFuture.to(() -> {
-            try {
-                rootApiContext.close();
-            } catch (Exception e) {
-                Log.warn("close connection error", e);
-            }
-            try {
-                socketStreamClient.destroy(force);
-            } catch (Exception e) {
-                Log.warn("close connection error", e);
-            }
-            res.done();
-        });
-        return res;
+        Log.info("Destroying Connection to " + uri);
+        return fastMetaClient.close();
     }
-
-    final Gate<byte[], byte[]> gate;
-
 }

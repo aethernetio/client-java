@@ -25,7 +25,7 @@ public class PlainChatTest {
         if (!AFuture.all(chatClient1.aether.startFuture, chatClient2.aether.startFuture).waitDoneSeconds(10)) {
             throw new RuntimeException(new TimeoutException());
         }
-        var future = new ARFuture<MessageDescriptor>();
+        var future = ARFuture.<MessageDescriptor>of();
         chatClient2.onMessage.add(m -> {
             Log.info("receive message: $msg", "msg", m);
             future.tryDone(m);

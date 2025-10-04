@@ -24,12 +24,10 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedDeque;
 
 public class MessageNode implements ToString {
-    public final EventConsumer<Throwable> onError = new EventConsumer<>();
     private final AetherCloudClient client;
      final UUID consumer;
     final ARFuture<Cloud> consumerCloud;
      final Set<ConnectionWork> connectionsOut = new ConcurrentHashSet<>();
-     final Set<ConnectionWork> connectionsIn = new ConcurrentHashSet<>();
     final Deque<Value<byte[]>> bufferOut = new ConcurrentLinkedDeque<>();
     public final EventConsumerWithQueue<Value<byte[]>> bufferIn = new EventConsumerWithQueue<>();
     private volatile MessageEventListener strategy;
@@ -88,6 +86,7 @@ public class MessageNode implements ToString {
     }
 
     public void sendMessageFromServerToClient(Value<byte[]> data) {
+        Log.trace("sendMessageFromServerToClient");
         bufferIn.fire(data);
     }
 
@@ -103,12 +102,8 @@ public class MessageNode implements ToString {
             AFunction<FastApiContextLocal<LT>,LT> localApi) {
         FastApiContextLocal<LT> ctx = new FastApiContextLocal<>(localApi) {
             @Override
-            public AFuture flush() {
-                return flushToGate(d->{
-                    var res=new AFuture();
-                    send(Value.ofForce(d).linkFuture(res));
-                    return res;
-                });
+            public void flush(AFuture sendFuture) {
+                send(Value.of(remoteDataToArray()).linkFuture(sendFuture));
             }
         };
         toApi(ctx, metaLt, ctx.localApi);
@@ -128,15 +123,13 @@ public class MessageNode implements ToString {
     public <LT> FastApiContextLocal<LT> toApi(FastMetaApi<LT, ? extends LT> metaLt, LT localApi) {
         FastApiContextLocal<LT> ctx = new FastApiContextLocal<>(localApi) {
             @Override
-            public AFuture flush() {
-                AFuture f = new AFuture();
+            public void flush(AFuture sendFuture) {
                 var d=remoteDataToArray();
                 if(d.length>0){
-                    send(Value.ofForce(d).linkFuture(f));
+                    send(Value.ofForce(d).linkFuture(sendFuture));
                 }else{
-                    f.done();
+                    sendFuture.done();
                 }
-                return f;
             }
         };
         toApi(ctx, metaLt, localApi);

@@ -9,6 +9,7 @@ import io.aether.common.AccessGroupI;
 import io.aether.crypto.AKey;
 import io.aether.crypto.CryptoEngine;
 import io.aether.crypto.CryptoProviderFactory;
+import io.aether.logger.LNode;
 import io.aether.logger.Log;
 import io.aether.utils.ConcurrentHashSet;
 import io.aether.utils.Destroyer;
@@ -41,10 +42,10 @@ import java.util.concurrent.atomic.AtomicReference;
 import static io.aether.utils.flow.Flow.flow;
 
 public final class AetherCloudClient implements Destroyable {
-    public final AFuture startFuture = new AFuture();
+    public final AFuture startFuture = AFuture.make();
     public final EventConsumer<MessageNode> onClientStream = new EventConsumerWithQueue<>();
     public final Destroyer destroyer = new Destroyer(getClass().getSimpleName());
-    final Log.Node logClientContext;
+    final LNode logClientContext;
     final Map<Integer, ConnectionWork> connections = new ConcurrentHashMap<>();
     final RMap<UUID, UUIDAndCloud> clouds = RCol.map();
     final RFMap<UUID, UUIDAndCloud> cloudsFutures = clouds.mapToFutures();
@@ -64,7 +65,6 @@ public final class AetherCloudClient implements Destroyable {
     private final ClientState clientState;
     private final AtomicBoolean startConnection = new AtomicBoolean();
     private final int timeout1 = 5;
-    public volatile long ping;
     private String name;
 
     {
@@ -196,11 +196,6 @@ public final class AetherCloudClient implements Destroyable {
                     connection.scheduledWork();
                 }
             });
-//            RU.scheduleAtFixedRate(destroyer, 5, TimeUnit.MILLISECONDS, () -> {
-//                for (ConnectionWork connection : getConnections()) {
-//                    connection.safeApiCon.flush();
-//                }
-//            });
         });
     }
 
@@ -228,7 +223,7 @@ public final class AetherCloudClient implements Destroyable {
             var startFutures = flow(uris).shuffle().limit(countServersForRegistration)
                     .map(sd -> {
                         try (var ln = Log.context(logClientContext)) {
-                            return new ConnectionRegistration(this, sd).connectFuture;
+                            return new ConnectionRegistration(this, sd).connectFuture.toFuture();
                         }
                     })
                     .toList();
@@ -256,7 +251,7 @@ public final class AetherCloudClient implements Destroyable {
 
     public <T> ARFuture<T> getAuthApi1(@NotNull AFunction<AuthorizedApi, ARFuture<T>> t) {
         if (destroyer.isDestroyed()) return ARFuture.canceled();
-        ARFuture<T> res = new ARFuture<>();
+        ARFuture<T> res = ARFuture.of();
         getAuthApi(a -> t.apply(a).to(res));
         return res;
     }
@@ -272,7 +267,7 @@ public final class AetherCloudClient implements Destroyable {
     public void flush() {
         if (connections.isEmpty()) {
             if (!messageNodeMap.isEmpty() || !requestServers.isEmpty() || !requestCloud.isEmpty()) {
-                AFuture f = new AFuture();
+                AFuture f = AFuture.make();
                 getConnection(connectionWork -> {
                     f.done();
                     connectionWork.flush();
@@ -299,6 +294,8 @@ public final class AetherCloudClient implements Destroyable {
     }
 
     public ARFuture<Cloud> getCloud(@NotNull UUID uid) {
+        var r=clientState.getCloud(uid);
+        if(r!=null) return ARFuture.of(r);
         var f = cloudsFutures.get(uid);
         var res = f.map(UUIDAndCloud::getCloud);
         if (!res.isDone()) {
@@ -413,17 +410,17 @@ public final class AetherCloudClient implements Destroyable {
                     @Override
                     public ARFuture<Boolean> add(UUID uuid) {
                         if (data.contains(uuid)) {
-                            return ARFuture.completed(Boolean.FALSE);
+                            return ARFuture.of(Boolean.FALSE);
                         }
-                        return accessOperationsAdd.computeIfAbsent(id, (k) -> new ConcurrentHashMap<>()).computeIfAbsent(uuid, k -> new ARFuture<>());
+                        return accessOperationsAdd.computeIfAbsent(id, (k) -> new ConcurrentHashMap<>()).computeIfAbsent(uuid, k -> ARFuture.of());
                     }
 
                     @Override
                     public ARFuture<Boolean> remove(UUID uuid) {
                         if (!data.contains(uuid)) {
-                            return ARFuture.completed(Boolean.FALSE);
+                            return ARFuture.of(Boolean.FALSE);
                         }
-                        return accessOperationsRemove.computeIfAbsent(id, (k) -> new ConcurrentHashMap<>()).computeIfAbsent(uuid, k -> new ARFuture<>());
+                        return accessOperationsRemove.computeIfAbsent(id, (k) -> new ConcurrentHashMap<>()).computeIfAbsent(uuid, k -> ARFuture.of());
                     }
                 });
     }
@@ -441,7 +438,7 @@ public final class AetherCloudClient implements Destroyable {
     }
 
     public AFuture sendMessage(UUID uid, byte[] message) {
-        AFuture res = new AFuture();
+        AFuture res = AFuture.make();
         sendMessage(uid, Value.of(message).onSuccess((o) -> {
             res.done();
         }));
@@ -451,6 +448,17 @@ public final class AetherCloudClient implements Destroyable {
     public CryptoEngine getCryptoEngineForServer(short serverId) {
         var k = getMasterKey();
         return k.getCryptoProvider().createKeyForClient(k, serverId).asSymmetric().toCryptoEngine();
+    }
+
+    public long getNextPing() {
+        return 0;
+    }
+
+    public void setCloud(UUID uid, Cloud cloud) {
+        requestCloud.remove(uid);
+        clouds.put(uid, new UUIDAndCloud(uid, cloud));
+        clientState.setCloud(uid, cloud);
+
     }
 
     public static AetherCloudClient of(ClientState state) {

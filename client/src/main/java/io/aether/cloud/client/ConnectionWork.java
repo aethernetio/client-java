@@ -24,18 +24,18 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
-public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi, LoginApiRemote> implements ClientApiUnsafe {
-    //region counters
+public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> implements ClientApiUnsafe {
     public final AtomicLong lastBackPing = new AtomicLong(Long.MAX_VALUE);
     public final AMFuture<ConnectionWork> ready = new AMFuture<>();
     final ClientApiSafe apiSafe = new MyClientApiSafe(client);
     final FastApiContext apiSafeCtx;
     final CryptoEngine cryptoEngine;
-    final RemoteApiFuture<AuthorizedApi> remoteApiFuture = new RemoteApiFuture<>();
+    final RemoteApiFuture<AuthorizedApiRemote> remoteApiFuture = new RemoteApiFuture<>(AuthorizedApiRemote.META);
     private final ServerDescriptor serverDescriptor;
     final private AtomicBoolean inProcess = new AtomicBoolean();
     boolean basicStatus;
     long lastWorkTime;
+    volatile boolean firstAuth;
 
     public ConnectionWork(AetherCloudClient client, ServerDescriptor s) {
         super(client, s.getIpAddress().getURI(AetherCodec.TCP), ClientApiUnsafe.META, LoginApi.META);
@@ -49,12 +49,24 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi, LoginA
         });
         apiSafeCtx = new FastApiContext() {
             @Override
-            public AFuture flush() {
-                if (remoteApiFuture.isEmpty()) return AFuture.completed();
-                var e = new LoginStream(this, cryptoEngine::encrypt, remoteApiFuture);
-                if (e.data == null || e.data.length == 0) return AFuture.completed();
-                rootApi.loginByAlias(client.getAlias(), e);
-                return rootApiContext.flush();
+            public void flush(AFuture sendFuture) {
+                if (remoteApiFuture.isEmpty()) {
+                    sendFuture.done();
+                    return;
+                }
+
+                getRootApiFuture().to(api -> {
+                    remoteApiFuture.executeAll(this, sendFuture);
+                    var d = remoteDataToArray();
+                    if (d.length == 0) {
+                        sendFuture.done();
+                        return;
+                    }
+                    var loginStream = new LoginStream(cryptoEngine::encrypt, d);
+                    api.loginByAlias(client.getAlias(), loginStream);
+                    rootApi.flush(sendFuture);
+                });
+
             }
         };
     }
@@ -77,28 +89,31 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi, LoginA
         List<Message> messageForSend = null;
         for (var m : client.messageNodeMap.values()) {
             if (m.connectionsOut.contains(this)) {
-                if (messageForSend == null) {
-                    messageForSend = new ObjectArrayList<>();
-                }
                 List<Value<byte[]>> mm = new ArrayList<>();
                 RU.readAll(m.bufferOut, mm::add);
-                Log.debug("message client to server: $uidFrom -> $uidTo",
-                        "uidFrom", client.getUid(),
-                        "uidTo", m.consumer);
-                Flow.flow(mm)
-                        .map(v -> new Message(m.consumer, v.data()))
-                        .toCollection(messageForSend);
-                sendFuture.onCancel(() -> {
-                    m.bufferOut.addAll(mm);
-                });
+                if (!mm.isEmpty()) {
+                    Log.debug("message send client to server: $uidFrom -> $uidTo",
+                            "uidFrom", client.getUid(),
+                            "uidTo", m.consumer);
+                    if (messageForSend == null) {
+                        messageForSend = new ObjectArrayList<>();
+                    }
+                    Flow.flow(mm)
+                            .map(v -> new Message(m.consumer, v.data()))
+                            .toCollection(messageForSend);
+                    sendFuture.onCancel(() -> {
+                        m.bufferOut.addAll(mm);
+                    });
+                }
             }
         }
-        if (messageForSend != null) {
+        if (messageForSend != null && !messageForSend.isEmpty()) {
             a.sendMessages(messageForSend.toArray(new Message[0]));
         }
-        var p = client.ping;
-        if (p != 0) {
-            a.ping(p);
+        if (!firstAuth) {
+            a.ping(0).to(() -> {
+                firstAuth = true;
+            });
         }
     }
 
@@ -118,7 +133,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi, LoginA
 
     @Override
     public String toString() {
-        return "work(" + socketStreamClient + ")";
+        return "work(" + serverDescriptor.getIpAddress().getURI(AetherCodec.TCP) + ")";
     }
 
     public void setBasic(boolean basic) {
@@ -132,23 +147,24 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi, LoginA
     public void scheduledWork() {
         var t = RU.time();
         if ((t - lastWorkTime < client.getPingTime() || !inProcess.compareAndSet(false, true))) return;
-        try {
-            lastWorkTime = t;
-            apiSafeCtx.flush();
-        } finally {
-            inProcess.set(false);
-        }
+        lastWorkTime = t;
+        var f = AFuture.make();
+        f.addListener(v -> inProcess.set(false));
+        f.timeout(2,()->{
+            Log.warn("connection work flush timeout");
+        });
+        apiSafeCtx.flush(f);
     }
 
     public void flush() {
         if (!inProcess.compareAndSet(false, true)) return;
-        var t = RU.time();
-        try {
-            lastWorkTime = t;
-            apiSafeCtx.flush();
-        } finally {
-            inProcess.set(false);
-        }
+        lastWorkTime = RU.time();
+        var f = AFuture.make();
+        f.addListener(v -> inProcess.set(false));
+        f.timeout(2,()->{
+           Log.warn("connection work flush timeout");
+        });
+        apiSafeCtx.flush(f);
     }
 
     private static class MyClientApiSafe implements ClientApiSafe {
@@ -175,6 +191,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi, LoginA
 
         @Override
         public void sendMessages(Message[] msg) {
+            Log.trace("receive messages: $count", "count", msg.length);
             for (var m : msg) {
                 Log.trace("receive message $uid1 <- $uid2", "uid1", client.getUid(), "uid2", m.getUid());
                 client.getMessageNode(m.getUid(), MessageEventListener.DEFAULT).sendMessageFromServerToClient(Value.of(m.getData()));
@@ -188,7 +205,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApi, LoginA
 
         @Override
         public void sendCloud(UUID uid, Cloud cloud) {
-            client.clouds.put(uid, new UUIDAndCloud(uid, cloud));
+            client.setCloud(uid, cloud);
         }
 
         @Override

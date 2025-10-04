@@ -19,7 +19,7 @@ public class ChatClient implements ServiceClientApi {
     public final AetherCloudClient aether;
     public final EventConsumer<MessageDescriptor> onMessage = new EventConsumerWithQueue<>();
     private final Map<UUID, UserDescriptor> users = new ConcurrentHashMap<>();
-    private final ARFuture<ServiceServerApiRemote> service = new ARFuture<>();
+    private final ARFuture<ServiceServerApiRemote> service = ARFuture.of();
     private final String name;
 
     public ChatClient(UUID chatService, List<URI> regUri, String name) {

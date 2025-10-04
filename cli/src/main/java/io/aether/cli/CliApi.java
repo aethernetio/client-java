@@ -129,7 +129,7 @@ public class CliApi {
 
             @Doc("Add clients to access group")
             public AFuture add(@StdIn Set<UUID> uid) {
-                AFuture res = new AFuture();
+                AFuture res = AFuture.make();
                 client.getAuthApi(a -> {
                     AFuture.all(Flow.flow(uid).map(u -> a.addToAccessGroup(id, u)).map(ARFuture::toFuture).toList()).to(res);
                 });
@@ -138,7 +138,7 @@ public class CliApi {
 
             @Doc("Remove clients from access group")
             public AFuture remove(Set<UUID> uid) {
-                AFuture res = new AFuture();
+                AFuture res = AFuture.make();
                 client.getAuthApi(a -> {
                     AFuture.all(Flow.flow(uid).map(u -> a.removeFromAccessGroup(id, u)).map(ARFuture::toFuture).toList()).to(res);
                 });
@@ -274,7 +274,7 @@ public class CliApi {
         }
 
         public AFuture text(String text) {
-            AFuture res = new AFuture();
+            AFuture res = AFuture.make();
             st.send(Value.ofForce(text.getBytes(StandardCharsets.UTF_8),(o)-> {
                     res.done();
             }));
@@ -282,7 +282,7 @@ public class CliApi {
         }
 
         public AFuture file(File file) {
-            AFuture res = new AFuture();
+            AFuture res = AFuture.make();
             try (var is = new FileInputStream(file)) {
                 var data = is.readAllBytes();
                 st.send(Value.ofForce(data, (o)-> {

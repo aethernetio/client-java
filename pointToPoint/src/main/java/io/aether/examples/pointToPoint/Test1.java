@@ -6,7 +6,7 @@ import io.aether.utils.futures.ARFuture;
 public class Test1 {
     public void main(String[] args) {
         var aether1 = new AetherCloudClient();
-        ARFuture<String> messageFuture = new ARFuture<>();
+        ARFuture<String> messageFuture = ARFuture.of();
         aether1.onMessage((uid, msg) -> messageFuture.tryDone(new String(msg)));
         aether1.waitStart(10);
 

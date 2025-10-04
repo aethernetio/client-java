@@ -19,7 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class MeteostationService {
-    public static final ARFuture<UUID> uid = new ARFuture<>();
+    public static final ARFuture<UUID> uid = ARFuture.of();
     public final AetherCloudClient aether;
     public final Map<UUID, FastApiContextLocal<MeteostationServiceApi>> clients = new ConcurrentHashMap<>();
     final Queue<Metric> allMessages = new ConcurrentLinkedQueue<>();

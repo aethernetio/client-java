@@ -32,7 +32,7 @@ public abstract class AccessGroupImpl implements AccessGroupI {
 
     @Override
     public ARFuture<Boolean> contains(UUID uid) {
-        return ARFuture.completed(data.contains(uid));
+        return ARFuture.of(data.contains(uid));
     }
 
 }

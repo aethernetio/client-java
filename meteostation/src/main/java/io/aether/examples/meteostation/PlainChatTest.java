@@ -20,7 +20,7 @@ public class PlainChatTest {
         MeteostationClientConsole meteostationClientConsole1 = new MeteostationClientConsole(meteostationService.aether.getUid(), registrationUri, "client1");
         MeteostationClientConsole meteostationClientConsole2 = new MeteostationClientConsole(meteostationService.aether.getUid(), registrationUri, "client2");
         AFuture.all(meteostationClientConsole1.aether.startFuture, meteostationClientConsole2.aether.startFuture).waitDoneSeconds(10);
-        var future = new ARFuture<Metric>();
+        var future = ARFuture.<Metric>of();
         meteostationClientConsole2.onMessage.add(m -> {
             Log.info("receive message: $msg", "msg", m);
             future.tryDone(m);
