@@ -10,7 +10,7 @@ types:
       registrationUri: URI[]
       servers: ServerDescriptor[]
       clients: ClientInfo[]
-      rootSigners: String
+      rootSigners: Key[]
       cryptoLib: CryptoLib
       pingDuration: long
       parentUid: UUID

@@ -15,8 +15,6 @@ import io.aether.utils.futures.AFuture;
 import io.aether.utils.slots.AMFuture;
 import io.aether.utils.streams.Value;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
-import it.unimi.dsi.fastutil.shorts.ShortArrayList;
-import it.unimi.dsi.fastutil.shorts.ShortList;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -50,7 +48,9 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         apiSafeCtx = new FastApiContext() {
             @Override
             public void flush(AFuture sendFuture) {
-                if (remoteApiFuture.isEmpty()) {
+                // Используем isRequestsFor(this) для проверки, есть ли у этого ConnectionWork
+                // запросы, которые он должен отправить (новые или таймаутнувшие).
+                if (remoteApiFuture.isEmpty() && !client.clouds.isRequestsFor(ConnectionWork.this) && !client.servers.isRequestsFor(ConnectionWork.this)) {
                     sendFuture.done();
                     return;
                 }
@@ -65,27 +65,29 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                     var loginStream = new LoginStream(cryptoEngine::encrypt, d);
                     api.loginByAlias(client.getAlias(), loginStream);
                     rootApi.flush(sendFuture);
-                });
+                }, sendFuture::error).onCancel(sendFuture::cancel);
 
             }
         };
     }
 
     private void flushBackgroundRequests(AuthorizedApi a, AFuture sendFuture) {
-        if (!client.requestCloud.isEmpty()) {
-            List<UUID> requestCloud = new ArrayList<>(client.requestCloud);
-            if (!requestCloud.isEmpty()) {
-                client.requestCloud.removeAll(requestCloud);
-                a.resolverClouds(requestCloud.toArray(new UUID[0]));
-            }
+        UUID[] requestCloud = client.clouds.getRequestsFor(UUID.class, this);
+        if (requestCloud.length > 0) {
+            a.resolverClouds(requestCloud);
         }
-        if (!client.requestServers.isEmpty()) {
-            ShortList requestServers = new ShortArrayList(client.requestServers);
-            if (!requestServers.isEmpty()) {
-                client.requestServers.removeAll(requestServers);
-                a.resolverServers(Flow.flow(requestServers).mapToShort(Short::shortValue).toArray());
+
+        Integer[] requestServers = client.servers.getRequestsFor(Integer.class, this);
+        if (requestServers.length > 0) {
+            // Преобразование Integer[] в short[] для API
+            short[] serverIds = new short[requestServers.length];
+            for (int i = 0; i < requestServers.length; i++) {
+                serverIds[i] = requestServers[i].shortValue();
             }
+            a.resolverServers(serverIds);
         }
+
+        // 3. Message Stream Logic (unchanged)
         List<Message> messageForSend = null;
         for (var m : client.messageNodeMap.values()) {
             if (m.connectionsOut.contains(this)) {
@@ -101,6 +103,11 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                     Flow.flow(mm)
                             .map(v -> new Message(m.consumer, v.data()))
                             .toCollection(messageForSend);
+                    sendFuture.to(() -> {
+                        for (var v : mm) {
+                            v.success(this);
+                        }
+                    });
                     sendFuture.onCancel(() -> {
                         m.bufferOut.addAll(mm);
                     });
@@ -110,6 +117,8 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         if (messageForSend != null && !messageForSend.isEmpty()) {
             a.sendMessages(messageForSend.toArray(new Message[0]));
         }
+
+        // 4. Ping Logic (unchanged)
         if (!firstAuth) {
             a.ping(0).to(() -> {
                 firstAuth = true;
@@ -150,8 +159,8 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         lastWorkTime = t;
         var f = AFuture.make();
         f.addListener(v -> inProcess.set(false));
-        f.timeout(2,()->{
-            Log.warn("connection work flush timeout");
+        f.timeout(2, () -> {
+            Log.warn("connection work flush 1 timeout");
         });
         apiSafeCtx.flush(f);
     }
@@ -161,8 +170,8 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         lastWorkTime = RU.time();
         var f = AFuture.make();
         f.addListener(v -> inProcess.set(false));
-        f.timeout(2,()->{
-           Log.warn("connection work flush timeout");
+        f.timeout(2, () -> {
+            Log.warn("connection work flush 2 timeout");
         });
         apiSafeCtx.flush(f);
     }
@@ -200,7 +209,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
 
         @Override
         public void sendServerDescriptor(ServerDescriptor v) {
-            client.servers.put((int) v.getId(), v);
+            client.servers.putResolved((int) v.getId(), v);
         }
 
         @Override

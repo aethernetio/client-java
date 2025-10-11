@@ -29,7 +29,7 @@ subprojects {
         mavenLocal()
         mavenCentral()
         maven {
-            url 'http://nexus.aethernet.io/repository/maven-releases/'
+            url 'http://nexus.aethernet.io/maven/releases/'
             allowInsecureProtocol = true
         }
     }
@@ -39,8 +39,8 @@ subprojects {
                 publishing {
                     repositories {
                         maven {
-                            def releasesUrl = uri("http://nexus.aethernet.io/repository/maven-releases/")
-                            def snapshotsUrl = uri("http://nexus.aethernet.io/repository/maven-snapshots/")
+                            def releasesUrl = uri("http://nexus.aethernet.io/maven/releases/")
+                            def snapshotsUrl = uri("http://nexus.aethernet.io/maven/snapshots/")
                             if (version.toString().endsWith("SNAPSHOT")) {
                                 url(snapshotsUrl)
                             } else {

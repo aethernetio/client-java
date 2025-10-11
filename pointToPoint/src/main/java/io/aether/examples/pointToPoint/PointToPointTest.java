@@ -36,7 +36,7 @@ public class PointToPointTest {
     public void p2p() {
         var parent = UUID.fromString("B1AC52C8-8D94-BD39-4C01-A631AC594165");
         if (clientConfig1 == null)
-            clientConfig1 = new ClientStateInMemory(parent, registrationUri, null, CryptoLib.HYDROGEN);
+            clientConfig1 = new ClientStateInMemory(parent, registrationUri, null, CryptoLib.SODIUM);
         if (clientConfig2 == null)
             clientConfig2 = new ClientStateInMemory(parent, registrationUri, null, CryptoLib.HYDROGEN);
         clientConfig1.getPingDuration().set(100L);

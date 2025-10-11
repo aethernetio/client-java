@@ -1,10 +1,7 @@
 package io.aether.cloud.client;
 
 import io.aether.api.clienttypes.ClientStateForSave;
-import io.aether.api.common.Cloud;
-import io.aether.api.common.CryptoLib;
-import io.aether.api.common.Key;
-import io.aether.api.common.ServerDescriptor;
+import io.aether.api.common.*;
 import io.aether.crypto.SignChecker;
 import io.aether.logger.Log;
 import io.aether.net.fastMeta.FastFutureContext;
@@ -17,10 +14,10 @@ import io.aether.utils.dataio.DataInOutStatic;
 import io.aether.utils.slots.AMFuture;
 
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.StandardOpenOption;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -43,25 +40,6 @@ public class ClientStateInMemory implements ClientState, ToString {
 
     public ClientStateInMemory(UUID parentUid, List<URI> registrationUri, Set<SignChecker> rootSigners) {
         this(parentUid, registrationUri, rootSigners, CryptoLib.HYDROGEN);
-    }
-
-    @Override
-    public String toString() {
-        return toString2();
-    }
-
-    @Override
-    public void toString(AString sb) {
-        sb.add("Client State:\n");
-        sb.add("uid: ").add(uid).add("\n");
-        sb.add("alias: ").add(alias).add("\n");
-        sb.add("parent: ").add(parentUid).add("\n");
-        sb.add("master key: ").add(masterKey).add("\n");
-        sb.add("crypto lib: ").add(cryptoLib).add("\n");
-        sb.add("cloud: ").add(getCloud(uid)).add("\n");
-        for (var c : getCloud(uid).getData()) {
-            sb.addSpace(4).add(getServerDescriptor(c)).add("\n");
-        }
     }
 
     public ClientStateInMemory(UUID parentUid, List<URI> registrationUri, Set<SignChecker> rootSigners, CryptoLib cryptoLib) {
@@ -88,11 +66,30 @@ public class ClientStateInMemory implements ClientState, ToString {
         this.parentUid = dto.getParentUid();
         this.masterKey = dto.getMasterKey();
         this.cryptoLib = dto.getCryptoLib();
-        this.rootSigners.addAll(flow(dto.getRootSigners()).map(SignChecker::of).toSet());
+        this.rootSigners.addAll(flow(dto.getRootSigners()).map(v-> KeyUtil.of(v).asSignPublicKey().toSignChecker()).toSet());
         this.countServersForRegistration = dto.getCountServersForRegistration();
         this.timeoutForConnectToRegistrationServer = dto.getTimeoutForConnectToRegistrationServer();
         this.registrationUri.addAll(Arrays.asList(dto.getRegistrationUri()));
         this.pingDuration.set(dto.getPingDuration());
+    }
+
+    @Override
+    public String toString() {
+        return toString2();
+    }
+
+    @Override
+    public void toString(AString sb) {
+        sb.add("Client State:\n");
+        sb.add("uid: ").add(uid).add("\n");
+        sb.add("alias: ").add(alias).add("\n");
+        sb.add("parent: ").add(parentUid).add("\n");
+        sb.add("master key: ").add(masterKey).add("\n");
+        sb.add("crypto lib: ").add(cryptoLib).add("\n");
+        sb.add("cloud: ").add(getCloud(uid)).add("\n");
+        for (var c : getCloud(uid).getData()) {
+            sb.addSpace(4).add(getServerDescriptor(c)).add("\n");
+        }
     }
 
     @Override
@@ -215,8 +212,8 @@ public class ClientStateInMemory implements ClientState, ToString {
     }
 
     public void save(File file) {
-        try (var out = new FileOutputStream(file)) {
-            out.write(save());
+        try {
+            Files.write(file.toPath(), save(), StandardOpenOption.TRUNCATE_EXISTING);
         } catch (IOException e) {
             Log.error("Cannot save a store", e);
             throw new RuntimeException(e);
@@ -231,7 +228,11 @@ public class ClientStateInMemory implements ClientState, ToString {
                         .filter(s -> s.getCloud() != null)
                         .map(s -> new io.aether.api.clienttypes.ClientInfo(s.getUid(), s.getCloud()))
                         .toArray(io.aether.api.clienttypes.ClientInfo.class),
-                flow(rootSigners).join(", "),
+                flow(rootSigners)
+                        .map(SignChecker::getPublicKey)
+                        .map(KeyUtil::of)
+                        .cast(KeySignPublic.class)
+                        .toArray(KeySignPublic.class),
                 cryptoLib,
                 pingDuration.getNow(),
                 parentUid,
@@ -244,8 +245,8 @@ public class ClientStateInMemory implements ClientState, ToString {
     }
 
     public static ClientStateInMemory load(File file) {
-        try (var in = new FileInputStream(file)) {
-            return load(in.readAllBytes());
+        try {
+            return load(Files.readAllBytes(file.toPath()));
         } catch (IOException e) {
             Log.error("Cannot load state", e);
             return RU.error(e);
@@ -257,7 +258,7 @@ public class ClientStateInMemory implements ClientState, ToString {
             var dto = ClientStateForSave.META.deserialize(FastFutureContext.STUB, new DataInOutStatic(data));
             return new ClientStateInMemory(dto);
         } catch (Exception e) {
-            throw new IllegalStateException("Unparsable format state");
+            throw new IllegalStateException("Unparsable format state", e);
         }
     }
 

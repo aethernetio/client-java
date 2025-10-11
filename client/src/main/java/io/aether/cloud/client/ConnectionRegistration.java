@@ -86,9 +86,8 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
                                                                 Log.trace("RegConn: registration step resolve servers: $servers", "servers", d.getCloud());
                                                                 a3.resolveServers(d.getCloud()).to(ss -> {
                                                                     for (var s : ss) {
-                                                                        client.servers.put((int) s.getId(), s);
+                                                                        client.servers.putResolved((int) s.getId(), s);
                                                                     }
-                                                                    // FINAL STEP: Notify client and complete startFuture
                                                                     client.confirmRegistration(d);
                                                                     Log.info("RegConn: Registration finished successfully.");
                                                                 });
