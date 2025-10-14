@@ -4,7 +4,7 @@ plugins {
     id 'aether-protocol'
 }
 
-def coreVersion = '0.0.72'
+def coreVersion = '0.0.98'
 dependencies {
     api "io.aether:client-server-reg-api:${coreVersion}"
     api "io.aether:client-server-work-api:${coreVersion}"

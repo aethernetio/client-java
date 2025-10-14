@@ -99,3 +99,94 @@ subprojects {
     }
 
 }
+tasks.register('publishAllModules') {
+    group = 'publishing'
+    description = 'Publishes all modules that have maven-publish plugin applied'
+
+    doFirst {
+        println "🚀 STARTING PUBLICATION OF ALL MODULES"
+        println "=" * 50
+
+        // Собираем информацию о модулях для публикации
+        def publishableModules = subprojects.findAll {
+            it.plugins.hasPlugin('maven-publish')
+        }
+
+        if (publishableModules.empty) {
+            println "❌ No modules with maven-publish plugin found"
+            return
+        }
+
+        println "Found ${publishableModules.size()} publishable modules:"
+        publishableModules.each { module ->
+            def repoUrl = module.publishing.repositories.find {
+                it.name == 'maven'
+            }?.url?.toString() ?: 'unknown'
+            println "  📦 ${module.path}"
+            println "     Group: ${module.group}, Version: ${module.version}"
+            println "     Repository: ${repoUrl}"
+        }
+        println ""
+    }
+}
+
+tasks.register('checkPublishableModules') {
+    group = 'publishing'
+    description = 'Shows which modules will be published with publishAllModules'
+
+    doLast {
+        println "🔍 CHECKING PUBLISHABLE MODULES"
+        println "=" * 50
+
+        def publishableModules = subprojects.findAll {
+            it.plugins.hasPlugin('maven-publish')
+        }
+
+        if (publishableModules.empty) {
+            println "❌ No modules with maven-publish plugin found"
+            return
+        }
+
+        println "The following ${publishableModules.size()} modules will be published:"
+        publishableModules.each { module ->
+            def hasJava = module.plugins.hasPlugin('java') || module.plugins.hasPlugin('java-library')
+            def javaVersion = module.findProperty('sourceCompatibility') ?: 'unknown'
+
+            println "  ✅ ${module.path}"
+            println "     Coordinates: ${module.group}:${module.name}:${module.version}"
+            println "     Type: ${hasJava ? 'Java Library' : 'Unknown'}"
+            println "     Java: ${javaVersion}"
+
+            // Проверяем настройки репозитория
+            module.publishing.repositories.each { repo ->
+                if (repo.name == 'maven') {
+                    println "     Repository: ${repo.url}"
+                }
+            }
+            println ""
+        }
+
+        println "💡 Run './gradlew publishAllModules' to publish all these modules"
+    }
+}
+
+afterEvaluate {
+    def publishTasks = []
+
+    subprojects { subproject ->
+        if (subproject.plugins.hasPlugin('maven-publish')) {
+            def publishTask = subproject.tasks.findByName('publish')
+            if (publishTask) {
+                publishTasks.add(publishTask)
+                println "✅ Added publish task for module: ${subproject.path}"
+            }
+        }
+    }
+
+    if (!publishTasks.empty) {
+        tasks.named('publishAllModules') {
+            dependsOn(publishTasks)
+        }
+        println "🎯 Configured publishAllModules to publish ${publishTasks.size()} modules"
+    }
+}
