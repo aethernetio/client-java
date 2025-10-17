@@ -4,7 +4,7 @@ import io.aether.logger.Log;
 import io.aether.net.fastMeta.FastMetaApi;
 import io.aether.net.fastMeta.FastMetaClient;
 import io.aether.net.fastMeta.RemoteApi;
-import io.aether.net.fastMeta.nio.NIOFastMetaClient;
+import io.aether.net.fastMeta.nio.FastMetaClientNIO;
 import io.aether.utils.RU;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
@@ -57,7 +57,7 @@ public abstract class Connection<LT, RT extends RemoteApi> implements Destroyabl
             FastMetaApi<LT, ?> localApiMeta,
             FastMetaApi<?, RT> remoteApiMeta
     ) {
-        this(client, uri, localApiMeta, remoteApiMeta, new NIOFastMetaClient<>());
+        this(client, uri, localApiMeta, remoteApiMeta, new FastMetaClientNIO<>());
     }
 
     public RT getRootApi() {
