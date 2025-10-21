@@ -289,46 +289,47 @@ public final class AetherCloudClient implements Destroyable {
             return;
         }
 
-        if (getUid()==null&&regStatus.compareAndSet(RegStatus.NO, RegStatus.BEGIN)) {
-            var uris = clientState.getRegistrationUri();
-            if (uris == null || uris.isEmpty()) {
-                if (!startFuture.isFinalStatus()) {
-                    startFuture.error(new ClientStartException("Registration URI list is void."));
+        if (getUid()==null) {
+            if(regStatus.compareAndSet(RegStatus.NO, RegStatus.BEGIN)) {
+                var uris = clientState.getRegistrationUri();
+                if (uris == null || uris.isEmpty()) {
+                    if (!startFuture.isFinalStatus()) {
+                        startFuture.error(new ClientStartException("Registration URI list is void."));
+                    }
+                    return;
                 }
-                return;
-            }
-            var timeoutForConnect = clientState.getTimeoutForConnectToRegistrationServer();
-            var countServersForRegistration = Math.min(uris.size(), clientState.getCountServersForRegistration());
+                var timeoutForConnect = clientState.getTimeoutForConnectToRegistrationServer();
+                var countServersForRegistration = Math.min(uris.size(), clientState.getCountServersForRegistration());
 
-            try {
-                var startFutures = flow(uris).shuffle().limit(countServersForRegistration)
-                        .map(sd -> {
-                            try (var ln = Log.context(logClientContext)) {
-                                return new ConnectionRegistration(this, sd).connectFuture.toFuture();
-                            }
-                        })
-                        .toList();
+                try {
+                    var startFutures = flow(uris).shuffle().limit(countServersForRegistration)
+                            .map(sd -> {
+                                try (var ln = Log.context(logClientContext)) {
+                                    return new ConnectionRegistration(this, sd).connectFuture.toFuture();
+                                }
+                            })
+                            .toList();
 
-                var anyFuture = AFuture.any(startFutures);
+                    var anyFuture = AFuture.any(startFutures);
 
-                // Propagate statuses to startFuture
-                anyFuture.to(this::startScheduledTask)
-                        .onError(startFuture::error)
-                        .onCancel(startFuture::cancel);
+                    // Propagate statuses to startFuture
+                    anyFuture.to(this::startScheduledTask)
+                            .onError(startFuture::error)
+                            .onCancel(startFuture::cancel);
 
-                // Timeout logic
-                anyFuture.timeoutMs(timeoutForConnect, () -> {
-                    Log.error("Failed to connect to registration server: $uris", "uris", uris);
-                    // Retry
-                    RU.schedule(1000, () -> this.connect(step - 1));
-                });
-            } catch (Exception e) {
-                Log.error("Fatal error during registration setup.", e);
-                if (!startFuture.isFinalStatus()) {
-                    startFuture.error(new ClientStartException("Fatal error during registration setup.", e));
+                    // Timeout logic
+                    anyFuture.timeoutMs(timeoutForConnect, () -> {
+                        Log.error("Failed to connect to registration server: $uris", "uris", uris);
+                        // Retry
+                        RU.schedule(4000, () -> this.connect(step - 1));
+                    });
+                } catch (Exception e) {
+                    Log.error("Fatal error during registration setup.", e);
+                    if (!startFuture.isFinalStatus()) {
+                        startFuture.error(new ClientStartException("Fatal error during registration setup.", e));
+                    }
                 }
             }
-
         } else {
             // Logic for connecting to own cloud
             try {

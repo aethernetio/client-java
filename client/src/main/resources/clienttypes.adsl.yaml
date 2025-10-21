@@ -15,7 +15,7 @@ types:
       pingDuration: long
       parentUid: UUID
       countServersForRegistration: int
-      timeoutForConnectToRegistrationServer: int
+      timeoutForConnectToRegistrationServer: long
       uid: UUID
       alias: UUID
       masterKey: Key

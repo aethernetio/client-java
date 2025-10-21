@@ -33,7 +33,7 @@ public class ClientStateInMemory implements ClientState, ToString {
     private final AMFuture<Long> pingDuration = new AMFuture<>(1000L);
     private UUID parentUid;
     private int countServersForRegistration = 1;
-    private int timeoutForConnectToRegistrationServer = 10;
+    private long timeoutForConnectToRegistrationServer = 5000;
     private volatile UUID uid;
     private volatile UUID alias;
     private volatile Key masterKey;
