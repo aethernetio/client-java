@@ -52,10 +52,12 @@ public class CliApi {
     public final Destroyer destroyer = new Destroyer("CliApi");
     public CreateApi createApi;
     public ShowApi showApi;
-    public SetApi setApi; // <-- ДОБАВЛЕНО
+    public SetApi setApi;
     private final CliState cliState;
 
-    // Используем неразрывный пробел (\u00A0) и ссылку на `show aliases`
+    /**
+     * Known static UUID aliases and format details for documentation.
+     */
     private final String UUID_ALIASES_DOC = "Known static aliases: \n" +
                                             "    TEST\u00A0(3ac93165-3d37-4970-87a6-fa4ee27744e4)\n" +
                                             "    ROOT\u00A0(ed307ca7-8369-4342-91ee-60c8fc6f9b6b)\n" +
@@ -63,8 +65,8 @@ public class CliApi {
                                             "    (Also supports user aliases. Use 'show aliases' to list them)";
 
     /**
-     * Конструктор, принимающий персистентное состояние
-     * @param cliState Загруженное состояние CLI
+     * Constructor receiving the persistent state
+     * @param cliState The loaded CLI state
      */
     public CliApi(CliState cliState) {
         this.cliState = cliState;
@@ -79,18 +81,18 @@ public class CliApi {
     }
 
     /**
-     * Распознает псевдонимы UUID (пользовательские, затем статические) или необработанный UUID.
-     * Этот метод используется ConsoleMgrCanonical как конвертер.
-     * @param uuidOrAlias Строка для распознавания.
-     * @return Распознанный UUID.
-     * @throws IllegalArgumentException если строка не является ни валидным псевдонимом, ни UUID.
+     * Resolves UUID aliases (user-defined first, then static) or raw UUID strings.
+     * This method is used by ConsoleMgrCanonical as a type converter.
+     * @param uuidOrAlias The string to resolve.
+     * @return The resolved UUID.
+     * @throws IllegalArgumentException if the string is neither a valid alias nor a UUID.
      */
     public UUID resolveUuid(String uuidOrAlias) {
         if (uuidOrAlias == null) {
             return null;
         }
 
-        // 1. Проверяем пользовательские псевдонимы (сначала)
+        // 1. Check user-defined aliases (case-sensitive and then uppercase)
         if (cliState.hasAlias(uuidOrAlias)) {
             return UUID.fromString(cliState.getUuidForAlias(uuidOrAlias));
         }
@@ -100,7 +102,7 @@ public class CliApi {
             return UUID.fromString(cliState.getUuidForAlias(upper));
         }
 
-        // 2. Проверяем статические псевдонимы
+        // 2. Check static aliases
         switch (upper) {
             case "TEST":
                 return StandardUUIDs.TEST_UID;
@@ -110,7 +112,7 @@ public class CliApi {
                 return StandardUUIDs.ANONYMOUS_UID;
         }
 
-        // 3. Пытаемся распарсить как UUID
+        // 3. Try to parse as a raw UUID
         try {
             return UUID.fromString(uuidOrAlias);
         } catch (IllegalArgumentException e) {
@@ -128,7 +130,14 @@ public class CliApi {
             logFlow("Asynchronous operation finished. Completing root CLI destroyer.");
             // Execute destroy via a separate executor to prevent deadlocks
             DESTROY_EXECUTOR.execute(() -> {
-                cliDestroyer.destroy(true);
+                cliDestroyer.destroy(true).to(() -> {
+                    // --- ADDED: Log active threads after Destroyer completes ---
+                    logFlow("Root CLI destroyer completed. Checking active threads.");
+                    Thread.getAllStackTraces().keySet().stream()
+                            .filter(t -> t.isAlive() && !t.isDaemon())
+                            .forEach(t -> Log.warn("Non-daemon thread still active: $name ($group)", "name", t.getName(), "group", t.getThreadGroup().getName()));
+                    // --- END ADDED ---
+                });
             });
         }).onError(e -> {
             logFlow("Error during asynchronous operation. Completing root CLI destroyer with error.", "error", e.getMessage());
@@ -222,7 +231,7 @@ public class CliApi {
         }
 
         // Create client locally
-        var client = new AetherCloudClient(loadedState); // Используем загруженный state
+        var client = new AetherCloudClient(loadedState);
         destroyer.add(client);
 
         // Capture client for use in lambda expression
@@ -254,21 +263,20 @@ public class CliApi {
         }
 
         // Create client locally
-        var client = new AetherCloudClient(loadedState); // Используем загруженный state
+        var client = new AetherCloudClient(loadedState);
         destroyer.add(client);
         var st = client.getMessageNode(address, MessageEventListener.DEFAULT);
         return new SendApi(st, client);
     }
 
     @Api
-    @Doc("Show client state, groups, aliases, and incoming messages") // <-- ОБНОВЛЕНО
-    public ShowApi show(/* --- ПАРАМЕТР state УБРАН --- */) {
+    @Doc("Show client state, groups, aliases, and incoming messages")
+    public ShowApi show(/* --- state parameter removed --- */) {
         logFlow("Executing command: show");
         showApi = new ShowApi(this.cliState);
         return showApi;
     }
 
-    // --- ДОБАВЛЕНО ---
     @Api
     @Doc("Set properties, like user-defined aliases")
     public SetApi set() {
@@ -276,7 +284,6 @@ public class CliApi {
         setApi = new SetApi(this.cliState);
         return setApi;
     }
-    // -----------------
 
     /**
      * Message container class.
@@ -389,21 +396,21 @@ public class CliApi {
      */
     @Doc("API for showing resources.")
     public class ShowApi {
-        private final CliState cliState; // ВСЕГДА НЕ NULL
+        private final CliState cliState; // ALWAYS NOT NULL
         public EventConsumer<Msg> messages = new EventConsumerWithQueue<>();
 
         /**
-         * @param cliState Загруженное состояние CLI (псевдонимы)
+         * @param cliState The loaded CLI state (aliases)
          */
         public ShowApi(CliState cliState) {
             this.cliState = cliState;
         }
 
         /**
-         * Внутренний хелпер, который загружает и проверяет, что state.bin существует.
-         * @param stateFile Файл состояния для загрузки.
-         * @return Загруженный ClientStateInMemory
-         * @throws IllegalStateException если state.bin не был найден или поврежден.
+         * Internal helper that loads and checks if state.bin exists.
+         * @param stateFile The state file to load.
+         * @return The loaded ClientStateInMemory
+         * @throws IllegalStateException if state.bin was not found or corrupted.
          */
         private ClientStateInMemory loadRequiredState(File stateFile) {
             ClientStateInMemory state = ClientStateInMemory.load(stateFile);
@@ -418,7 +425,7 @@ public class CliApi {
         @Doc("Show all user-defined aliases from ~/.aether-cli-state.json")
         @Example("$exCmd show aliases")
         public String aliases() {
-            // Эта команда зависит ТОЛЬКО от cliState, поэтому она ВСЕГДА будет работать.
+            // This command depends ONLY on cliState, so it will ALWAYS work.
             return new GsonBuilder().setPrettyPrinting().create().toJson(cliState.getAliases());
         }
 
@@ -426,9 +433,9 @@ public class CliApi {
         @Example("$exCmd show state")
         public ClientStateInMemory state(
                 @Doc("Previously saved client state file")
-                @Optional(value = "state.bin") // <-- ПАРАМЕТР ДОБАВЛЕН ЗДЕСЬ
+                @Optional(value = "state.bin")
                 File state) {
-            // Эта команда ТРЕБУЕТ state.bin
+            // This command REQUIRES state.bin
             return loadRequiredState(state);
         }
 
@@ -436,7 +443,7 @@ public class CliApi {
         @Example("$exCmd show groups -c TEST")
         @Alias("g")
         public ARFuture<Set<Long>> groups(
-                @Doc("Previously saved client state file") // <-- ПАРАМЕТР ДОБАВЛЕН ЗДЕСЬ
+                @Doc("Previously saved client state file")
                 @Optional(value = "state.bin")
                 File state,
                 @Doc("Specified client UID or alias. Defaults to client's UID from state file.\n" + UUID_ALIASES_DOC)
@@ -444,17 +451,17 @@ public class CliApi {
                 @Alias("c")
                 UUID targetClient) {
 
-            // --- ЗАГРУЗКА И ПРОВЕРКА ЗДЕСЬ ---
+            // --- LOAD AND CHECK HERE ---
             ClientStateInMemory requiredState;
             try {
-                requiredState = loadRequiredState(state); // Проверяем, что state.bin загружен
+                requiredState = loadRequiredState(state); // Check if state.bin is loaded
             } catch (Exception e) {
-                return ARFuture.doThrow(e); // Возвращаем ошибку, если state.bin нет
+                return ARFuture.doThrow(e); // Return error if state.bin is missing
             }
             // -------------------------
 
             // Create client locally
-            var client = AetherCloudClient.of(requiredState); // Используем проверенный state
+            var client = AetherCloudClient.of(requiredState); // Use the checked state
             CliApi.this.destroyer.add(client); // Add to the root destroyer
 
             UUID targetUuid = targetClient;
@@ -475,13 +482,13 @@ public class CliApi {
         @Alias("gd")
         @Example("$exCmd show groups-details 123456,789012")
         public ARFuture<List<AccessGroup>> groupsDetails(
-                @Doc("Previously saved client state file") // <-- ПАРАМЕТР ДОБАВЛЕН ЗДЕСЬ
+                @Doc("Previously saved client state file")
                 @Optional(value = "state.bin")
                 File state,
                 @Doc("IDs of access groups, separated by comma")
                 Set<Long> ids) {
 
-            // --- ЗАГРУЗКА И ПРОВЕРКА ЗДЕСЬ ---
+            // --- LOAD AND CHECK HERE ---
             ClientStateInMemory requiredState;
             try {
                 requiredState = loadRequiredState(state);
@@ -508,13 +515,13 @@ public class CliApi {
         @Alias("aac")
         @Example("$exCmd show all-accessed-clients")
         public ARFuture<Set<UUID>> allAccessedClients(
-                @Doc("Previously saved client state file") // <-- ПАРАМЕТР ДОБАВЛЕН ЗДЕСЬ
+                @Doc("Previously saved client state file")
                 @Optional(value = "state.bin")
                 File state,
                 @Doc("Specified client UID or alias. Defaults to client's UID from state file.\n" + UUID_ALIASES_DOC)
                 @Optional @Alias("c") UUID targetClient) {
 
-            // --- ЗАГРУЗКА И ПРОВЕРКА ЗДЕСЬ ---
+            // --- LOAD AND CHECK HERE ---
             ClientStateInMemory requiredState;
             try {
                 requiredState = loadRequiredState(state);
@@ -544,7 +551,7 @@ public class CliApi {
         @Doc("Wait for and show incoming messages")
         @Example("$exCmd show messages --wait-time 10000 --filter my-friend-alias")
         public EventConsumer<Msg> messages(
-                @Doc("Previously saved client state file") // <-- ПАРАМЕТР ДОБАВЛЕН ЗДЕСЬ
+                @Doc("Previously saved client state file")
                 @Optional(value = "state.bin")
                 File state,
                 @Doc("Filter messages by sender UUIDs or aliases. \n" + UUID_ALIASES_DOC)
@@ -567,14 +574,14 @@ public class CliApi {
                 @Doc("Set true if you want to append data to the file, false to overwrite")
                 boolean fileAppend
         ) {
-            // --- ЗАГРУЗКА И ПРОВЕРКА ЗДЕСЬ ---
-            // (Эта команда не возвращает AFuture, поэтому бросаем исключение)
+            // --- LOAD AND CHECK HERE ---
+            // (This command does not return an AFuture, so it throws an exception directly)
             ClientStateInMemory requiredState = loadRequiredState(state);
             // -------------------------
 
             logFlow("ShowApi: messages command started", "waitTimeMs", waitTime, "filterUids", filter, "notUids", not);
             // Create client locally
-            var client = new AetherCloudClient(requiredState); // Используем проверенный state
+            var client = new AetherCloudClient(requiredState); // Use the checked state
             CliApi.this.destroyer.add(client);
             logFlow("ShowApi: Client instance created", "clientUid", client.getUid());
 
@@ -673,11 +680,19 @@ public class CliApi {
             // CAPTURE: Capture the reference to the Destroyer in the outer (safe) scope
             Destroyer apiDestroyer = CliApi.this.destroyer;
 
-            return ARFuture.<ClientState>run(CLI_EXECUTOR, () -> {
-                client.startFuture.waitDone(); // Wait synchronously in CLI_EXECUTOR
+            ARFuture<ClientState> resultFuture = ARFuture.of();
+
+            /**
+             * Asynchronously waits for client registration/connection to complete.
+             * This non-blocking approach prevents deadlocks on the CLI_EXECUTOR thread.
+             */
+            client.startFuture.to(CLI_EXECUTOR, () -> {
                 logFlow("CreateApi: Client startFuture completed successfully", "uid", state.getUid());
-                return state;
-            }).apply(() -> {
+                resultFuture.tryDone(state);
+            }).onError(resultFuture::tryError);
+
+            // Return a future that handles resource cleanup upon completion
+            return resultFuture.apply(() -> {
                 if (alias != null && !alias.isBlank()) {
                     cliState.addAlias(alias, state.getUid().toString());
                     logFlow("CreateApi: Saved new alias '" + alias + "' for UUID " + state.getUid());
@@ -700,17 +715,15 @@ public class CliApi {
                 @Optional Set<UUID> uids) {
             logFlow("CreateApi: group creation started");
 
-            // --- ЗАГРУЗКА STATE ЗДЕСЬ ---
             ClientStateInMemory loadedState = ClientStateInMemory.load(state);
             if (loadedState == null) {
                 return ARFuture.doThrow(new IllegalStateException("Command requires a valid state file, but it was not found or was corrupted. " +
                                                                   "Default path is '" + state.getName() + "'. " +
                                                                   "Please run 'create client' first, or specify a valid state file with --state."));
             }
-            // -------------------------
 
             // Create client locally
-            var client = new AetherCloudClient(loadedState); // Используем загруженный state
+            var client = new AetherCloudClient(loadedState); // Use the loaded state
             CliApi.this.destroyer.add(client);
 
             UUID ownerUuid = owner;
@@ -825,7 +838,6 @@ public class CliApi {
         }
     }
 
-    // --- ДОБАВЛЕН НОВЫЙ КЛАСС ---
     /**
      * API for setting properties.
      */
@@ -844,7 +856,7 @@ public class CliApi {
                 @Doc("The name for the alias")
                 String aliasName,
                 @Doc("The UUID or an existing alias (static or user-defined) to associate with the new alias name. \n" + UUID_ALIASES_DOC)
-                UUID uuid // Конвертер ConsoleMgrCanonical разрешит UUID
+                UUID uuid
         ) {
             if (aliasName == null || aliasName.isBlank()) {
                 throw new IllegalArgumentException("Alias name cannot be empty.");
@@ -853,7 +865,7 @@ public class CliApi {
                 throw new IllegalArgumentException("UUID cannot be null.");
             }
 
-            // Проверяем, не конфликтует ли имя с статическими алиасами
+            // Check if the name conflicts with static aliases
             String upperName = aliasName.toUpperCase();
             if (upperName.equals("TEST") || upperName.equals("ROOT") || upperName.equals("ANONYMOUS")) {
                 throw new IllegalArgumentException("Alias name '" + aliasName + "' conflicts with a built-in static alias and cannot be used.");
@@ -861,8 +873,7 @@ public class CliApi {
 
             cliState.addAlias(aliasName, uuid.toString());
             logFlow("SetApi: Saved alias '" + aliasName + "' for UUID " + uuid);
-            // Возвращаем void, так как операция синхронная
+            // Returns void, as the operation is synchronous
         }
     }
-    // ----------------------------
 }

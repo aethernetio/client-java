@@ -7,6 +7,7 @@ import io.aether.crypto.CryptoEngine;
 import io.aether.crypto.CryptoProviderFactory;
 import io.aether.logger.Log;
 import io.aether.net.fastMeta.FastApiContext;
+import io.aether.utils.RU;
 import io.aether.utils.WorkProofUtil;
 import io.aether.utils.futures.AFuture;
 
@@ -82,16 +83,24 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
                                                 gapi.finish()
                                                         .to(d -> {
                                                             Log.trace("RegConn: registration step finish.");
+
+                                                            // --- FIX FOR DEADLOCK: Unblock CLI IMMEDIATELY ---
+                                                            // 1. Confirm registration (which calls startFuture.done()), unblocking the CLI_EXECUTOR thread.
+                                                            client.confirmRegistration(d);
+                                                            Log.info("RegConn: Registration confirmed. CLI is unblocked.");
+
+                                                            // 2. Send the request to resolve servers separately. This should not block CLI completion.
                                                             api.enter(client.getCryptLib(), new ServerRegistrationApiStream(ctxSafe, asymCE::encrypt, a3 -> {
                                                                 Log.trace("RegConn: registration step resolve servers: $servers", "servers", d.getCloud());
                                                                 a3.resolveServers(d.getCloud()).to(ss -> {
                                                                     for (var s : ss) {
                                                                         client.servers.putResolved((int) s.getId(), s);
                                                                     }
-                                                                    client.confirmRegistration(d);
-                                                                    Log.info("RegConn: Registration finished successfully.");
+                                                                    Log.info("RegConn: Server descriptors resolved.");
                                                                 });
                                                             }));
+                                                            // ----------------------------------------------------
+
                                                             api.flush();
                                                         });
                                             }))));

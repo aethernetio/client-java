@@ -17,15 +17,17 @@ import java.util.Map;
 import java.util.UUID;
 
 public class CLI {
-    public final CliApi api; // <-- Изменено
+    public final CliApi api;
     private final ARFuture<Object> resultFuture;
-    private final CliState cliState; // <-- Добавлено
+    private final CliState cliState;
 
     public CLI(String... aa) {
+        // 1. Initialize and load persistent state
         this.cliState = new CliState();
         this.cliState.load();
+
+        // 2. Pass state to CliApi
         this.api = new CliApi(this.cliState);
-        // ------------------
 
         var consoleMgr = new ConsoleMgrCanonical(aa) {
             @Override
@@ -36,29 +38,26 @@ public class CLI {
 
         consoleMgr.footer = "For more information, please visit the website https://aethernet.io";
 
-        // Настройка конвертеров
+        // Setup converters
         consoleMgr.regConverter(CTypeI.of(CryptoLib.class), CryptoLib::valueOf);
 
-        // --- ОБНОВЛЕНО ---
-        // Регистрируем кастомный конвертер для UUID
-        // Теперь он использует не-статический метод api.resolveUuid
+        // Register custom converter for UUID to support aliases (user-defined and static)
         consoleMgr.regConverter(CTypeI.of(UUID.class), s -> {
             if (s == null) return null;
-            // api.resolveUuid теперь знает о пользовательских алиасах
+            // api.resolveUuid resolves user aliases first, then static aliases
             return api.resolveUuid(s);
         });
-        // --------------------
 
         consoleMgr.regResultConverter("bin", CTypeI.of(ClientStateInMemory.class), ClientStateInMemory::save);
 
-        // Конвертеры для Msg
+        // Converters for Msg
         setupMsgConverters(consoleMgr);
         setupClientStateJsonConverter(consoleMgr);
 
-        // Запуск выполнения и получение результата
+        // Start execution and get the result
         this.resultFuture = consoleMgr.execute(api);
 
-        // Cleanup цепочка
+        // Cleanup chain
         resultFuture.mapRFuture(v ->
                 api.destroyer.destroy(true).timeout(10, () ->
                         Log.warn("Timeout destroying CLI resources")

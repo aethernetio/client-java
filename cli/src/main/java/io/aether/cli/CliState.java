@@ -2,10 +2,8 @@ package io.aether.cli;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.google.gson.reflect.TypeToken;
 import io.aether.logger.Log;
 
-import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -21,7 +19,7 @@ public class CliState {
     private final Path stateFilePath;
     private final Gson gson = new GsonBuilder().setPrettyPrinting().create();
 
-    // Эта структура будет напрямую сериализована в/из JSON
+    // This structure is directly serialized to/from JSON
     public static class StateData {
         public Map<String, String> aliases = new ConcurrentHashMap<>();
     }
@@ -45,7 +43,7 @@ public class CliState {
                     return;
                 }
 
-                // Парсим JSON
+                // Parse JSON
                 StateData loadedData = gson.fromJson(json, StateData.class);
 
                 if (loadedData != null) {
