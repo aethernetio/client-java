@@ -4,7 +4,9 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import io.aether.StandardUUIDs;
 import io.aether.api.common.AccessGroup;
+import io.aether.api.common.Cloud;
 import io.aether.api.common.CryptoLib;
+import io.aether.api.common.ServerDescriptor;
 import io.aether.cloud.client.*;
 import io.aether.common.AccessGroupI;
 import io.aether.logger.Log;
@@ -131,12 +133,11 @@ public class CliApi {
             // Execute destroy via a separate executor to prevent deadlocks
             DESTROY_EXECUTOR.execute(() -> {
                 cliDestroyer.destroy(true).to(() -> {
-                    // --- ADDED: Log active threads after Destroyer completes ---
+                    // Log active threads after Destroyer completes
                     logFlow("Root CLI destroyer completed. Checking active threads.");
                     Thread.getAllStackTraces().keySet().stream()
                             .filter(t -> t.isAlive() && !t.isDaemon())
                             .forEach(t -> Log.warn("Non-daemon thread still active: $name ($group)", "name", t.getName(), "group", t.getThreadGroup().getName()));
-                    // --- END ADDED ---
                 });
             });
         }).onError(e -> {
@@ -474,7 +475,7 @@ public class CliApi {
 
             return res.apply(() -> {
                 // Asynchronously destroy client after operation completion via executor
-                completeCliSession(CliApi.this.destroyer, client.destroy(true));
+                completeCliSession(destroyer, client.destroy(true));
             });
         }
 
@@ -507,7 +508,7 @@ public class CliApi {
 
             return res.apply(() -> {
                 // Asynchronously destroy client after operation completion via executor
-                completeCliSession(CliApi.this.destroyer, client.destroy(true));
+                completeCliSession(destroyer, client.destroy(true));
             });
         }
 
@@ -544,7 +545,7 @@ public class CliApi {
 
             return res.apply(() -> {
                 // Asynchronously destroy client after operation completion via executor
-                completeCliSession(CliApi.this.destroyer, client.destroy(true));
+                completeCliSession(destroyer, client.destroy(true));
             });
         }
 
@@ -683,13 +684,50 @@ public class CliApi {
             ARFuture<ClientState> resultFuture = ARFuture.of();
 
             /**
-             * Asynchronously waits for client registration/connection to complete.
-             * This non-blocking approach prevents deadlocks on the CLI_EXECUTOR thread.
+             * ASYNCHRONOUS CHAIN: (Registration -> Cloud/Server Resolution -> Completion)
+             * 1. Convert AFuture (client.startFuture) into ARFuture<ClientState> (the result value).
+             * 2. Use mapRFuture to build the sequence: (state) -> getCloud(uid) -> mapRFuture(cloud) -> getServerFutures.
              */
-            client.startFuture.to(CLI_EXECUTOR, () -> {
-                logFlow("CreateApi: Client startFuture completed successfully", "uid", state.getUid());
-                resultFuture.tryDone(state);
-            }).onError(resultFuture::tryError);
+
+            // Step 1: Convert AFuture (registration flag) to ARFuture<ClientState>
+            ARFuture<ClientState> registrationChain = client.startFuture.mapRFuture(() -> {
+                // When startFuture is done (registration succeeded), return the ClientState object
+                return state;
+            });
+
+            // Step 2 & 3: Cloud and Server Resolution
+            ARFuture<ClientState> resolutionChain = registrationChain.mapRFuture(stateValue -> {
+                // stateValue is the result of the registration (ClientState)
+                UUID selfUid = stateValue.getUid();
+
+                // 2a. Get the Cloud descriptor (ARFuture<Cloud>)
+                ARFuture<Cloud> cloudFuture = client.getCloud(selfUid);
+
+                // 2b, 2c. Map the Cloud result to a flow of ServerDescriptor futures, and wait for all.
+                return cloudFuture.mapRFuture(cloud -> {
+
+                    // If Cloud data is empty, skip server resolution and proceed.
+                    if (cloud == null || cloud.getData().length == 0) {
+                        logFlow("CreateApi: Cloud is empty, skipping server resolution.");
+                        return ARFuture.of(stateValue);
+                    }
+
+                    logFlow("CreateApi: Cloud found, resolving $serversCount server descriptors.", "serversCount", cloud.getData().length);
+
+                    // Collect futures for all server IDs in the cloud
+                    List<ARFuture<ServerDescriptor>> serverFutures = Flow.flow(cloud.getData())
+                            .mapToInt()
+                            .mapToObj(client::getServer)
+                            .toList();
+
+                    // Wait for all server descriptors to resolve
+                    return ARFuture.all(ServerDescriptor.class, Flow.flow(serverFutures))
+                            .map(descriptions -> stateValue); // Return the original state object after resolution
+                });
+            });
+
+            resolutionChain.to(resultFuture).onError(resultFuture::tryError);
+
 
             // Return a future that handles resource cleanup upon completion
             return resultFuture.apply(() -> {
