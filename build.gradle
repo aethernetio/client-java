@@ -59,9 +59,6 @@ subprojects {
         }
         if (it.plugins.hasPlugin('java')) {
             java {
-                toolchain {
-                    languageVersion = JavaLanguageVersion.of(11)
-                }
                 withJavadocJar()
                 withSourcesJar()
             }

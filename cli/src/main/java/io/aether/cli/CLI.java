@@ -14,12 +14,19 @@ import io.aether.utils.futures.ARFuture;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.UUID;
 
 public class CLI {
-    public final CliApi api = new CliApi();
+    public final CliApi api; // <-- Изменено
     private final ARFuture<Object> resultFuture;
+    private final CliState cliState; // <-- Добавлено
 
     public CLI(String... aa) {
+        this.cliState = new CliState();
+        this.cliState.load();
+        this.api = new CliApi(this.cliState);
+        // ------------------
+
         var consoleMgr = new ConsoleMgrCanonical(aa) {
             @Override
             public String getAppName() {
@@ -31,6 +38,17 @@ public class CLI {
 
         // Настройка конвертеров
         consoleMgr.regConverter(CTypeI.of(CryptoLib.class), CryptoLib::valueOf);
+
+        // --- ОБНОВЛЕНО ---
+        // Регистрируем кастомный конвертер для UUID
+        // Теперь он использует не-статический метод api.resolveUuid
+        consoleMgr.regConverter(CTypeI.of(UUID.class), s -> {
+            if (s == null) return null;
+            // api.resolveUuid теперь знает о пользовательских алиасах
+            return api.resolveUuid(s);
+        });
+        // --------------------
+
         consoleMgr.regResultConverter("bin", CTypeI.of(ClientStateInMemory.class), ClientStateInMemory::save);
 
         // Конвертеры для Msg

@@ -1,5 +1,8 @@
 package io.aether.cli;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import io.aether.StandardUUIDs;
 import io.aether.api.common.AccessGroup;
 import io.aether.api.common.CryptoLib;
 import io.aether.cloud.client.*;
@@ -27,15 +30,18 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /**
  * Command Line Interface API for Aether Cloud Client operations.
  */
+@Doc("Command Line Interface API for Aether Cloud Client operations.")
 public class CliApi {
     // UNIFIED EXECUTOR for all asynchronous CLI operations
     private static final Executor CLI_EXECUTOR = Executors.newSingleThreadExecutor(r -> new Thread(r, "CLI-Async-Worker"));
@@ -46,6 +52,24 @@ public class CliApi {
     public final Destroyer destroyer = new Destroyer("CliApi");
     public CreateApi createApi;
     public ShowApi showApi;
+    public SetApi setApi; // <-- ДОБАВЛЕНО
+    private final CliState cliState;
+
+    // Используем неразрывный пробел (\u00A0) и ссылку на `show aliases`
+    private final String UUID_ALIASES_DOC = "Known static aliases: \n" +
+                                            "    TEST\u00A0(3ac93165-3d37-4970-87a6-fa4ee27744e4)\n" +
+                                            "    ROOT\u00A0(ed307ca7-8369-4342-91ee-60c8fc6f9b6b)\n" +
+                                            "    ANONYMOUS\u00A0(237e2dc0-21a4-4e83-8184-c43052f93b79)\n" +
+                                            "    (Also supports user aliases. Use 'show aliases' to list them)";
+
+    /**
+     * Конструктор, принимающий персистентное состояние
+     * @param cliState Загруженное состояние CLI
+     */
+    public CliApi(CliState cliState) {
+        this.cliState = cliState;
+    }
+
 
     private static void logFlow(String message, Object... args) {
         var l = new ArrayList<>(Arrays.asList(args));
@@ -53,6 +77,47 @@ public class CliApi {
         l.add("CLI");
         Log.info(message, l.toArray());
     }
+
+    /**
+     * Распознает псевдонимы UUID (пользовательские, затем статические) или необработанный UUID.
+     * Этот метод используется ConsoleMgrCanonical как конвертер.
+     * @param uuidOrAlias Строка для распознавания.
+     * @return Распознанный UUID.
+     * @throws IllegalArgumentException если строка не является ни валидным псевдонимом, ни UUID.
+     */
+    public UUID resolveUuid(String uuidOrAlias) {
+        if (uuidOrAlias == null) {
+            return null;
+        }
+
+        // 1. Проверяем пользовательские псевдонимы (сначала)
+        if (cliState.hasAlias(uuidOrAlias)) {
+            return UUID.fromString(cliState.getUuidForAlias(uuidOrAlias));
+        }
+
+        String upper = uuidOrAlias.toUpperCase();
+        if (cliState.hasAlias(upper)) {
+            return UUID.fromString(cliState.getUuidForAlias(upper));
+        }
+
+        // 2. Проверяем статические псевдонимы
+        switch (upper) {
+            case "TEST":
+                return StandardUUIDs.TEST_UID;
+            case "ROOT":
+                return StandardUUIDs.ROOT_UID;
+            case "ANONYMOUS":
+                return StandardUUIDs.ANONYMOUS_UID;
+        }
+
+        // 3. Пытаемся распарсить как UUID
+        try {
+            return UUID.fromString(uuidOrAlias);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Invalid UUID or alias: '" + uuidOrAlias + "'", e);
+        }
+    }
+
 
     /**
      * Asynchronously waits for the provided Future to complete (usually client.destroy()),
@@ -123,25 +188,41 @@ public class CliApi {
             @Optional(value = "state.bin")
             File state) {
         logFlow("Executing command: change", "stateFile", state);
+
+        ClientStateInMemory loadedState = ClientStateInMemory.load(state);
+        if (loadedState == null) {
+            throw new IllegalStateException("Command requires a valid state file, but it was not found or was corrupted. " +
+                                            "Default path is '" + state.getName() + "'. " +
+                                            "Please run 'create client' first, or specify a valid state file with --state.");
+        }
+
         // Create client locally
-        var client = new AetherCloudClient(ClientStateInMemory.load(state));
+        var client = new AetherCloudClient(loadedState);
         destroyer.add(client);
         return new ChangeApi(client);
     }
 
     @Doc("Check the possibility of sending messages between two clients")
-    @Example("$exCmd check-access --uid1 3ac93165-3d37-4970-87a6-fa4ee27744e4 --uid2 1a2b3c4d-5e6f-7080-90a0-b1c2d3e4f5a6")
+    @Example("$exCmd check-access --uid1 TEST --uid2 my-friend-alias")
     public ARFuture<Boolean> checkAccess(
             @Doc("Previously saved client state file")
             @Optional(value = "state.bin")
             File state,
-            @Doc("Client 1 UUID")
+            @Doc("Client 1 UUID or alias. \n" + UUID_ALIASES_DOC)
             UUID uid1,
-            @Doc("Client 2 UUID")
+            @Doc("Client 2 UUID or alias. \n" + UUID_ALIASES_DOC)
             UUID uid2) {
         logFlow("Executing command: checkAccess", "stateFile", state, "uid1", uid1, "uid2", uid2);
+
+        ClientStateInMemory loadedState = ClientStateInMemory.load(state);
+        if (loadedState == null) {
+            return ARFuture.doThrow(new IllegalStateException("Command requires a valid state file, but it was not found or was corrupted. " +
+                                                              "Default path is '" + state.getName() + "'. " +
+                                                              "Please run 'create client' first, or specify a valid state file with --state."));
+        }
+
         // Create client locally
-        var client = new AetherCloudClient(ClientStateInMemory.load(state));
+        var client = new AetherCloudClient(loadedState); // Используем загруженный state
         destroyer.add(client);
 
         // Capture client for use in lambda expression
@@ -161,30 +242,46 @@ public class CliApi {
             @Doc("Previously saved client state file")
             @Optional(value = "state.bin")
             File state,
-            @Doc("Destination UUID address")
+            @Doc("Destination UUID address or alias. \n" + UUID_ALIASES_DOC)
             UUID address) {
         logFlow("Executing command: send", "stateFile", state, "address", address);
+
+        ClientStateInMemory loadedState = ClientStateInMemory.load(state);
+        if (loadedState == null) {
+            throw new IllegalStateException("Command requires a valid state file, but it was not found or was corrupted. " +
+                                            "Default path is '" + state.getName() + "'. " +
+                                            "Please run 'create client' first, or specify a valid state file with --state.");
+        }
+
         // Create client locally
-        var client = new AetherCloudClient(ClientStateInMemory.load(state));
+        var client = new AetherCloudClient(loadedState); // Используем загруженный state
         destroyer.add(client);
         var st = client.getMessageNode(address, MessageEventListener.DEFAULT);
         return new SendApi(st, client);
     }
 
     @Api
-    @Doc("Show client state, groups, and incoming messages")
-    public ShowApi show(
-            @Doc("Previously saved client state file")
-            @Optional(value = "state.bin")
-            File state) {
-        logFlow("Executing command: show", "stateFile", state);
-        showApi = new ShowApi(ClientStateInMemory.load(state));
+    @Doc("Show client state, groups, aliases, and incoming messages") // <-- ОБНОВЛЕНО
+    public ShowApi show(/* --- ПАРАМЕТР state УБРАН --- */) {
+        logFlow("Executing command: show");
+        showApi = new ShowApi(this.cliState);
         return showApi;
     }
+
+    // --- ДОБАВЛЕНО ---
+    @Api
+    @Doc("Set properties, like user-defined aliases")
+    public SetApi set() {
+        logFlow("Executing command: set");
+        setApi = new SetApi(this.cliState);
+        return setApi;
+    }
+    // -----------------
 
     /**
      * Message container class.
      */
+    @Doc("A container for a received message, holding the sender's address and data.")
     public static class Msg implements ToString {
         public final UUID address;
         public final byte[] data;
@@ -208,6 +305,7 @@ public class CliApi {
     /**
      * API for changing resources (e.g., groups).
      */
+    @Doc("API for changing resources (e.g., groups).")
     public class ChangeApi {
         private final AetherCloudClient client;
 
@@ -226,6 +324,7 @@ public class CliApi {
         /**
          * API for changing an access group.
          */
+        @Doc("API for changing a specific access group.")
         public class ChangeGroupApi {
             private final long id;
             private final AetherCloudClient client;
@@ -236,9 +335,9 @@ public class CliApi {
             }
 
             @Doc("Add clients to an access group")
-            @Example("$exCmd change group 123456 add 3ac93165-3d37-4970-87a6-fa4ee27744e4,1a2b3c4d-5e6f-7080-90a0-b1c2d3e4f5a6")
+            @Example("$exCmd change group 123456 add TEST,my-friend-alias")
             public AFuture add(
-                    @Doc("Set of client UUIDs to add")
+                    @Doc("Set of client UUIDs or aliases to add. \n" + UUID_ALIASES_DOC)
                     @StdIn Set<UUID> uid) {
                 logFlow("ChangeGroupApi: add started", "groupId", id);
                 AFuture res = AFuture.make();
@@ -260,9 +359,9 @@ public class CliApi {
             }
 
             @Doc("Remove clients from an access group")
-            @Example("$exCmd change group 123456 remove 3ac93165-3d37-4970-87a6-fa4ee27744e4")
+            @Example("$exCmd change group 123456 remove my-friend-alias")
             public AFuture remove(
-                    @Doc("Set of client UUIDs to remove")
+                    @Doc("Set of client UUIDs or aliases to remove. \n" + UUID_ALIASES_DOC)
                     Set<UUID> uid) {
                 logFlow("ChangeGroupApi: remove started", "groupId", id);
                 AFuture res = AFuture.make();
@@ -288,36 +387,81 @@ public class CliApi {
     /**
      * API for showing resources.
      */
+    @Doc("API for showing resources.")
     public class ShowApi {
-        private final ClientStateInMemory state;
+        private final CliState cliState; // ВСЕГДА НЕ NULL
         public EventConsumer<Msg> messages = new EventConsumerWithQueue<>();
 
-        public ShowApi(ClientStateInMemory state) {
-            this.state = state;
+        /**
+         * @param cliState Загруженное состояние CLI (псевдонимы)
+         */
+        public ShowApi(CliState cliState) {
+            this.cliState = cliState;
         }
 
-        @Doc("Show client state")
-        @Example("$exCmd show state")
-        public ClientStateInMemory state() {
+        /**
+         * Внутренний хелпер, который загружает и проверяет, что state.bin существует.
+         * @param stateFile Файл состояния для загрузки.
+         * @return Загруженный ClientStateInMemory
+         * @throws IllegalStateException если state.bin не был найден или поврежден.
+         */
+        private ClientStateInMemory loadRequiredState(File stateFile) {
+            ClientStateInMemory state = ClientStateInMemory.load(stateFile);
+            if (state == null) {
+                throw new IllegalStateException("Command requires a valid state file, but it was not found or was corrupted. " +
+                                                "Default path is '" + stateFile.getName() + "'. " +
+                                                "Please run 'create client' first, or specify a valid state file with --state.");
+            }
             return state;
         }
 
-        @Doc("Show all access groups for client")
-        @Example("$exCmd show groups -c 3ac93165-3d37-4970-87a6-fa4ee27744e4")
+        @Doc("Show all user-defined aliases from ~/.aether-cli-state.json")
+        @Example("$exCmd show aliases")
+        public String aliases() {
+            // Эта команда зависит ТОЛЬКО от cliState, поэтому она ВСЕГДА будет работать.
+            return new GsonBuilder().setPrettyPrinting().create().toJson(cliState.getAliases());
+        }
+
+        @Doc("Show client state. Use --console json for JSON output.")
+        @Example("$exCmd show state")
+        public ClientStateInMemory state(
+                @Doc("Previously saved client state file")
+                @Optional(value = "state.bin") // <-- ПАРАМЕТР ДОБАВЛЕН ЗДЕСЬ
+                File state) {
+            // Эта команда ТРЕБУЕТ state.bin
+            return loadRequiredState(state);
+        }
+
+        @Doc("Show all access groups for a client")
+        @Example("$exCmd show groups -c TEST")
         @Alias("g")
         public ARFuture<Set<Long>> groups(
-                @Doc("Specified client uid. Default uid from state")
+                @Doc("Previously saved client state file") // <-- ПАРАМЕТР ДОБАВЛЕН ЗДЕСЬ
+                @Optional(value = "state.bin")
+                File state,
+                @Doc("Specified client UID or alias. Defaults to client's UID from state file.\n" + UUID_ALIASES_DOC)
                 @Optional
                 @Alias("c")
                 UUID targetClient) {
+
+            // --- ЗАГРУЗКА И ПРОВЕРКА ЗДЕСЬ ---
+            ClientStateInMemory requiredState;
+            try {
+                requiredState = loadRequiredState(state); // Проверяем, что state.bin загружен
+            } catch (Exception e) {
+                return ARFuture.doThrow(e); // Возвращаем ошибку, если state.bin нет
+            }
+            // -------------------------
+
             // Create client locally
-            var client = AetherCloudClient.of(state);
+            var client = AetherCloudClient.of(requiredState); // Используем проверенный state
             CliApi.this.destroyer.add(client); // Add to the root destroyer
 
-            if (targetClient == null) {
-                targetClient = client.getUid();
+            UUID targetUuid = targetClient;
+            if (targetUuid == null) {
+                targetUuid = client.getUid();
             }
-            UUID finalTargetClient = targetClient;
+            UUID finalTargetClient = targetUuid;
 
             ARFuture<Set<Long>> res = ARFuture.run(CLI_EXECUTOR, () -> client.getClientGroups(finalTargetClient)).decompose();
 
@@ -331,10 +475,23 @@ public class CliApi {
         @Alias("gd")
         @Example("$exCmd show groups-details 123456,789012")
         public ARFuture<List<AccessGroup>> groupsDetails(
-                @Doc("IDs of access groups")
+                @Doc("Previously saved client state file") // <-- ПАРАМЕТР ДОБАВЛЕН ЗДЕСЬ
+                @Optional(value = "state.bin")
+                File state,
+                @Doc("IDs of access groups, separated by comma")
                 Set<Long> ids) {
+
+            // --- ЗАГРУЗКА И ПРОВЕРКА ЗДЕСЬ ---
+            ClientStateInMemory requiredState;
+            try {
+                requiredState = loadRequiredState(state);
+            } catch (Exception e) {
+                return ARFuture.doThrow(e);
+            }
+            // -------------------------
+
             // Create client locally
-            var client = AetherCloudClient.of(state);
+            var client = AetherCloudClient.of(requiredState);
             CliApi.this.destroyer.add(client); // Add to the root destroyer
 
             ARFuture<List<AccessGroup>> res = ARFuture.run(CLI_EXECUTOR, () -> ARFuture.all(Flow.flow(ids)
@@ -347,20 +504,34 @@ public class CliApi {
             });
         }
 
-        @Doc("Show all clients that the current client can access. The function does not work for public clients")
+        @Doc("Show all clients that the current client can access. This function does not work for public clients.")
         @Alias("aac")
         @Example("$exCmd show all-accessed-clients")
         public ARFuture<Set<UUID>> allAccessedClients(
-                @Doc("Specified client uid. Default uid from state")
+                @Doc("Previously saved client state file") // <-- ПАРАМЕТР ДОБАВЛЕН ЗДЕСЬ
+                @Optional(value = "state.bin")
+                File state,
+                @Doc("Specified client UID or alias. Defaults to client's UID from state file.\n" + UUID_ALIASES_DOC)
                 @Optional @Alias("c") UUID targetClient) {
+
+            // --- ЗАГРУЗКА И ПРОВЕРКА ЗДЕСЬ ---
+            ClientStateInMemory requiredState;
+            try {
+                requiredState = loadRequiredState(state);
+            } catch (Exception e) {
+                return ARFuture.doThrow(e);
+            }
+            // -------------------------
+
             // Create client locally
-            var client = AetherCloudClient.of(state);
+            var client = AetherCloudClient.of(requiredState);
             CliApi.this.destroyer.add(client); // Add to the root destroyer
 
-            if (targetClient == null) {
-                targetClient = client.getUid();
+            UUID targetUuid = targetClient;
+            if (targetUuid == null) {
+                targetUuid = client.getUid();
             }
-            UUID finalTargetClient = targetClient;
+            UUID finalTargetClient = targetUuid;
 
             ARFuture<Set<UUID>> res = ARFuture.run(CLI_EXECUTOR, () -> client.getAllAccessedClients(finalTargetClient)).decompose();
 
@@ -371,11 +542,14 @@ public class CliApi {
         }
 
         @Doc("Wait for and show incoming messages")
-        @Example("$exCmd show messages --wait-time 10000 --filter 3ac93165-3d37-4970-87a6-fa4ee27744e4")
+        @Example("$exCmd show messages --wait-time 10000 --filter my-friend-alias")
         public EventConsumer<Msg> messages(
-                @Doc("Filter messages by sender UUIDs")
+                @Doc("Previously saved client state file") // <-- ПАРАМЕТР ДОБАВЛЕН ЗДЕСЬ
+                @Optional(value = "state.bin")
+                File state,
+                @Doc("Filter messages by sender UUIDs or aliases. \n" + UUID_ALIASES_DOC)
                 @Optional Set<UUID> filter,
-                @Doc("Exclude messages from these sender UUIDs")
+                @Doc("Exclude messages from these sender UUIDs or aliases. \n" + UUID_ALIASES_DOC)
                 @Optional Set<UUID> not,
                 @Optional("5000")
                 @Doc("The time in milliseconds to wait for new messages. After timeout, the client session is closed.")
@@ -393,9 +567,14 @@ public class CliApi {
                 @Doc("Set true if you want to append data to the file, false to overwrite")
                 boolean fileAppend
         ) {
+            // --- ЗАГРУЗКА И ПРОВЕРКА ЗДЕСЬ ---
+            // (Эта команда не возвращает AFuture, поэтому бросаем исключение)
+            ClientStateInMemory requiredState = loadRequiredState(state);
+            // -------------------------
+
             logFlow("ShowApi: messages command started", "waitTimeMs", waitTime, "filterUids", filter, "notUids", not);
             // Create client locally
-            var client = new AetherCloudClient(state);
+            var client = new AetherCloudClient(requiredState); // Используем проверенный state
             CliApi.this.destroyer.add(client);
             logFlow("ShowApi: Client instance created", "clientUid", client.getUid());
 
@@ -415,7 +594,7 @@ public class CliApi {
                         isFiltered = true;
                     }
                     if (!isFiltered && not != null && not.contains(consumerUid)) {
-                        logFlow("ShowApi: Message SKIPPED (Exclude check failed)", "from", consumerUid);
+                        logFlow("ShowApi: Message SKIPPBLED (Exclude check failed)", "from", consumerUid);
                         isFiltered = true;
                     }
 
@@ -453,13 +632,14 @@ public class CliApi {
     /**
      * API for creating resources (client, group).
      */
+    @Doc("API for creating resources (client, group).")
     public class CreateApi {
 
         @Doc("Create a new client")
-        @Example("$exCmd create client --parent 3ac93165-3d37-4970-87a6-fa4ee27744e4 --crypto-lib SODIUM")
+        @Example("$exCmd create client --parent TEST --alias my-new-client")
         public ARFuture<ClientState> client(
-                @Optional("3ac93165-3d37-4970-87a6-fa4ee27744e4")
-                @Doc("Parent client UUID")
+                @Optional("TEST")
+                @Doc("Parent client UUID or alias. Defaults to TEST.\n" + UUID_ALIASES_DOC)
                 UUID parent,
                 @Optional("tcp://registration.aethernet.io:9010")
                 @Doc("Registration URI")
@@ -475,9 +655,13 @@ public class CliApi {
                 String fileOutFormat,
                 @Optional("state.bin")
                 @Doc("File path for saving the client state")
-                File fileOut
+                File fileOut,
+                @Optional
+                @Doc("A custom alias to save for the new client's UUID in ~/.aether-cli-state.json")
+                String alias
         ) {
-            logFlow("CreateApi: client creation started", "parent", parent);
+            logFlow("CreateApi: client creation started", "parent", parent, "alias", alias);
+
             if (dev) {
                 regUri = URI.create("tcp://reg-dev.aethernet.io:9010");
             }
@@ -494,34 +678,51 @@ public class CliApi {
                 logFlow("CreateApi: Client startFuture completed successfully", "uid", state.getUid());
                 return state;
             }).apply(() -> {
+                if (alias != null && !alias.isBlank()) {
+                    cliState.addAlias(alias, state.getUid().toString());
+                    logFlow("CreateApi: Saved new alias '" + alias + "' for UUID " + state.getUid());
+                }
                 logFlow("CreateApi: Client creation finished. Starting asynchronous destroy.");
                 completeCliSession(apiDestroyer, client.destroy(true));
             });
         }
 
         @Doc("Create a new access group")
-        @Example("$exCmd create group --owner 3ac93165-3d37-4970-87a6-fa4ee27744e4 1a2b3c4d-5e6f-7080-90a0-b1c2d3e4f5a6,c3d4e5f6-7890-1234-5678-90abcdef0123")
+        @Example("$exCmd create group --owner TEST TEST,ROOT,my-friend-alias")
         public ARFuture<Long> group(
                 @Optional(value = "state.bin")
                 @Doc("Client state file used for operation")
                 File state,
                 @Optional
-                @Doc("Owner UUID of the new access group (defaults to client's UID)")
+                @Doc("Owner UUID or alias of the new group. Defaults to client's UID from state file.\n" + UUID_ALIASES_DOC)
                 UUID owner,
-                @Doc("Set of client UUIDs to initially include in the group")
+                @Doc("Set of client UUIDs or aliases to initially include in the group. \n" + UUID_ALIASES_DOC)
                 @Optional Set<UUID> uids) {
             logFlow("CreateApi: group creation started");
-            // Create client locally
-            var client = new AetherCloudClient(ClientStateInMemory.load(state));
-            CliApi.this.destroyer.add(client);
-            if (owner == null) {
-                owner = client.getUid();
+
+            // --- ЗАГРУЗКА STATE ЗДЕСЬ ---
+            ClientStateInMemory loadedState = ClientStateInMemory.load(state);
+            if (loadedState == null) {
+                return ARFuture.doThrow(new IllegalStateException("Command requires a valid state file, but it was not found or was corrupted. " +
+                                                                  "Default path is '" + state.getName() + "'. " +
+                                                                  "Please run 'create client' first, or specify a valid state file with --state."));
             }
+            // -------------------------
+
+            // Create client locally
+            var client = new AetherCloudClient(loadedState); // Используем загруженный state
+            CliApi.this.destroyer.add(client);
+
+            UUID ownerUuid = owner;
+            if (ownerUuid == null) {
+                ownerUuid = client.getUid();
+            }
+
             if (uids == null) {
                 uids = Set.of();
             }
 
-            UUID finalOwner = owner;
+            UUID finalOwner = ownerUuid;
             Set<UUID> finalUids = uids;
             // CAPTURE: Capture the reference to the Destroyer in the outer (safe) scope
             Destroyer apiDestroyer = CliApi.this.destroyer;
@@ -538,6 +739,7 @@ public class CliApi {
     /**
      * API for sending messages.
      */
+    @Doc("API for sending messages.")
     public class SendApi {
         private final MessageNode st;
         private final AetherCloudClient client; // Store the client passed from the send method
@@ -548,7 +750,7 @@ public class CliApi {
         }
 
         @Doc("Send a text message")
-        @Example("$exCmd send 3ac93165-3d37-4970-87a6-fa4ee27744e4 text \"Hello, world!\"")
+        @Example("$exCmd send TEST text \"Hello, world!\"")
         public AFuture text(
                 @Doc("Text content to send")
                 String text) {
@@ -570,7 +772,7 @@ public class CliApi {
         }
 
         @Doc("Send file content")
-        @Example("$exCmd send 3ac93165-3d37-4970-87a6-fa4ee27744e4 file my_document.pdf")
+        @Example("$exCmd send TEST file my_document.pdf")
         public AFuture file(
                 @Doc("File to send")
                 File file) {
@@ -601,15 +803,66 @@ public class CliApi {
         }
 
         @Doc("Send data from standard input")
-        @Example("echo \"data\" | $exCmd send 3ac93165-3d37-4970-87a6-fa4ee27744e4 stdin")
-        public void stdIn(
+        @Example("echo \"data\" | $exCmd send TEST stdin")
+        public AFuture stdIn(
                 @Doc("Data read from standard input")
                 @StdIn byte[] data) {
             logFlow("SendApi: sending stdin data", "dataLength", data.length);
+            AFuture res = AFuture.make();
+
             // Execute send via executor
             AFuture.run(CLI_EXECUTOR, () -> {
-                st.send(Value.ofForce(data));
+                st.send(Value.ofForce(data).linkFuture(res));
+            }).onError(res::error);
+
+            // CAPTURE: Capture the reference to the Destroyer in the outer (safe) scope
+            Destroyer apiDestroyer = CliApi.this.destroyer;
+
+            return res.apply(() -> {
+                logFlow("SendApi: send (stdin) finished. Starting asynchronous destroy.");
+                completeCliSession(apiDestroyer, client.destroy(true));
             });
         }
     }
+
+    // --- ДОБАВЛЕН НОВЫЙ КЛАСС ---
+    /**
+     * API for setting properties.
+     */
+    @Doc("API for setting properties.")
+    public class SetApi {
+        private final CliState cliState;
+
+        public SetApi(CliState cliState) {
+            this.cliState = cliState;
+        }
+
+        @Doc("Set or update a user-defined alias for a UUID")
+        @Example("$exCmd set alias my-friend 3ac93165-3d37-4970-87a6-fa4ee27744e4")
+        @Example("$exCmd set alias my-server TEST")
+        public void alias(
+                @Doc("The name for the alias")
+                String aliasName,
+                @Doc("The UUID or an existing alias (static or user-defined) to associate with the new alias name. \n" + UUID_ALIASES_DOC)
+                UUID uuid // Конвертер ConsoleMgrCanonical разрешит UUID
+        ) {
+            if (aliasName == null || aliasName.isBlank()) {
+                throw new IllegalArgumentException("Alias name cannot be empty.");
+            }
+            if (uuid == null) {
+                throw new IllegalArgumentException("UUID cannot be null.");
+            }
+
+            // Проверяем, не конфликтует ли имя с статическими алиасами
+            String upperName = aliasName.toUpperCase();
+            if (upperName.equals("TEST") || upperName.equals("ROOT") || upperName.equals("ANONYMOUS")) {
+                throw new IllegalArgumentException("Alias name '" + aliasName + "' conflicts with a built-in static alias and cannot be used.");
+            }
+
+            cliState.addAlias(aliasName, uuid.toString());
+            logFlow("SetApi: Saved alias '" + aliasName + "' for UUID " + uuid);
+            // Возвращаем void, так как операция синхронная
+        }
+    }
+    // ----------------------------
 }
