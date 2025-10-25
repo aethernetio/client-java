@@ -11,7 +11,7 @@ if (gradle.parent != null) {
             }
         }
     }
-    tasks.register("aetherPub") {
+    tasks.register("publishAll") {
         dependsOn("updateVersion")
         dependsOn(":client:publish")
         dependsOn(":pointToPoint:publish")
