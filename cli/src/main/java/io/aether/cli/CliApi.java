@@ -1,6 +1,5 @@
 package io.aether.cli;
 
-import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import io.aether.StandardUUIDs;
 import io.aether.api.common.AccessGroup;
@@ -18,7 +17,6 @@ import io.aether.utils.consoleCanonical.ConsoleMgrCanonical.*;
 import io.aether.utils.flow.Flow;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
-import io.aether.utils.interfaces.AFunction;
 import io.aether.utils.slots.EventConsumer;
 import io.aether.utils.slots.EventConsumerWithQueue;
 import io.aether.utils.streams.Value;
@@ -32,13 +30,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 /**
  * Command Line Interface API for Aether Cloud Client operations.
@@ -681,7 +676,7 @@ public class CliApi {
             // CAPTURE: Capture the reference to the Destroyer in the outer (safe) scope
             Destroyer apiDestroyer = CliApi.this.destroyer;
 
-            ARFuture<ClientState> resultFuture = ARFuture.of();
+            ARFuture<ClientState> resultFuture = ARFuture.make();
 
             /**
              * ASYNCHRONOUS CHAIN: (Registration -> Cloud/Server Resolution -> Completion)

@@ -62,7 +62,7 @@ public class CLI {
                 api.destroyer.destroy(true).timeout(10, () ->
                         Log.warn("Timeout destroying CLI resources")
                 ).mapRFuture(() -> null)
-        ).timeout(10, () -> Log.warn("Timeout result cli")).waitDone();
+        ).timeout(10, () -> Log.warn("Timeout result cli"));
     }
 
     private void setupMsgConverters(ConsoleMgrCanonical consoleMgr) {

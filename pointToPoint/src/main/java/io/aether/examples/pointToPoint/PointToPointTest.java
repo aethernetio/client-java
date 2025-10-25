@@ -33,7 +33,7 @@ public class PointToPointTest {
         registrationUri.add(URI.create("tcp://registration.aethernet.io:9010"));
     }
 
-    public AFuture p2p() { // ИСПРАВЛЕНО: удален дженерик
+    public AFuture p2p() {
         var parent = UUID.fromString("B1AC52C8-8D94-BD39-4C01-A631AC594165");
         if (clientConfig1 == null)
             clientConfig1 = new ClientStateInMemory(parent, registrationUri, null, CryptoLib.SODIUM);
@@ -45,10 +45,13 @@ public class PointToPointTest {
         AetherCloudClient client2 = new AetherCloudClient(clientConfig2, "client2");
 
         AFuture testDoneFuture = AFuture.make();
-
         client1.startFuture.to(() -> Log.info("client is registered uid2: $uid1", "uid1", client1.getUid()));
         client2.startFuture.to(() -> Log.info("client is registered uid2: $uid2", "uid2", client2.getUid()));
-
+        client1.startFuture.onError(Log::error);
+        client2.startFuture.onError(Log::error);
+        client1.startFuture.onCancel(()->Log.error("cancel"));
+        client2.startFuture.onCancel(()->Log.error("cancel"));
+        client2.startFuture.onError(Log::error);
         AFuture.all(client1.startFuture, client2.startFuture).to(() -> {
             Log.info("clients is registered uid1: $uid1 uid2: $uid2", "uid1", client1.getUid(), "uid2", client2.getUid());
             AFuture checkReceiveMessage = AFuture.make();
@@ -70,9 +73,8 @@ public class PointToPointTest {
 
             checkReceiveMessage.to(() -> {
                 Log.info("TEST IS DONE!");
-                // Завершение клиентов и финализация testDoneFuture
                 client1.destroy(true).to(() -> {
-                    client2.destroy(true).to(testDoneFuture::done)
+                    client2.destroy(true).to(testDoneFuture)
                             .onError(testDoneFuture::error);
                 }).onError(testDoneFuture::error);
             }).onError(testDoneFuture::error);

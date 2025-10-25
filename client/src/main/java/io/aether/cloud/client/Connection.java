@@ -16,7 +16,7 @@ public abstract class Connection<LT, RT extends RemoteApi> implements Destroyabl
 
     protected final AetherCloudClient client;
     protected final URI uri;
-    protected final ARFuture<RT> connectFuture = ARFuture.of();
+    protected final ARFuture<RT> connectFuture = ARFuture.make();
     protected final FastMetaClient<LT, RT> fastMetaClient;
     protected volatile RT rootApi;
 
@@ -33,7 +33,7 @@ public abstract class Connection<LT, RT extends RemoteApi> implements Destroyabl
         this.fastMetaClient = clientImpl;
 
         if (client.destroyer.isDestroyed()) {
-            fastMetaClient.close();
+            fastMetaClient.destroy(true);
             connectFuture.cancel();
             rootApi = null;
             return;
@@ -87,6 +87,6 @@ public abstract class Connection<LT, RT extends RemoteApi> implements Destroyabl
     @Override
     public AFuture destroy(boolean force) {
         Log.info("Destroying Connection to " + uri);
-        return fastMetaClient.close();
+        return fastMetaClient.destroy(force);
     }
 }

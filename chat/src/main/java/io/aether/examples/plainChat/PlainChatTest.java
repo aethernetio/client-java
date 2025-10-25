@@ -23,7 +23,7 @@ public class PlainChatTest {
         Log.info("Client was started");
         AFuture res = AFuture.make();
         AFuture.all(chatClient1.aether.startFuture, chatClient2.aether.startFuture).to(() -> {
-            var future = ARFuture.<MessageDescriptor>of();
+            var future = ARFuture.<MessageDescriptor>make();
             chatClient2.onMessage.add(m -> {
                 Log.info("receive message: $msg", "msg", m);
                 future.tryDone(m);

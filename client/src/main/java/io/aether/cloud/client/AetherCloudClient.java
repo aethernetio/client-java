@@ -11,7 +11,6 @@ import io.aether.crypto.CryptoEngine;
 import io.aether.crypto.CryptoProviderFactory;
 import io.aether.logger.LNode;
 import io.aether.logger.Log;
-import io.aether.utils.ConcurrentHashSet;
 import io.aether.utils.Destroyer;
 import io.aether.utils.RU;
 import io.aether.utils.futures.AFuture;
@@ -22,8 +21,6 @@ import io.aether.utils.interfaces.AFunction;
 import io.aether.utils.interfaces.Destroyable;
 import io.aether.utils.rcollections.BMap;
 import io.aether.utils.rcollections.RCol;
-import io.aether.utils.rcollections.RFMap;
-import io.aether.utils.rcollections.RMap;
 import io.aether.utils.slots.EventBiConsumer;
 import io.aether.utils.slots.EventConsumer;
 import io.aether.utils.slots.EventConsumerWithQueue;
@@ -31,13 +28,10 @@ import io.aether.utils.streams.Value;
 import it.unimi.dsi.fastutil.longs.LongSet;
 import it.unimi.dsi.fastutil.objects.ObjectSet;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.net.URI;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -377,7 +371,7 @@ public final class AetherCloudClient implements Destroyable {
      */
     public <T> ARFuture<T> getAuthApi1(@NotNull AFunction<AuthorizedApi, ARFuture<T>> t) {
         if (destroyer.isDestroyed()) return ARFuture.canceled();
-        ARFuture<T> res = ARFuture.of();
+        ARFuture<T> res = ARFuture.make();
         getAuthApiFuture().mapRFuture(t).to(res);
         return res;
     }
@@ -388,7 +382,7 @@ public final class AetherCloudClient implements Destroyable {
      * @return A future containing the AuthorizedApi instance.
      */
     public ARFuture<AuthorizedApi> getAuthApiFuture() {
-        ARFuture<AuthorizedApi> res = ARFuture.of();
+        ARFuture<AuthorizedApi> res = ARFuture.make();
         if (destroyer.isDestroyed()) {
             res.cancel();
             return res;
@@ -568,7 +562,15 @@ public final class AetherCloudClient implements Destroyable {
     }
 
     public AetherCloudClient waitStart(int timeout) {
-        startFuture.waitDoneSeconds(timeout);
+        try {
+            startFuture.toCompletableFuture().get(timeout,TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        } catch (ExecutionException e) {
+            throw new RuntimeException(e);
+        } catch (TimeoutException e) {
+            throw new RuntimeException(e);
+        }
         return this;
     }
 
@@ -608,7 +610,7 @@ public final class AetherCloudClient implements Destroyable {
                         if (data.contains(uuid)) {
                             return ARFuture.of(Boolean.FALSE);
                         }
-                        return accessOperationsAdd.computeIfAbsent(id, (k) -> new ConcurrentHashMap<>()).computeIfAbsent(uuid, k -> ARFuture.of());
+                        return accessOperationsAdd.computeIfAbsent(id, (k) -> new ConcurrentHashMap<>()).computeIfAbsent(uuid, k -> ARFuture.make());
                     }
 
                     @Override
@@ -616,7 +618,7 @@ public final class AetherCloudClient implements Destroyable {
                         if (!data.contains(uuid)) {
                             return ARFuture.of(Boolean.FALSE);
                         }
-                        return accessOperationsRemove.computeIfAbsent(id, (k) -> new ConcurrentHashMap<>()).computeIfAbsent(uuid, k -> ARFuture.of());
+                        return accessOperationsRemove.computeIfAbsent(id, (k) -> new ConcurrentHashMap<>()).computeIfAbsent(uuid, k -> ARFuture.make());
                     }
                 });
     }

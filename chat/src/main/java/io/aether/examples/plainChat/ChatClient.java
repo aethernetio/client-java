@@ -3,7 +3,6 @@ package io.aether.examples.plainChat;
 import io.aether.api.chatdsl.*;
 import io.aether.cloud.client.AetherCloudClient;
 import io.aether.cloud.client.ClientStateInMemory;
-import io.aether.cloud.client.MessageEventListener;
 import io.aether.logger.Log;
 import io.aether.utils.futures.ARFuture;
 import io.aether.utils.slots.EventConsumer;
@@ -19,7 +18,7 @@ public class ChatClient implements ServiceClientApi {
     public final AetherCloudClient aether;
     public final EventConsumer<MessageDescriptor> onMessage = new EventConsumerWithQueue<>();
     private final Map<UUID, UserDescriptor> users = new ConcurrentHashMap<>();
-    private final ARFuture<ServiceServerApiRemote> service = ARFuture.of();
+    private final ARFuture<ServiceServerApiRemote> service = ARFuture.make();
     private final String name;
 
     public ChatClient(UUID chatService, List<URI> regUri, String name) {
