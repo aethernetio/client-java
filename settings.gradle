@@ -3,6 +3,10 @@ pluginManagement {
         gradlePluginPortal()
         mavenLocal() // Ищет в ~/.m2/repository
         mavenCentral()
+        maven {
+            url 'http://nexus.aethernet.io/maven/releases/'
+            allowInsecureProtocol = true
+        }
     }
 }
 plugins {

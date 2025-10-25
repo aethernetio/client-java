@@ -465,8 +465,10 @@ public class CliApi {
                 targetUuid = client.getUid();
             }
             UUID finalTargetClient = targetUuid;
-
-            ARFuture<Set<Long>> res = ARFuture.run(CLI_EXECUTOR, () -> client.getClientGroups(finalTargetClient)).decompose();
+            ARFuture<Set<Long>> res=ARFuture.make();
+            CLI_EXECUTOR.execute(()->{
+                client.getClientGroups(finalTargetClient).to(res);
+            });
 
             return res.apply(() -> {
                 // Asynchronously destroy client after operation completion via executor
@@ -497,10 +499,12 @@ public class CliApi {
             var client = AetherCloudClient.of(requiredState);
             CliApi.this.destroyer.add(client); // Add to the root destroyer
 
-            ARFuture<List<AccessGroup>> res = ARFuture.run(CLI_EXECUTOR, () -> ARFuture.all(Flow.flow(ids)
-                    .map(groupId -> client.getGroup(groupId).map(v -> v))
-                    .toList())).decompose();
-
+            ARFuture<List<AccessGroup>> res = ARFuture.make();
+            CLI_EXECUTOR.execute(()->{
+                ARFuture.all(Flow.flow(ids)
+                        .map(groupId -> client.getGroup(groupId).map(v -> v))
+                        .toList()).to(res);
+            });
             return res.apply(() -> {
                 // Asynchronously destroy client after operation completion via executor
                 completeCliSession(destroyer, client.destroy(true));
@@ -535,8 +539,10 @@ public class CliApi {
                 targetUuid = client.getUid();
             }
             UUID finalTargetClient = targetUuid;
-
-            ARFuture<Set<UUID>> res = ARFuture.run(CLI_EXECUTOR, () -> client.getAllAccessedClients(finalTargetClient)).decompose();
+            ARFuture<Set<UUID>> res = ARFuture.make();
+            CLI_EXECUTOR.execute(()->{
+                client.getAllAccessedClients(finalTargetClient).to(res);
+            });
 
             return res.apply(() -> {
                 // Asynchronously destroy client after operation completion via executor

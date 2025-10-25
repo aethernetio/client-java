@@ -1,7 +1,7 @@
 plugins {
     id 'java'
     id 'maven-publish'
-    id 'aether-protocol'
+    id 'aether-protocol' version '1.0.0'
 }
 publishing {
     publications {

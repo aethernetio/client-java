@@ -1,7 +1,7 @@
 plugins {
     id 'java-library'
     id 'maven-publish'
-    id 'aether-protocol'
+    id 'aether-protocol' version '1.0.0'
 }
 
 def coreVersion = '0.0.98'
