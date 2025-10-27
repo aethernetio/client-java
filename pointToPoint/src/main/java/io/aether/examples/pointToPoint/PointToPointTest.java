@@ -73,8 +73,8 @@ public class PointToPointTest {
 
             checkReceiveMessage.to(() -> {
                 Log.info("TEST IS DONE!");
-                client1.destroy(true).to(() -> {
-                    client2.destroy(true).to(testDoneFuture)
+                client1.destroy(false).to(() -> {
+                    client2.destroy(false).to(testDoneFuture)
                             .onError(testDoneFuture::error);
                 }).onError(testDoneFuture::error);
             }).onError(testDoneFuture::error);
