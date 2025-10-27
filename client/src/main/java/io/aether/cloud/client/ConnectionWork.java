@@ -48,6 +48,16 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         apiSafeCtx = new FastApiContext() {
             @Override
             public void flush(AFuture sendFuture) {
+
+                // --- ИСПРАВЛЕНИЕ: Проверяем, можно ли отправлять данные ---
+                // fastMetaClient доступен из базового класса Connection
+                if (fastMetaClient == null || !fastMetaClient.isWritable()) {
+                    // Пропускаем цикл отправки, как ты и просил
+                    sendFuture.cancel();
+                    return;
+                }
+                // --- Конец исправления ---
+
                 // Используем isRequestsFor(this) для проверки, есть ли у этого ConnectionWork
                 // запросы, которые он должен отправить (новые или таймаутнувшие).
                 if (remoteApiFuture.isEmpty() && !client.clouds.isRequestsFor(ConnectionWork.this) && !client.servers.isRequestsFor(ConnectionWork.this)) {
@@ -55,6 +65,9 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                     return;
                 }
 
+                // Теперь, когда мы знаем, что fastMetaClient.isWritable(),
+                // мы также знаем, что getRootApiFuture() уже выполнен
+                // и rootApi 100% не null.
                 getRootApiFuture().to(api -> {
                     remoteApiFuture.executeAll(this, sendFuture);
                     var d = remoteDataToArray();
@@ -120,8 +133,12 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
 
         // 4. Ping Logic (unchanged)
         if (!firstAuth) {
+            firstAuth = true;
             a.ping(0).to(() -> {
-                firstAuth = true;
+                Log.debug("First ping response received.");
+            }).onError(e -> {
+                Log.warn("First ping failed, will retry.", e);
+                firstAuth = false;
             });
         }
     }

@@ -87,7 +87,7 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
                                                             // --- FIX FOR DEADLOCK: Unblock CLI IMMEDIATELY ---
                                                             // 1. Confirm registration (which calls startFuture.done()), unblocking the CLI_EXECUTOR thread.
                                                             client.confirmRegistration(d);
-                                                            Log.info("RegConn: Registration confirmed. CLI is unblocked.");
+                                                            Log.info("RegConn: Registration confirmed.");
 
                                                             // 2. Send the request to resolve servers separately. This should not block CLI completion.
                                                             api.enter(client.getCryptLib(), new ServerRegistrationApiStream(ctxSafe, asymCE::encrypt, a3 -> {

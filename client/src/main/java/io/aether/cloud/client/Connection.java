@@ -3,11 +3,13 @@ package io.aether.cloud.client;
 import io.aether.logger.Log;
 import io.aether.net.fastMeta.FastMetaApi;
 import io.aether.net.fastMeta.FastMetaClient;
+import io.aether.net.fastMeta.FastMetaNet; // <-- Импорт добавлен
 import io.aether.net.fastMeta.RemoteApi;
-import io.aether.net.fastMeta.nio.FastMetaClientNIO;
+// import io.aether.net.fastMeta.nio.FastMetaClientNIO; // <-- Импорт удален
 import io.aether.utils.RU;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
+import io.aether.utils.interfaces.AFunction; // <-- Импорт добавлен
 import io.aether.utils.interfaces.Destroyable;
 
 import java.net.URI;
@@ -20,36 +22,7 @@ public abstract class Connection<LT, RT extends RemoteApi> implements Destroyabl
     protected final FastMetaClient<LT, RT> fastMetaClient;
     protected volatile RT rootApi;
 
-    protected Connection(
-            AetherCloudClient client,
-            URI uri,
-            FastMetaApi<LT, ?> localApiMeta,
-            FastMetaApi<?, RT> remoteApiMeta,
-            FastMetaClient<LT, RT> clientImpl
-    ) {
-        assert uri != null;
-        this.uri = uri;
-        this.client = client;
-        this.fastMetaClient = clientImpl;
-
-        if (client.destroyer.isDestroyed()) {
-            fastMetaClient.destroy(true);
-            connectFuture.cancel();
-            rootApi = null;
-            return;
-        }
-
-        client.destroyer.add(this);
-        client.destroyer.add(fastMetaClient);
-
-        LT localApi = RU.cast(this);
-
-        fastMetaClient.connect(uri, localApiMeta, remoteApiMeta, r -> {
-            rootApi = r;
-            return localApi;
-        }).map(remoteApiMeta::makeRemote).to(connectFuture);
-
-    }
+    // Конструктор, принимавший FastMetaClient, удален.
 
     public Connection(
             AetherCloudClient client,
@@ -57,7 +30,65 @@ public abstract class Connection<LT, RT extends RemoteApi> implements Destroyabl
             FastMetaApi<LT, ?> localApiMeta,
             FastMetaApi<?, RT> remoteApiMeta
     ) {
-        this(client, uri, localApiMeta, remoteApiMeta, new FastMetaClientNIO<>());
+        assert uri != null;
+        this.uri = uri;
+        this.client = client;
+
+        if (client.destroyer.isDestroyed()) {
+            connectFuture.cancel();
+            rootApi = null;
+            this.fastMetaClient = null; // Клиент не будет создан
+            return;
+        }
+
+        client.destroyer.add(this);
+
+        // --- Логика рефакторинга ---
+
+        // 1. Получаем LocalApi. Наследник (ConnectionWork/ConnectionReg)
+        //    и есть реализация LocalApi.
+        LT localApi = RU.cast(this);
+
+        // 2. Определяем 'localApiProvider'.
+        //    Бизнес-логика: при создании 'localApi' нам нужно сохранить 'remoteApi' в 'rootApi'.
+        AFunction<RT, LT> localApiProvider = remoteApi -> {
+            this.rootApi = remoteApi;
+            return localApi;
+        };
+
+        // 3. Определяем 'writableConsumer'.
+        //    Бизнес-логика: при первом успешном соединении нужно "выстрелить" connectFuture.
+        FastMetaNet.WritableConsumer writableConsumer = isWritable -> {
+            if (isWritable) {
+                if (this.rootApi != null) {
+                    // tryDone сработает только один раз, что сохраняет
+                    // логику "первого подключения" для ConnectionRegistration.
+                    this.connectFuture.tryDone(this.rootApi);
+                } else {
+                    // Эта ситуация не должна происходить, если localApiProvider отработал
+                    Log.error("Connection is writable but rootApi was not set.", "uri", uri);
+                    this.connectFuture.tryError(new IllegalStateException("Connection established but rootApi is null."));
+                }
+            } else {
+                Log.warn("Connection lost.", "uri", uri);
+                // При разрыве соединения мы НЕ меняем future.
+                // Он остается "выполненным", а логика обработки
+                // разрывов находится в apiSafeCtx.flush() в ConnectionWork.
+            }
+        };
+
+        // 4. Получаем фабрику и создаем клиент
+        FastMetaNet factory = FastMetaNet.INSTANCE.get();
+        this.fastMetaClient = factory.makeClient(
+                uri,
+                localApiMeta,
+                remoteApiMeta,
+                localApiProvider,
+                writableConsumer
+        );
+
+        // 5. Добавляем созданный клиент в destroyer
+        client.destroyer.add(fastMetaClient);
     }
 
     public RT getRootApi() {
