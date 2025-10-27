@@ -235,8 +235,16 @@ public final class AetherCloudClient implements Destroyable {
         }, timeout1, () -> Log.warn("timeout cloud resolve: $uid", "uid", uid));
     }
 
+    /**
+     * Retrieves or creates a connection to a work server.
+     * NOTE: This method is designed to be called asynchronously after fetching the ServerDescriptor.
+     * @param serverDescriptor The descriptor of the server to connect to.
+     * @return The existing or newly created ConnectionWork instance.
+     * @throws ClientApiException if the provided ServerDescriptor is null.
+     */
     ConnectionWork getConnection(@NotNull ServerDescriptor serverDescriptor) {
-        // Added null check for robustness.
+        // Line 241: This null check is what throws the exception. We fix this
+        // by making sure we wait for the descriptor in the caller (connect).
         if (serverDescriptor == null) {
             throw new ClientApiException("Cannot get connection for null ServerDescriptor.");
         }
@@ -325,7 +333,7 @@ public final class AetherCloudClient implements Destroyable {
                 }
             }
         } else {
-            // Logic for connecting to own cloud
+            // --- FIX: ASYNCHRONOUSLY WAIT FOR CONNECTION WORK READY ---
             try {
                 var uid = getUid();
                 if (uid == null) {
@@ -333,19 +341,41 @@ public final class AetherCloudClient implements Destroyable {
                 }
                 var cloud = clientState.getCloud(uid);
                 if (cloud == null || cloud.getData().length == 0) {
+                    // This is handled by registration or is a critical state.
                     throw new ClientStartException("Client is registered but cloud data is empty.");
                 }
+
+                List<AFuture> readyFutures = new ArrayList<>();
                 for (var serverId : cloud.getData()) {
-                    getConnection(clientState.getServerDescriptor(serverId));
+                    // 1. Get/Wait for the ServerDescriptor to be present in local cache (servers BMap).
+                    ARFuture<ServerDescriptor> serverDescriptorFuture = getServer(serverId);
+
+                    // 2. Map the successful retrieval of the descriptor to the actual connection establishment
+                    //    and wait for the ConnectionWork's internal 'ready' flag (first ping).
+                    AFuture readyFuture = serverDescriptorFuture
+                            .map(this::getConnection) // ARFuture<ConnectionWork>
+                            .mapRFuture(c -> c.ready.mapToARFuture()) // ARFuture<ConnectionWork> -> ARFuture<T> (where T is ConnectionWork)
+                            .toFuture(); // Convert to AFuture for collection
+
+                    readyFutures.add(readyFuture);
                 }
-                startFuture.done();
+
+                // Wait for ANY connection to be ready. This ensures the startFuture completes
+                // only when at least one connection is established and authenticated.
+                AFuture.any(readyFutures)
+                        .to(startFuture::done)
+                        .onError(startFuture::error)
+                        .onCancel(startFuture::cancel);
+
             } catch (Exception e) {
+                // If anything goes wrong synchronously before the async chain starts (e.g., cloud data is bad)
                 Log.error("Fatal error during connection to own cloud.", e);
                 if (!startFuture.isFinalStatus()) {
                     startFuture.error(new ClientStartException("Fatal error during connection to own cloud.", e));
                 }
                 RU.error(e);
             }
+            // --- END FIX ---
         }
     }
 

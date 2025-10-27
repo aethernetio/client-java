@@ -131,11 +131,12 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             a.sendMessages(messageForSend.toArray(new Message[0]));
         }
 
-        // 4. Ping Logic (unchanged)
+        // 4. Ping Logic (ADDED: complete the ready future)
         if (!firstAuth) {
             firstAuth = true;
             a.ping(0).to(() -> {
-                Log.debug("First ping response received.");
+                Log.debug("First ping response received. Marking connection ready.");
+                ready.set(this);
             }).onError(e -> {
                 Log.warn("First ping failed, will retry.", e);
                 firstAuth = false;
@@ -201,19 +202,13 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         }
 
         @Override
-        public void changeParent(UUID uid) {
-
-        }
+        public void changeParent(UUID uid) {}
 
         @Override
-        public void changeAlias(UUID alias) {
-
-        }
+        public void changeAlias(UUID alias) {}
 
         @Override
-        public void requestTelemetry() {
-
-        }
+        public void requestTelemetry() {}
 
         @Override
         public void sendMessages(Message[] msg) {
@@ -252,6 +247,5 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         public void newChild(UUID uid) {
             client.onNewChild.fire(uid);
         }
-
     }
 }
