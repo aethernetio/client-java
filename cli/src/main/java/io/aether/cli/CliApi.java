@@ -14,6 +14,7 @@ import io.aether.utils.Destroyer;
 import io.aether.utils.RU;
 import io.aether.utils.ToString;
 import io.aether.utils.consoleCanonical.ConsoleMgrCanonical.*;
+import io.aether.utils.consoleCanonical.ConsoleMgrCanonical.Optional;
 import io.aether.utils.flow.Flow;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
@@ -27,11 +28,7 @@ import java.io.FileInputStream;
 import java.io.InputStreamReader;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
@@ -47,11 +44,7 @@ public class CliApi {
     private static final Executor DESTROY_EXECUTOR = Executors.newSingleThreadExecutor(r -> new Thread(r, "CLI-Destroy-Worker"));
 
     public final Destroyer destroyer = new Destroyer("CliApi");
-    public CreateApi createApi;
-    public ShowApi showApi;
-    public SetApi setApi;
     private final CliState cliState;
-
     /**
      * Known static UUID aliases and format details for documentation.
      */
@@ -60,26 +53,23 @@ public class CliApi {
                                             "    ROOT\u00A0(ed307ca7-8369-4342-91ee-60c8fc6f9b6b)\n" +
                                             "    ANONYMOUS\u00A0(237e2dc0-21a4-4e83-8184-c43052f93b79)\n" +
                                             "    (Also supports user aliases. Use 'show aliases' to list them)";
+    public CreateApi createApi;
+    public ShowApi showApi;
+    public SetApi setApi;
 
     /**
      * Constructor receiving the persistent state
+     *
      * @param cliState The loaded CLI state
      */
     public CliApi(CliState cliState) {
         this.cliState = cliState;
     }
 
-
-    private static void logFlow(String message, Object... args) {
-        var l = new ArrayList<>(Arrays.asList(args));
-        l.add(Log.SYSTEM_COMPONENT);
-        l.add("CLI");
-        Log.info(message, l.toArray());
-    }
-
     /**
      * Resolves UUID aliases (user-defined first, then static) or raw UUID strings.
      * This method is used by ConsoleMgrCanonical as a type converter.
+     *
      * @param uuidOrAlias The string to resolve.
      * @return The resolved UUID.
      * @throws IllegalArgumentException if the string is neither a valid alias nor a UUID.
@@ -115,32 +105,6 @@ public class CliApi {
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException("Invalid UUID or alias: '" + uuidOrAlias + "'", e);
         }
-    }
-
-
-    /**
-     * Asynchronously waits for the provided Future to complete (usually client.destroy()),
-     * and then calls destroy() on the root CLI Destroyer via an executor to prevent deadlocks.
-     */
-    private static void completeCliSession(Destroyer cliDestroyer, AFuture future) {
-        future.to(CLI_EXECUTOR, () -> {
-            logFlow("Asynchronous operation finished. Completing root CLI destroyer.");
-            // Execute destroy via a separate executor to prevent deadlocks
-            DESTROY_EXECUTOR.execute(() -> {
-                cliDestroyer.destroy(true).to(() -> {
-                    // Log active threads after Destroyer completes
-                    logFlow("Root CLI destroyer completed. Checking active threads.");
-                    Thread.getAllStackTraces().keySet().stream()
-                            .filter(t -> t.isAlive() && !t.isDaemon())
-                            .forEach(t -> Log.warn("Non-daemon thread still active: $name ($group)", "name", t.getName(), "group", t.getThreadGroup().getName()));
-                });
-            });
-        }).onError(e -> {
-            logFlow("Error during asynchronous operation. Completing root CLI destroyer with error.", "error", e.getMessage());
-            DESTROY_EXECUTOR.execute(() -> {
-                cliDestroyer.destroy(true);
-            });
-        });
     }
 
     /**
@@ -261,8 +225,12 @@ public class CliApi {
         // Create client locally
         var client = new AetherCloudClient(loadedState);
         destroyer.add(client);
+
+        // Wait for client to be fully connected before allowing message sending
+        ARFuture<AetherCloudClient> readyClient = client.connect().mapRFuture(() -> client);
+
         var st = client.getMessageNode(address, MessageEventListener.DEFAULT);
-        return new SendApi(st, client);
+        return new SendApi(st, client, readyClient);
     }
 
     @Api
@@ -279,6 +247,38 @@ public class CliApi {
         logFlow("Executing command: set");
         setApi = new SetApi(this.cliState);
         return setApi;
+    }
+
+    private static void logFlow(String message, Object... args) {
+        var l = new ArrayList<>(Arrays.asList(args));
+        l.add(Log.SYSTEM_COMPONENT);
+        l.add("CLI");
+        Log.info(message, l.toArray());
+    }
+
+    /**
+     * Asynchronously waits for the provided Future to complete (usually client.destroy()),
+     * and then calls destroy() on the root CLI Destroyer via an executor to prevent deadlocks.
+     */
+    private static void completeCliSession(Destroyer cliDestroyer, AFuture future) {
+        future.to(CLI_EXECUTOR, () -> {
+            logFlow("Asynchronous operation finished. Completing root CLI destroyer.");
+            // Execute destroy via a separate executor to prevent deadlocks
+            DESTROY_EXECUTOR.execute(() -> {
+                cliDestroyer.destroy(true).to(() -> {
+                    // Log active threads after Destroyer completes
+                    logFlow("Root CLI destroyer completed. Checking active threads.");
+                    Thread.getAllStackTraces().keySet().stream()
+                            .filter(t -> t.isAlive() && !t.isDaemon())
+                            .forEach(t -> Log.warn("Non-daemon thread still active: $name ($group)", "name", t.getName(), "group", t.getThreadGroup().getName()));
+                });
+            });
+        }).onError(e -> {
+            logFlow("Error during asynchronous operation. Completing root CLI destroyer with error.", "error", e.getMessage());
+            DESTROY_EXECUTOR.execute(() -> {
+                cliDestroyer.destroy(true);
+            });
+        });
     }
 
     /**
@@ -404,6 +404,7 @@ public class CliApi {
 
         /**
          * Internal helper that loads and checks if state.bin exists.
+         *
          * @param stateFile The state file to load.
          * @return The loaded ClientStateInMemory
          * @throws IllegalStateException if state.bin was not found or corrupted.
@@ -465,8 +466,8 @@ public class CliApi {
                 targetUuid = client.getUid();
             }
             UUID finalTargetClient = targetUuid;
-            ARFuture<Set<Long>> res=ARFuture.make();
-            CLI_EXECUTOR.execute(()->{
+            ARFuture<Set<Long>> res = ARFuture.make();
+            CLI_EXECUTOR.execute(() -> {
                 client.getClientGroups(finalTargetClient).to(res);
             });
 
@@ -500,7 +501,7 @@ public class CliApi {
             CliApi.this.destroyer.add(client); // Add to the root destroyer
 
             ARFuture<List<AccessGroup>> res = ARFuture.make();
-            CLI_EXECUTOR.execute(()->{
+            CLI_EXECUTOR.execute(() -> {
                 ARFuture.all(Flow.flow(ids)
                         .map(groupId -> client.getGroup(groupId).map(v -> v))
                         .toList()).to(res);
@@ -515,7 +516,7 @@ public class CliApi {
         @Alias("aac")
         @Example("$exCmd show all-accessed-clients")
         public ARFuture<Set<UUID>> allAccessedClients(
-                @Doc("Previously saved client state file")
+                @Doc("Previously saved client file")
                 @Optional(value = "state.bin")
                 File state,
                 @Doc("Specified client UID or alias. Defaults to client's UID from state file.\n" + UUID_ALIASES_DOC)
@@ -540,7 +541,7 @@ public class CliApi {
             }
             UUID finalTargetClient = targetUuid;
             ARFuture<Set<UUID>> res = ARFuture.make();
-            CLI_EXECUTOR.execute(()->{
+            CLI_EXECUTOR.execute(() -> {
                 client.getAllAccessedClients(finalTargetClient).to(res);
             });
 
@@ -795,10 +796,12 @@ public class CliApi {
     public class SendApi {
         private final MessageNode st;
         private final AetherCloudClient client; // Store the client passed from the send method
+        private final ARFuture<AetherCloudClient> readyClient; // Future that completes when client is ready
 
-        public SendApi(MessageNode st, AetherCloudClient client) {
+        public SendApi(MessageNode st, AetherCloudClient client, ARFuture<AetherCloudClient> readyClient) {
             this.st = st;
             this.client = client;
+            this.readyClient = readyClient;
         }
 
         @Doc("Send a text message")
@@ -809,10 +812,11 @@ public class CliApi {
             logFlow("SendApi: sending text message", "textLength", text.length());
             AFuture res = AFuture.make();
 
-            // Execute send via executor
-            AFuture.run(CLI_EXECUTOR, () -> {
-                st.send(Value.ofForce(text.getBytes(StandardCharsets.UTF_8)).linkFuture(res));
-            }).onError(res::error);
+            // Wait for client to be ready before sending
+            readyClient.to(CLI_EXECUTOR, ready -> {
+                        st.send(Value.ofForce(text.getBytes(StandardCharsets.UTF_8)).linkFuture(res));
+                    })
+                    .onError(res::error);
 
             // CAPTURE: Capture the reference to the Destroyer in the outer (safe) scope
             Destroyer apiDestroyer = CliApi.this.destroyer;
@@ -831,19 +835,22 @@ public class CliApi {
             logFlow("SendApi: sending file", "fileName", file.getName());
             AFuture res = AFuture.make();
 
-            // Execute send via executor
-            AFuture.run(CLI_EXECUTOR, () -> {
-                try (var is = new FileInputStream(file)) {
-                    var data = is.readAllBytes();
-                    st.send(Value.ofForce(data, (o) -> {
-                        res.done();
-                        logFlow("SendApi: file message operation completed (sent to buffer)");
-                    }));
-                } catch (Exception e) {
-                    RU.error(e);
-                    res.error(e);
-                }
-            });
+            // Wait for client to be ready before sending
+            readyClient.to(CLI_EXECUTOR, ready -> {
+                // Execute send via executor
+                AFuture.run(CLI_EXECUTOR, () -> {
+                    try (var is = new FileInputStream(file)) {
+                        var data = is.readAllBytes();
+                        st.send(Value.ofForce(data, (o) -> {
+                            res.done();
+                            logFlow("SendApi: file message operation completed (sent to buffer)");
+                        }));
+                    } catch (Exception e) {
+                        RU.error(e);
+                        res.error(e);
+                    }
+                });
+            }).onError(res::error);
 
             // CAPTURE: Capture the reference to the Destroyer in the outer (safe) scope
             Destroyer apiDestroyer = CliApi.this.destroyer;
@@ -862,9 +869,12 @@ public class CliApi {
             logFlow("SendApi: sending stdin data", "dataLength", data.length);
             AFuture res = AFuture.make();
 
-            // Execute send via executor
-            AFuture.run(CLI_EXECUTOR, () -> {
-                st.send(Value.ofForce(data).linkFuture(res));
+            // Wait for client to be ready before sending
+            readyClient.to(CLI_EXECUTOR, ready -> {
+                // Execute send via executor
+                AFuture.run(CLI_EXECUTOR, () -> {
+                    st.send(Value.ofForce(data).linkFuture(res));
+                }).onError(res::error);
             }).onError(res::error);
 
             // CAPTURE: Capture the reference to the Destroyer in the outer (safe) scope
