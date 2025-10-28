@@ -46,57 +46,26 @@ public final class AetherCloudClient implements Destroyable {
     // NESTED EXCEPTION CLASSES FOR DIAGNOSTICS
     // =========================================================================
 
-    /** Exception related to client startup and connection issues. */
-    public static class ClientStartException extends RuntimeException {
-        public ClientStartException(String message) {
-            super(message);
-        }
-        public ClientStartException(String message, Throwable cause) {
-            super(message, cause);
-        }
-    }
-
-    /** Exception related to errors occurring during API requests. */
-    public static class ClientApiException extends RuntimeException {
-        public ClientApiException(String message) {
-            super(message);
-        }
-        public ClientApiException(String message, Throwable cause) {
-            super(message, cause);
-        }
-    }
-
-    /** Exception related to internal asynchronous operation timeouts. */
-    public static class ClientTimeoutException extends RuntimeException {
-        public ClientTimeoutException(String message) {
-            super(message);
-        }
-    }
-
-    // =========================================================================
-
     public final AFuture startFuture = AFuture.make();
     public final EventConsumer<MessageNode> onClientStream = new EventConsumerWithQueue<>();
     public final Destroyer destroyer = new Destroyer(getClass().getSimpleName());
+
+    // =========================================================================
     final LNode logClientContext;
     final Map<Integer, ConnectionWork> connections = new ConcurrentHashMap<>();
-
     // REFACTORED: BMap<UUID, Cloud> заменяет RMap, RFMap и requestCloud
     final BMap<UUID, Cloud> clouds = RCol.bMap(2000, "CloudCache");
     final AtomicReference<RegStatus> regStatus = new AtomicReference<>(RegStatus.NO);
     // REFACTORED: BMap<Integer, ServerDescriptor> заменяет RMap, RFMap и requestServers
     final BMap<Integer, ServerDescriptor> servers = RCol.bMap(2000, "ServerCache");
-
     final long lastSecond;
     final Map<UUID, MessageNode> messageNodeMap = new ConcurrentHashMap<>();
     final EventConsumer<UUID> onNewChild = new EventConsumer<>();
     final EventBiConsumer<UUID, ServerApiByUid> onNewChildApi = new EventBiConsumer<>();
     final Queue<AConsumer<AuthorizedApi>> queueAuth = new ConcurrentLinkedQueue<>();
-
     final Map<Long, Map<UUID, ARFuture<Boolean>>> accessOperationsAdd = new ConcurrentHashMap<>();
     final Map<Long, Map<UUID, ARFuture<Boolean>>> accessOperationsRemove = new ConcurrentHashMap<>();
     final Queue<ClientTask> clientTasks = new ConcurrentLinkedQueue<>();
-
     private final ClientState clientState;
     private final AtomicBoolean startConnection = new AtomicBoolean();
     private final int timeout1 = 5;
@@ -105,11 +74,9 @@ public final class AetherCloudClient implements Destroyable {
     {
         lastSecond = System.currentTimeMillis() / 1000;
     }
-
     public AetherCloudClient() {
         this(new ClientStateInMemory(StandardUUIDs.ANONYMOUS_UID, List.of(URI.create("tcp://registration.aethernet.io:9010"))));
     }
-
     public AetherCloudClient(ClientState store) {
         this(store, null);
     }
@@ -131,7 +98,7 @@ public final class AetherCloudClient implements Destroyable {
                 ss.setDescriptor(s.newValue);
             });
 
-            onNewChild.add(u ->  {
+            onNewChild.add(u -> {
                 if (onNewChildApi.hasListener()) {
                     getClientApi(u, api -> {
                         onNewChildApi.fire(u, api);
@@ -152,6 +119,7 @@ public final class AetherCloudClient implements Destroyable {
 
     /**
      * Retrieves the access groups for a given client UUID.
+     *
      * @param uid The client UUID.
      * @return A future containing the set of group IDs.
      */
@@ -161,6 +129,7 @@ public final class AetherCloudClient implements Destroyable {
 
     /**
      * Retrieves all client UUIDs this client can access.
+     *
      * @param uid The client UUID.
      * @return A future containing the set of accessed client UUIDs.
      */
@@ -170,6 +139,7 @@ public final class AetherCloudClient implements Destroyable {
 
     /**
      * Checks if this client has permission to send messages to another client.
+     *
      * @param uid1 The source client UUID.
      * @param uid2 The target client UUID.
      * @return A future containing true if access is granted, false otherwise.
@@ -180,6 +150,7 @@ public final class AetherCloudClient implements Destroyable {
 
     /**
      * Retrieves the AccessGroup details by its ID.
+     *
      * @param groupId The ID of the access group.
      * @return A future containing the AccessGroup.
      */
@@ -189,6 +160,7 @@ public final class AetherCloudClient implements Destroyable {
 
     /**
      * Gets the client state storage interface.
+     *
      * @return The client state.
      */
     public ClientState getClientState() {
@@ -205,6 +177,7 @@ public final class AetherCloudClient implements Destroyable {
 
     /**
      * Retrieves the server descriptor by its ID.
+     *
      * @param id The server ID.
      * @return A future containing the ServerDescriptor.
      */
@@ -238,6 +211,7 @@ public final class AetherCloudClient implements Destroyable {
     /**
      * Retrieves or creates a connection to a work server.
      * NOTE: This method is designed to be called asynchronously after fetching the ServerDescriptor.
+     *
      * @param serverDescriptor The descriptor of the server to connect to.
      * @return The existing or newly created ConnectionWork instance.
      * @throws ClientApiException if the provided ServerDescriptor is null.
@@ -259,6 +233,7 @@ public final class AetherCloudClient implements Destroyable {
 
     /**
      * Initiates the client connection process.
+     *
      * @return An AFuture that completes when the client is ready (registered/connected).
      */
     public AFuture connect() {
@@ -276,6 +251,7 @@ public final class AetherCloudClient implements Destroyable {
 
     /**
      * Recursive connection attempt logic.
+     *
      * @param step The number of remaining retry attempts.
      */
     private void connect(int step) {
@@ -291,8 +267,8 @@ public final class AetherCloudClient implements Destroyable {
             return;
         }
 
-        if (getUid()==null) {
-            if(regStatus.compareAndSet(RegStatus.NO, RegStatus.BEGIN)) {
+        if (getUid() == null) {
+            if (regStatus.compareAndSet(RegStatus.NO, RegStatus.BEGIN)) {
                 var uris = clientState.getRegistrationUri();
                 if (uris == null || uris.isEmpty()) {
                     if (!startFuture.isFinalStatus()) {
@@ -388,6 +364,7 @@ public final class AetherCloudClient implements Destroyable {
 
     /**
      * Retrieves the client's UUID.
+     *
      * @return The client's UUID.
      */
     public UUID getUid() {
@@ -396,6 +373,7 @@ public final class AetherCloudClient implements Destroyable {
 
     /**
      * Helper method to get an authorized API future and map a function over it.
+     *
      * @param t The function to execute on the AuthorizedApi.
      * @return A future with the result of the function.
      */
@@ -409,6 +387,7 @@ public final class AetherCloudClient implements Destroyable {
     /**
      * Returns a future that completes with the AuthorizedApi instance or an error/cancellation.
      * A timeout is applied to ensure the future is not left incomplete.
+     *
      * @return A future containing the AuthorizedApi instance.
      */
     public ARFuture<AuthorizedApi> getAuthApiFuture() {
@@ -430,6 +409,7 @@ public final class AetherCloudClient implements Destroyable {
      * Enqueues a consumer task to be executed when the AuthorizedApi is available.
      * This is a fire-and-forget method and relies on external mechanisms (like getAuthApiFuture)
      * for error and timeout handling.
+     *
      * @param t The consumer to execute with the AuthorizedApi.
      */
     public void getAuthApi(@NotNull AConsumer<AuthorizedApi> t) {
@@ -488,12 +468,13 @@ public final class AetherCloudClient implements Destroyable {
 
     /**
      * Retrieves the Cloud descriptor for a given UUID.
+     *
      * @param uid The UUID of the cloud owner.
      * @return A future containing the Cloud descriptor.
      */
     public ARFuture<Cloud> getCloud(@NotNull UUID uid) {
-        var r=clientState.getCloud(uid);
-        if(r!=null) return ARFuture.of(r);
+        var r = clientState.getCloud(uid);
+        if (r != null) return ARFuture.of(r);
         var res = clouds.getFuture(uid);
 
         // Propagate error on timeout
@@ -514,6 +495,7 @@ public final class AetherCloudClient implements Destroyable {
 
     /**
      * Confirms registration with the received result, updating client state.
+     *
      * @param regResp The result from the registration server.
      */
     public void confirmRegistration(FinishResult regResp) {
@@ -563,6 +545,7 @@ public final class AetherCloudClient implements Destroyable {
 
     /**
      * Destroys the client and all associated resources.
+     *
      * @param force True to force immediate destruction.
      * @return An AFuture that completes when destruction is finished.
      */
@@ -593,7 +576,7 @@ public final class AetherCloudClient implements Destroyable {
 
     public AetherCloudClient waitStart(int timeout) {
         try {
-            startFuture.toCompletableFuture().get(timeout,TimeUnit.SECONDS);
+            startFuture.toCompletableFuture().get(timeout, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         } catch (ExecutionException e) {
@@ -663,7 +646,8 @@ public final class AetherCloudClient implements Destroyable {
 
     /**
      * Sends a data payload value to a specified client.
-     * @param uid The target client UUID.
+     *
+     * @param uid     The target client UUID.
      * @param message The message data wrapped in a Value object.
      */
     public void sendMessage(UUID uid, Value<byte[]> message) {
@@ -672,7 +656,8 @@ public final class AetherCloudClient implements Destroyable {
 
     /**
      * Sends a raw byte array message to a specified client.
-     * @param uid The target client UUID.
+     *
+     * @param uid     The target client UUID.
      * @param message The raw byte array message.
      * @return An AFuture that completes when the message is accepted for sending.
      */
@@ -685,7 +670,11 @@ public final class AetherCloudClient implements Destroyable {
 
     public CryptoEngine getCryptoEngineForServer(short serverId) {
         var k = getMasterKey();
-        return k.getCryptoProvider().createKeyForClient(k, serverId).asSymmetric().toCryptoEngine();
+        var kk = k.getCryptoProvider().createKeyForServer(k, serverId);
+        return CryptoEngine.of(
+                kk.getClientToServer().toCryptoEngine(),
+                kk.getServerToClient().toCryptoEngine()
+        );
     }
 
     public long getNextPing() {
@@ -696,7 +685,8 @@ public final class AetherCloudClient implements Destroyable {
      * Используется для сохранения полученного Cloud.
      * Вызывает putResolved(), который запускает событие forValueUpdate(),
      * и оно уже сохраняет Cloud в clientState.
-     * @param uid UUID облака.
+     *
+     * @param uid   UUID облака.
      * @param cloud Объект Cloud.
      */
     public void setCloud(UUID uid, Cloud cloud) {
@@ -711,6 +701,41 @@ public final class AetherCloudClient implements Destroyable {
         NO,
         BEGIN,
         CONFIRM
+    }
+
+    /**
+     * Exception related to client startup and connection issues.
+     */
+    public static class ClientStartException extends RuntimeException {
+        public ClientStartException(String message) {
+            super(message);
+        }
+
+        public ClientStartException(String message, Throwable cause) {
+            super(message, cause);
+        }
+    }
+
+    /**
+     * Exception related to errors occurring during API requests.
+     */
+    public static class ClientApiException extends RuntimeException {
+        public ClientApiException(String message) {
+            super(message);
+        }
+
+        public ClientApiException(String message, Throwable cause) {
+            super(message, cause);
+        }
+    }
+
+    /**
+     * Exception related to internal asynchronous operation timeouts.
+     */
+    public static class ClientTimeoutException extends RuntimeException {
+        public ClientTimeoutException(String message) {
+            super(message);
+        }
     }
 
     private static class ClientTask {

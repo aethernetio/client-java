@@ -813,7 +813,7 @@ public class CliApi {
             AFuture res = AFuture.make();
 
             // Wait for client to be ready before sending
-            readyClient.to(CLI_EXECUTOR, ready -> {
+            readyClient.to2(CLI_EXECUTOR, ready -> {
                         st.send(Value.ofForce(text.getBytes(StandardCharsets.UTF_8)).linkFuture(res));
                     })
                     .onError(res::error);
@@ -836,9 +836,8 @@ public class CliApi {
             AFuture res = AFuture.make();
 
             // Wait for client to be ready before sending
-            readyClient.to(CLI_EXECUTOR, ready -> {
+            readyClient.to2(CLI_EXECUTOR, ready -> {
                 // Execute send via executor
-                AFuture.run(CLI_EXECUTOR, () -> {
                     try (var is = new FileInputStream(file)) {
                         var data = is.readAllBytes();
                         st.send(Value.ofForce(data, (o) -> {
@@ -849,7 +848,6 @@ public class CliApi {
                         RU.error(e);
                         res.error(e);
                     }
-                });
             }).onError(res::error);
 
             // CAPTURE: Capture the reference to the Destroyer in the outer (safe) scope
@@ -870,11 +868,9 @@ public class CliApi {
             AFuture res = AFuture.make();
 
             // Wait for client to be ready before sending
-            readyClient.to(CLI_EXECUTOR, ready -> {
+            readyClient.to2(CLI_EXECUTOR, ready -> {
                 // Execute send via executor
-                AFuture.run(CLI_EXECUTOR, () -> {
                     st.send(Value.ofForce(data).linkFuture(res));
-                }).onError(res::error);
             }).onError(res::error);
 
             // CAPTURE: Capture the reference to the Destroyer in the outer (safe) scope

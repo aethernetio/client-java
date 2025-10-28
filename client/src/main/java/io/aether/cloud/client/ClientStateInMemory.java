@@ -66,7 +66,7 @@ public class ClientStateInMemory implements ClientState, ToString {
         this.parentUid = dto.getParentUid();
         this.masterKey = dto.getMasterKey();
         this.cryptoLib = dto.getCryptoLib();
-        this.rootSigners.addAll(flow(dto.getRootSigners()).map(v-> KeyUtil.of(v).asSignPublicKey().toSignChecker()).toSet());
+        this.rootSigners.addAll(flow(dto.getRootSigners()).map(v-> KeyUtil.of(v).asSignPublic().toSignChecker()).toSet());
         this.countServersForRegistration = dto.getCountServersForRegistration();
         this.timeoutForConnectToRegistrationServer = dto.getTimeoutForConnectToRegistrationServer();
         this.registrationUri.addAll(Arrays.asList(dto.getRegistrationUri()));
