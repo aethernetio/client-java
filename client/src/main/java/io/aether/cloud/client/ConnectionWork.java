@@ -13,7 +13,7 @@ import io.aether.utils.RU;
 import io.aether.utils.flow.Flow;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.slots.AMFuture;
-import io.aether.utils.streams.Value;
+import io.aether.utils.tuples.Tuple2;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 
 import java.util.ArrayList;
@@ -40,34 +40,18 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         cryptoEngine = client.getCryptoEngineForServer(s.getId());
         serverDescriptor = s;
         this.basicStatus = false;
-        remoteApiFuture.addPermanent((a, f) -> {
-            try (var ln = Log.context(client.logClientContext)) {
-                flushBackgroundRequests(a, f);
-            }
-        });
+        remoteApiFuture.addPermanent(this::flushBackgroundRequests);
         apiSafeCtx = new FastApiContext() {
             @Override
             public void flush(AFuture sendFuture) {
-
-                // --- ИСПРАВЛЕНИЕ: Проверяем, можно ли отправлять данные ---
-                // fastMetaClient доступен из базового класса Connection
                 if (fastMetaClient == null || !fastMetaClient.isWritable()) {
-                    // Пропускаем цикл отправки, как ты и просил
                     sendFuture.cancel();
                     return;
                 }
-                // --- Конец исправления ---
-
-                // Используем isRequestsFor(this) для проверки, есть ли у этого ConnectionWork
-                // запросы, которые он должен отправить (новые или таймаутнувшие).
                 if (remoteApiFuture.isEmpty() && !client.clouds.isRequestsFor(ConnectionWork.this) && !client.servers.isRequestsFor(ConnectionWork.this)) {
                     sendFuture.done();
                     return;
                 }
-
-                // Теперь, когда мы знаем, что fastMetaClient.isWritable(),
-                // мы также знаем, что getRootApiFuture() уже выполнен
-                // и rootApi 100% не null.
                 getRootApiFuture().to(api -> {
                     remoteApiFuture.executeAll(this, sendFuture);
                     var d = remoteDataToArray();
@@ -104,7 +88,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         List<Message> messageForSend = null;
         for (var m : client.messageNodeMap.values()) {
             if (m.connectionsOut.contains(this)) {
-                List<Value<byte[]>> mm = new ArrayList<>();
+                List<Tuple2<byte[],AFuture>> mm = new ArrayList<>();
                 RU.readAll(m.bufferOut, mm::add);
                 if (!mm.isEmpty()) {
                     Log.debug("message send client to server: $uidFrom -> $uidTo",
@@ -114,11 +98,11 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                         messageForSend = new ObjectArrayList<>();
                     }
                     Flow.flow(mm)
-                            .map(v -> new Message(m.consumer, v.data()))
+                            .map(v -> new Message(m.consumer, v.val1()))
                             .toCollection(messageForSend);
                     sendFuture.to(() -> {
                         for (var v : mm) {
-                            v.success(this);
+                            v.val2().done();
                         }
                     });
                     sendFuture.onCancel(() -> {
@@ -215,7 +199,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             Log.trace("receive messages: $count", "count", msg.length);
             for (var m : msg) {
                 Log.trace("receive message $uid1 <- $uid2", "uid1", client.getUid(), "uid2", m.getUid());
-                client.getMessageNode(m.getUid(), MessageEventListener.DEFAULT).sendMessageFromServerToClient(Value.of(m.getData()));
+                client.getMessageNode(m.getUid(), MessageEventListener.DEFAULT).sendMessageFromServerToClient(m.getData());
             }
         }
 

@@ -1,5 +1,6 @@
 package io.aether.cloud.client;
 
+import io.aether.api.CryptoUtils;
 import io.aether.api.clientserverregapi.*;
 import io.aether.api.common.*;
 import io.aether.crypto.AKey;
@@ -15,7 +16,7 @@ import java.net.URI;
 
 public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, RegistrationRootApiRemote> implements ClientApiRegUnsafe {
     private final AKey.Symmetric tempKey = CryptoProviderFactory.getProvider(client.getCryptLib().name()).createSymmetricKey();
-    private final KeySymmetric tempKeyNative = KeyUtil.of(tempKey);
+    private final KeySymmetric tempKeyNative = CryptoUtils.of(tempKey);
     private final CryptoEngine tempKeyCp = tempKey.toCryptoEngine();
     private final FastApiContext ctxSafe = new FastApiContext() {
         @Override
@@ -51,7 +52,7 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
             Log.error("RegConn: Key verification failed.", "signedKey", signedKey);
             throw new IllegalStateException("Key verification exception");
         }
-        var asymCE = SignedKeyUtil.of(signedKey).key().asAsymmetric().toCryptoEngine();
+        var asymCE = CryptoUtils.of(signedKey).key().asAsymmetric().toCryptoEngine();
 
         getRootApiFuture().to(api->{
 
@@ -74,12 +75,12 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
                                 Log.error("RegConn: Global key verification failed.");
                                 throw new RuntimeException();
                             }
-                            gcp = CryptoEngine.of(KeyUtil.of(wpd.getGlobalKey().getKey()).asAsymmetric().toCryptoEngine(), client.getMasterKey().toCryptoEngine());
+                            gcp = CryptoEngine.of(CryptoUtils.of(wpd.getGlobalKey().getKey()).asAsymmetric().toCryptoEngine(), client.getMasterKey().toCryptoEngine());
 
                             api.enter(client.getCryptLib(), new ServerRegistrationApiStream(ctxSafe, asymCE::encrypt,
                                     a2 -> a2.registration(wpd.getSalt(), wpd.getSuffix(), passwords, client.getParent(), tempKeyNative,
                                             new GlobalApiStream(globalCtx, gcp::encrypt, gapi -> {
-                                                gapi.setMasterKey(KeyUtil.of(client.getMasterKey()));
+                                                gapi.setMasterKey(CryptoUtils.of(client.getMasterKey()));
                                                 gapi.finish()
                                                         .to(d -> {
                                                             Log.trace("RegConn: registration step finish.");

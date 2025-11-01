@@ -1,6 +1,7 @@
 package io.aether.cloud.client;
 
 import io.aether.StandardUUIDs;
+import io.aether.api.CryptoUtils;
 import io.aether.api.clientserverapi.AuthorizedApi;
 import io.aether.api.clientserverapi.ServerApiByUid;
 import io.aether.api.clientserverregapi.FinishResult;
@@ -24,7 +25,6 @@ import io.aether.utils.rcollections.RCol;
 import io.aether.utils.slots.EventBiConsumer;
 import io.aether.utils.slots.EventConsumer;
 import io.aether.utils.slots.EventConsumerWithQueue;
-import io.aether.utils.streams.Value;
 import it.unimi.dsi.fastutil.longs.LongSet;
 import it.unimi.dsi.fastutil.objects.ObjectSet;
 import org.jetbrains.annotations.NotNull;
@@ -82,17 +82,13 @@ public final class AetherCloudClient implements Destroyable {
     }
 
     public AetherCloudClient(ClientState store, String name) {
-        logClientContext = Log.createContext("SystemComponent", "Client", "ClientName", name);
-        try (var ln = Log.context(logClientContext)) {
+        logClientContext = Log.of("SystemComponent", "Client", "ClientName", name);
+        try (var ln = logClientContext.context()) {
             this.clientState = store;
             destroyer.add(this::closeConnections);
 
-            // ИСПОЛЬЗОВАНИЕ НОВОГО НЕБЛОКИРУЮЩЕГО СОБЫТИЯ forValueUpdate()
-
-            // 1. Слушатель для Cloud'ов: сохраняем Cloud в хранилище (store)
             clouds.forValueUpdate().add(uu -> store.setCloud(uu.key, uu.newValue));
 
-            // 2. Слушатель для ServerDescriptor'ов: сохраняем Descriptor в хранилище
             servers.forValueUpdate().add(s -> {
                 var ss = store.getServerInfo(s.key);
                 ss.setDescriptor(s.newValue);
@@ -225,7 +221,7 @@ public final class AetherCloudClient implements Destroyable {
         servers.putResolved((int) serverDescriptor.getId(), serverDescriptor); // Используем putResolved для BMap
         return connections.computeIfAbsent((int) serverDescriptor.getId(),
                 s -> {
-                    try (var ln = Log.context(logClientContext)) {
+                    try (var ln = logClientContext.context()) {
                         return new ConnectionWork(this, serverDescriptor);
                     }
                 });
@@ -282,7 +278,7 @@ public final class AetherCloudClient implements Destroyable {
                 try {
                     var startFutures = flow(uris).shuffle().limit(countServersForRegistration)
                             .map(sd -> {
-                                try (var ln = Log.context(logClientContext)) {
+                                try (var ln = logClientContext.context()) {
                                     return new ConnectionRegistration(this, sd).connectFuture.toFuture();
                                 }
                             })
@@ -568,9 +564,9 @@ public final class AetherCloudClient implements Destroyable {
 
     public AKey.Symmetric getMasterKey() {
         var res2 = clientState.getMasterKey();
-        if (res2 != null) return KeyUtil.of(res2).asSymmetric();
+        if (res2 != null) return CryptoUtils.of(res2).asSymmetric();
         var res = CryptoProviderFactory.getProvider(getCryptLib().name()).createSymmetricKey();
-        clientState.setMasterKey(KeyUtil.of(res));
+        clientState.setMasterKey(CryptoUtils.of(res));
         return res;
     }
 
@@ -598,7 +594,7 @@ public final class AetherCloudClient implements Destroyable {
     public void onMessage(ABiConsumer<UUID, byte[]> consumer) {
         onClientStream(m -> {
             m.bufferIn.add(d -> {
-                consumer.accept(m.getConsumerUUID(), d.data());
+                consumer.accept(m.getConsumerUUID(), d);
             });
         });
     }
@@ -641,7 +637,7 @@ public final class AetherCloudClient implements Destroyable {
     }
 
     public boolean verifySign(SignedKey signedKey) {
-        return SignedKeyUtil.verifySign(signedKey, clientState.getRootSigners());
+        return CryptoUtils.verifySign(signedKey, clientState.getRootSigners());
     }
 
     /**
@@ -650,10 +646,6 @@ public final class AetherCloudClient implements Destroyable {
      * @param uid     The target client UUID.
      * @param message The message data wrapped in a Value object.
      */
-    public void sendMessage(UUID uid, Value<byte[]> message) {
-        getMessageNode(uid, MessageEventListener.DEFAULT).send(message);
-    }
-
     /**
      * Sends a raw byte array message to a specified client.
      *
@@ -662,10 +654,7 @@ public final class AetherCloudClient implements Destroyable {
      * @return An AFuture that completes when the message is accepted for sending.
      */
     public AFuture sendMessage(UUID uid, byte[] message) {
-        AFuture res = AFuture.make();
-        // Use linkFuture to connect the AFuture's lifecycle to the Value's success/reject lifecycle.
-        sendMessage(uid, Value.of(message).linkFuture(res));
-        return res;
+        return getMessageNode(uid, MessageEventListener.DEFAULT).send(message);
     }
 
     public CryptoEngine getCryptoEngineForServer(short serverId) {

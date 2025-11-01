@@ -1,5 +1,6 @@
 package io.aether.cloud.client;
 
+import io.aether.api.CryptoUtils;
 import io.aether.api.clienttypes.ClientStateForSave;
 import io.aether.api.common.*;
 import io.aether.crypto.SignChecker;
@@ -66,7 +67,7 @@ public class ClientStateInMemory implements ClientState, ToString {
         this.parentUid = dto.getParentUid();
         this.masterKey = dto.getMasterKey();
         this.cryptoLib = dto.getCryptoLib();
-        this.rootSigners.addAll(flow(dto.getRootSigners()).map(v-> KeyUtil.of(v).asSignPublic().toSignChecker()).toSet());
+        this.rootSigners.addAll(flow(dto.getRootSigners()).map(v-> CryptoUtils.of(v).asSignPublic().toSignChecker()).toSet());
         this.countServersForRegistration = dto.getCountServersForRegistration();
         this.timeoutForConnectToRegistrationServer = dto.getTimeoutForConnectToRegistrationServer();
         this.registrationUri.addAll(Arrays.asList(dto.getRegistrationUri()));
@@ -230,7 +231,7 @@ public class ClientStateInMemory implements ClientState, ToString {
                         .toArray(io.aether.api.clienttypes.ClientInfo.class),
                 flow(rootSigners)
                         .map(SignChecker::getPublicKey)
-                        .map(KeyUtil::of)
+                        .map(CryptoUtils::of)
                         .cast(KeySignPublic.class)
                         .toArray(KeySignPublic.class),
                 cryptoLib,

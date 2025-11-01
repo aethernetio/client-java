@@ -12,8 +12,6 @@ import io.aether.utils.RU;
 import io.aether.utils.flow.Flow;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
-import io.aether.utils.streams.Value;
-import io.aether.utils.streams.ValueOfData;
 
 import java.net.URI;
 import java.util.ArrayList;
@@ -65,11 +63,7 @@ public class PointToPointTest {
             });
             Log.info("START two clients!");
             Thread.currentThread().setName("MAIN THREAD");
-            var m = Value.of(message).timeout(30000, (v) -> {
-                Log.error("timeout message: $v", "v", v);
-            });
-
-            client1.sendMessage(client2.getUid(), m);
+            client1.sendMessage(client2.getUid(), message);
 
             checkReceiveMessage.to(() -> {
                 Log.info("TEST IS DONE!");
@@ -109,14 +103,10 @@ public class PointToPointTest {
             var timeBegin = RU.time();
 
             while (receiveCounter.get() < total) {
-                var v = Value.ofForce(data);
                 boolean[] abortFlag = new boolean[1];
-
-                v.onReject((owner, id) -> {
+                ch1.send(data).onCancel(()->{
                     abortFlag[0] = true;
                 });
-
-                ch1.send(v);
                 if (!abortFlag[0]) {
                     RU.sleep(10);
                 }
@@ -154,7 +144,7 @@ public class PointToPointTest {
             var messageBack = new byte[]{1, 1, 1, 1};
             client2.onClientStream((st) -> {
                 st.toConsumer( newMessage -> {
-                    st.send(Value.of(messageBack));
+                    st.send(messageBack);
                 });
             });
             client1.onClientStream((st) -> {
@@ -165,7 +155,7 @@ public class PointToPointTest {
             Log.info("START two clients!");
             var chToc2 = client1.getMessageNode(client2.getUid());
             Thread.currentThread().setName("MAIN THREAD");
-            chToc2.send(Value.ofForce(message));
+            chToc2.send(message);
 
             checkReceiveMessageBack.to(() -> {
                 Log.info("TEST IS DONE!");
@@ -221,7 +211,7 @@ public class PointToPointTest {
                 });
                 Log.info("START!");
                 var chToc2 = client1.getMessageNode(client2.getUid());
-                chToc2.send(Value.ofForce(message));
+                chToc2.send(message);
 
                 checkReceiveMessage.to(() -> {
                     client1.destroy(true).to(() -> {
@@ -230,56 +220,6 @@ public class PointToPointTest {
                     }).onError(testDoneFuture::error);
                 }).onError(testDoneFuture::error);
             }).onError(testDoneFuture::error);
-        }).onError(testDoneFuture::error);
-
-        return testDoneFuture;
-    }
-
-    public AFuture p2pMany() { // ИСПРАВЛЕНО: удален дженерик
-        var parent = UUID.fromString("d1401d8c-674d-4948-8d41-c395334ad391");
-        if (clientConfig1 == null)
-            clientConfig1 = new ClientStateInMemory(parent, registrationUri, null, CryptoLib.HYDROGEN);
-        if (clientConfig2 == null)
-            clientConfig2 = new ClientStateInMemory(parent, registrationUri, null, CryptoLib.HYDROGEN);
-        AetherCloudClient client1 = new AetherCloudClient(clientConfig1, "client1");
-        AetherCloudClient client2 = new AetherCloudClient(clientConfig2, "client2");
-
-        AFuture testDoneFuture = AFuture.make();
-
-        AFuture.all(client1.startFuture, client2.startFuture).to(() -> {
-            Log.info("clients is registered uid1: $uid1 uid2: $uid2", "uid1", client1.getUid(), "uid2", client2.getUid());
-            AFuture checkReceiveMessage = AFuture.make();
-            var message = new byte[]{1, 2, 3, 4};
-            int ITERATIONS = 10;
-            List<MValue> values = new ArrayList<>();
-            for (int i = 0; i < ITERATIONS; i++) {
-                values.add(new MValue(message));
-            }
-            AtomicInteger counter = new AtomicInteger(ITERATIONS);
-            client2.onClientStream((st) -> {
-                Log.debug("onClientStream");
-                st.toConsumer( newMessage -> {
-                    Log.debug("on new message");
-                    if (counter.addAndGet(-1) == 0) {
-                        checkReceiveMessage.done();
-                    }
-                });
-            });
-            Log.info("START two clients!");
-            var chToc2n = client1.openStreamToClientDetails(client2.getUid(), MessageEventListener.DEFAULT);
-            Thread.currentThread().setName("MAIN THREAD");
-            for (var v : values) {
-                chToc2n.send(v);
-            }
-
-            checkReceiveMessage.to(() -> {
-                Log.info("TEST IS DONE!");
-                client1.destroy(true).to(() -> {
-                    client2.destroy(true).to(testDoneFuture::done)
-                            .onError(testDoneFuture::error);
-                }).onError(testDoneFuture::error);
-            }).onError(testDoneFuture::error);
-
         }).onError(testDoneFuture::error);
 
         return testDoneFuture;
@@ -308,7 +248,7 @@ public class PointToPointTest {
                 Log.info("START two clients!");
                 var chToc2 = client1.getMessageNode(client2.getUid());
                 Thread.currentThread().setName("MAIN THREAD");
-                chToc2.send(Value.ofForce(message));
+                chToc2.send(message);
 
                 checkReceiveMessage.to(() -> {
                     Log.info("TEST IS DONE!");
@@ -347,7 +287,7 @@ public class PointToPointTest {
                 Log.info("START two clients!");
                 var chToc2 = client1.getMessageNode(client2.getUid());
                 Thread.currentThread().setName("MAIN THREAD");
-                chToc2.send(Value.ofForce(message));
+                chToc2.send(message);
 
                 checkReceiveMessage.to(() -> {
                     Log.info("TEST IS DONE!");
@@ -355,11 +295,9 @@ public class PointToPointTest {
                     var f2 = client2.destroy(true);
 
                     AFuture.all(f1, f2).onError(t -> {
-                        // Передаем ошибку в final Future
                         testDoneFuture.error(new IllegalStateException("Failed to destroy clients after iteration 1: " + f1 + ":" + f2, t));
                     }).to(() -> {
                         Log.debug("ITERATION 2 START");
-                        // Запуск второй итерации и передача ее Future для финализации общего Future
                         startIteration2().to(testDoneFuture::done)
                                 .onError(testDoneFuture::error);
                     });
@@ -370,31 +308,4 @@ public class PointToPointTest {
         return testDoneFuture;
     }
 
-    private static class MValue extends ValueOfData<byte[]> {
-        public final List<Object> enters;
-        volatile boolean abort;
-        volatile boolean drop;
-
-        public MValue(byte[] message) {
-            super(message);
-            enters = new ArrayList<>();
-        }
-
-        @Override
-        public void reject(Object owner, long blockId) {
-            enters.add(owner);
-            abort = true;
-        }
-
-        @Override
-        public void success(Object owner) {
-            enters.add(owner);
-            drop = true;
-        }
-
-        @Override
-        public void enter(Object owner) {
-            enters.add(owner);
-        }
-    }
 }

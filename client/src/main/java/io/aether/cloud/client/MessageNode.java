@@ -1,22 +1,22 @@
 package io.aether.cloud.client;
 
-import io.aether.api.common.*;
+import io.aether.api.common.Cloud;
+import io.aether.api.common.ServerDescriptor;
 import io.aether.logger.Log;
 import io.aether.net.fastMeta.FastApiContextLocal;
 import io.aether.net.fastMeta.FastFutureContext;
 import io.aether.net.fastMeta.FastMetaApi;
 import io.aether.utils.AString;
 import io.aether.utils.ConcurrentHashSet;
-import io.aether.utils.RU;
 import io.aether.utils.ToString;
 import io.aether.utils.dataio.DataInOutStatic;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
 import io.aether.utils.interfaces.AConsumer;
 import io.aether.utils.interfaces.AFunction;
-import io.aether.utils.slots.EventConsumer;
 import io.aether.utils.slots.EventConsumerWithQueue;
-import io.aether.utils.streams.*;
+import io.aether.utils.tuples.Tuple;
+import io.aether.utils.tuples.Tuple2;
 
 import java.util.Deque;
 import java.util.Set;
@@ -24,12 +24,12 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedDeque;
 
 public class MessageNode implements ToString {
-    private final AetherCloudClient client;
-     final UUID consumer;
+    public final EventConsumerWithQueue<byte[]> bufferIn = new EventConsumerWithQueue<>();
+    final UUID consumer;
     final ARFuture<Cloud> consumerCloud;
-     final Set<ConnectionWork> connectionsOut = new ConcurrentHashSet<>();
-    final Deque<Value<byte[]>> bufferOut = new ConcurrentLinkedDeque<>();
-    public final EventConsumerWithQueue<Value<byte[]>> bufferIn = new EventConsumerWithQueue<>();
+    final Set<ConnectionWork> connectionsOut = new ConcurrentHashSet<>();
+    final Deque<Tuple2<byte[], AFuture>> bufferOut = new ConcurrentLinkedDeque<>();
+    private final AetherCloudClient client;
     private volatile MessageEventListener strategy;
 
     public MessageNode(AetherCloudClient client, UUID consumer, MessageEventListener strategy) {
@@ -38,7 +38,7 @@ public class MessageNode implements ToString {
         this.strategy = strategy;
         this.consumer = consumer;
         consumerCloud = client.getCloud(consumer);
-        consumerCloud.to(c ->{
+        consumerCloud.to(c -> {
             this.strategy.setConsumerCloud(this, c);
         });
     }
@@ -61,12 +61,12 @@ public class MessageNode implements ToString {
         this.strategy = strategy;
     }
 
-    public void send(Value<byte[]> msg){
-        bufferOut.add(msg);
+    public AFuture send(byte[] msg) {
+        AFuture f = AFuture.make();
+        bufferOut.add(Tuple.of(msg, f));
+        return f;
     }
-    public void send(byte[] msg){
-        send(Value.of(msg));
-    }
+
     public UUID getConsumerUUID() {
         return consumer;
     }
@@ -81,36 +81,34 @@ public class MessageNode implements ToString {
 
     public void addConsumerConnectionOut(ConnectionWork connectionWork) {
         if (connectionsOut.add(connectionWork)) {
-            Log.debug("add connection out for messages uid=$uid","uid",consumer);
+            Log.debug("add connection out for messages uid=$uid", "uid", consumer);
         }
     }
 
-    public void sendMessageFromServerToClient(Value<byte[]> data) {
+    public void sendMessageFromServerToClient(byte[] data) {
         Log.trace("sendMessageFromServerToClient");
         bufferIn.fire(data);
     }
 
     public void toConsumer(AConsumer<byte[]> o) {
-        bufferIn.add(d->{
-            o.accept(d.data());
-            d.success(this);
-        });
+        bufferIn.add(o::accept);
     }
 
     public <LT> FastApiContextLocal<LT> toApiR(
             FastMetaApi<LT, ? extends LT> metaLt,
-            AFunction<FastApiContextLocal<LT>,LT> localApi) {
+            AFunction<FastApiContextLocal<LT>, LT> localApi) {
         FastApiContextLocal<LT> ctx = new FastApiContextLocal<>(localApi) {
             @Override
             public void flush(AFuture sendFuture) {
-                send(Value.of(remoteDataToArray()).linkFuture(sendFuture));
+                send(remoteDataToArray()).to(sendFuture);
             }
         };
         toApi(ctx, metaLt, ctx.localApi);
         return ctx;
     }
+
     public <LT> void toApi(FastFutureContext ctx, FastMetaApi<LT, ? extends LT> metaLt, LT localApi) {
-        RU.<Gate<byte[], byte[]>>cast(this).toConsumer("fast api(" + metaLt + ")", v -> {
+        toConsumer(v -> {
             metaLt.makeLocal(ctx, new DataInOutStatic(v), localApi);
         });
     }
@@ -124,10 +122,10 @@ public class MessageNode implements ToString {
         FastApiContextLocal<LT> ctx = new FastApiContextLocal<>(localApi) {
             @Override
             public void flush(AFuture sendFuture) {
-                var d=remoteDataToArray();
-                if(d.length>0){
-                    send(Value.ofForce(d).linkFuture(sendFuture));
-                }else{
+                var d = remoteDataToArray();
+                if (d.length > 0) {
+                    send(d).to(sendFuture);
+                } else {
                     sendFuture.done();
                 }
             }

@@ -20,7 +20,6 @@ import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
 import io.aether.utils.slots.EventConsumer;
 import io.aether.utils.slots.EventConsumerWithQueue;
-import io.aether.utils.streams.Value;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -814,7 +813,7 @@ public class CliApi {
 
             // Wait for client to be ready before sending
             readyClient.to2(CLI_EXECUTOR, ready -> {
-                        st.send(Value.ofForce(text.getBytes(StandardCharsets.UTF_8)).linkFuture(res));
+                        st.send(text.getBytes(StandardCharsets.UTF_8)).to(res);
                     })
                     .onError(res::error);
 
@@ -840,10 +839,7 @@ public class CliApi {
                 // Execute send via executor
                     try (var is = new FileInputStream(file)) {
                         var data = is.readAllBytes();
-                        st.send(Value.ofForce(data, (o) -> {
-                            res.done();
-                            logFlow("SendApi: file message operation completed (sent to buffer)");
-                        }));
+                        st.send(data).to(res);
                     } catch (Exception e) {
                         RU.error(e);
                         res.error(e);
@@ -870,7 +866,7 @@ public class CliApi {
             // Wait for client to be ready before sending
             readyClient.to2(CLI_EXECUTOR, ready -> {
                 // Execute send via executor
-                    st.send(Value.ofForce(data).linkFuture(res));
+                    st.send(data).to(res);
             }).onError(res::error);
 
             // CAPTURE: Capture the reference to the Destroyer in the outer (safe) scope
