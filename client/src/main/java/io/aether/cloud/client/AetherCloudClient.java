@@ -10,10 +10,13 @@ import io.aether.common.AccessGroupI;
 import io.aether.crypto.AKey;
 import io.aether.crypto.CryptoEngine;
 import io.aether.crypto.CryptoProviderFactory;
+import io.aether.crypto.SignedKey;
 import io.aether.logger.LNode;
 import io.aether.logger.Log;
+import io.aether.utils.ConcurrentHashSet;
 import io.aether.utils.Destroyer;
 import io.aether.utils.RU;
+import io.aether.utils.flow.Flow;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
 import io.aether.utils.interfaces.ABiConsumer;
@@ -25,8 +28,6 @@ import io.aether.utils.rcollections.RCol;
 import io.aether.utils.slots.EventBiConsumer;
 import io.aether.utils.slots.EventConsumer;
 import io.aether.utils.slots.EventConsumerWithQueue;
-import it.unimi.dsi.fastutil.longs.LongSet;
-import it.unimi.dsi.fastutil.objects.ObjectSet;
 import org.jetbrains.annotations.NotNull;
 
 import java.net.URI;
@@ -46,37 +47,79 @@ public final class AetherCloudClient implements Destroyable {
     // NESTED EXCEPTION CLASSES FOR DIAGNOSTICS
     // =========================================================================
 
+    /**
+     * Delay in ms before resetting the recovery flag after a failure.
+     */
+    private static final int RECOVERY_RETRY_DELAY_MS = 10000;
     public final AFuture startFuture = AFuture.make();
     public final EventConsumer<MessageNode> onClientStream = new EventConsumerWithQueue<>();
     public final Destroyer destroyer = new Destroyer(getClass().getSimpleName());
-
     // =========================================================================
     final LNode logClientContext;
     final Map<Integer, ConnectionWork> connections = new ConcurrentHashMap<>();
-    // REFACTORED: BMap<UUID, Cloud> заменяет RMap, RFMap и requestCloud
     final BMap<UUID, Cloud> clouds = RCol.bMap(2000, "CloudCache");
     final AtomicReference<RegStatus> regStatus = new AtomicReference<>(RegStatus.NO);
-    // REFACTORED: BMap<Integer, ServerDescriptor> заменяет RMap, RFMap и requestServers
+
+    // --- Новые BMap для пакетных запросов ---
     final BMap<Integer, ServerDescriptor> servers = RCol.bMap(2000, "ServerCache");
+    /**
+     * Batched cache for client access groups.
+     * Key: Client UUID, Value: Set of Group IDs
+     */
+    final BMap<UUID, Set<Long>> clientGroups = RCol.bMap(1000, "ClientGroupsCache");
+    /**
+     * Batched cache for AccessGroup definitions.
+     * Key: Group ID, Value: AccessGroup object
+     */
+    final BMap<Long, AccessGroup> accessGroups = RCol.bMap(1000, "AccessGroupsCache");
+    /**
+     * Batched cache for all clients accessible by a given client.
+     * Key: Client UUID, Value: Set of accessible Client UUIDs
+     */
+    final BMap<UUID, Set<UUID>> allAccessedClients = RCol.bMap(1000, "AllAccessedClientsCache");
+    /**
+     * Batched cache for access check results.
+     * Key: AccessCheckPair (source, target), Value: Boolean (hasAccess)
+     */
+    final BMap<AccessCheckPair, Boolean> accessCheckCache = RCol.bMap(2000, "AccessCheckCache");
     final long lastSecond;
     final Map<UUID, MessageNode> messageNodeMap = new ConcurrentHashMap<>();
     final EventConsumer<UUID> onNewChild = new EventConsumer<>();
     final EventBiConsumer<UUID, ServerApiByUid> onNewChildApi = new EventBiConsumer<>();
-    final Queue<AConsumer<AuthorizedApi>> queueAuth = new ConcurrentLinkedQueue<>();
+    // --- Очереди для мутаций ---
+    // (Эти очереди будут обрабатываться в ConnectionWork.flushBackgroundRequests)
     final Map<Long, Map<UUID, ARFuture<Boolean>>> accessOperationsAdd = new ConcurrentHashMap<>();
     final Map<Long, Map<UUID, ARFuture<Boolean>>> accessOperationsRemove = new ConcurrentHashMap<>();
+    /**
+     * Queue for tasks requiring a ServerApiByUid instance.
+     * Processed in ConnectionWork.flushBackgroundRequests.
+     */
     final Queue<ClientTask> clientTasks = new ConcurrentLinkedQueue<>();
+    /**
+     * Flag to prevent concurrent recovery storms when state is missing.
+     */
+    final AtomicBoolean isRecoveryInProgress = new AtomicBoolean(false);
+    final AFuture recoveryFuture = AFuture.make();
+    final Queue<AConsumer<AuthorizedApi>> authTasks = new ConcurrentLinkedQueue<>();
     private final ClientState clientState;
     private final AtomicBoolean startConnection = new AtomicBoolean();
-    private final int timeout1 = 5;
+    private final int timeout1 = 6;
+    private final AtomicBoolean startScheduledTaskFlag = new AtomicBoolean();
+    private final Set<ConnectionRegistration> connectionRegistrations = new ConcurrentHashSet<>();
     private String name;
 
     {
         lastSecond = System.currentTimeMillis() / 1000;
     }
+
+    {
+        startFuture.to(this::startScheduledTask); //
+    }
+
     public AetherCloudClient() {
         this(new ClientStateInMemory(StandardUUIDs.ANONYMOUS_UID, List.of(URI.create("tcp://registration.aethernet.io:9010"))));
     }
+
     public AetherCloudClient(ClientState store) {
         this(store, null);
     }
@@ -87,12 +130,22 @@ public final class AetherCloudClient implements Destroyable {
             this.clientState = store;
             destroyer.add(this::closeConnections);
 
+            /**
+             * Pre-populate internal caches from the loaded state.
+             * This prevents pending-futures (and deadlocks) if the
+             * data is already available.
+             */
+            populateCachesFromState();
+
             clouds.forValueUpdate().add(uu -> store.setCloud(uu.key, uu.newValue));
 
             servers.forValueUpdate().add(s -> {
                 var ss = store.getServerInfo(s.key);
                 ss.setDescriptor(s.newValue);
             });
+
+            // TODO: Добавить логику сохранения/загрузки для новых BMap (clientGroups, accessGroups) в ClientState,
+            // если требуется персистентность. На данный момент они будут только в памяти.
 
             onNewChild.add(u -> {
                 if (onNewChildApi.hasListener()) {
@@ -114,44 +167,74 @@ public final class AetherCloudClient implements Destroyable {
     }
 
     /**
-     * Retrieves the access groups for a given client UUID.
+     * Populates internal BMap caches (clouds and servers) from the
+     * clientState upon initialization. This uses putResolved to
+     * avoid triggering update listeners unnecessarily.
+     */
+    private void populateCachesFromState() {
+        if (clientState.getUid() == null) {
+            return; // Nothing to populate if not registered
+        }
+
+        UUID uid = clientState.getUid();
+        for (var clientInfo : clientState.getClientInfoAll()) {
+            if (clientInfo != null && clientInfo.getCloud() != null) {
+                clouds.putResolved(clientInfo.getUid(), clientInfo.getCloud());
+            }
+        }
+        for (var serverInfo : clientState.getServerInfoAll()) {
+            if (serverInfo != null && serverInfo.getDescriptor() != null) {
+                servers.putResolved(serverInfo.getServerId(), serverInfo.getDescriptor());
+            }
+        }
+
+        // TODO: Добавить здесь логику для populateCachesFromState
+        // для accessGroups, clientGroups и т.д., если они будут сохраняться.
+    }
+
+    /**
+     * Retrieves the access groups for a given client UUID using batched requests.
      *
      * @param uid The client UUID.
      * @return A future containing the set of group IDs.
      */
     public ARFuture<Set<Long>> getClientGroups(UUID uid) {
-        return getAuthApiFuture().mapRFuture(a -> a.getAccessGroups(uid).map(LongSet::of));
+        // Запрос теперь идет через BMap
+        return clientGroups.getFuture(uid);
     }
 
     /**
-     * Retrieves all client UUIDs this client can access.
+     * Retrieves all client UUIDs this client can access using batched requests.
      *
      * @param uid The client UUID.
      * @return A future containing the set of accessed client UUIDs.
      */
     public ARFuture<Set<UUID>> getAllAccessedClients(UUID uid) {
-        return getAuthApiFuture().mapRFuture(a -> a.getAllAccessedClients(uid).map(ObjectSet::of));
+        // Запрос теперь идет через BMap
+        return allAccessedClients.getFuture(uid);
     }
 
     /**
-     * Checks if this client has permission to send messages to another client.
+     * Checks if this client has permission to send messages to another client using batched requests.
      *
      * @param uid1 The source client UUID.
      * @param uid2 The target client UUID.
      * @return A future containing true if access is granted, false otherwise.
      */
     public ARFuture<Boolean> checkAccess(UUID uid1, UUID uid2) {
-        return getAuthApiFuture().mapRFuture(a -> a.checkAccessForSendMessage2(uid1, uid2));
+        // Используем DTO в качестве ключа для BMap
+        return accessCheckCache.getFuture(new AccessCheckPair(uid1, uid2));
     }
 
     /**
-     * Retrieves the AccessGroup details by its ID.
+     * Retrieves the AccessGroup details by its ID using batched requests.
      *
      * @param groupId The ID of the access group.
      * @return A future containing the AccessGroup.
      */
     public ARFuture<AccessGroup> getGroup(long groupId) {
-        return getAuthApiFuture().mapRFuture(a -> a.getAccessGroup(groupId));
+        // Запрос теперь идет через BMap
+        return accessGroups.getFuture(groupId);
     }
 
     /**
@@ -178,9 +261,9 @@ public final class AetherCloudClient implements Destroyable {
      * @return A future containing the ServerDescriptor.
      */
     public ARFuture<ServerDescriptor> getServer(int id) {
-        var res = servers.getFuture(id);
+        var res = servers.getFuture(id); //
 
-        res.timeout(5, () -> {
+        res.timeout(7, () -> { //
             Log.warn("Timeout waiting for server description: $id. The request is pending or failed to resolve.", "id", id);
         });
 
@@ -193,13 +276,13 @@ public final class AetherCloudClient implements Destroyable {
             Cloud cloud = clientState.getCloud(uid);
             if (cloud == null) return;
             for (var pp : cloud.getData()) {
-                servers.getFuture((int) pp).to(t);
+                servers.getFuture((int) pp).to(t); //
             }
             return;
         }
-        getCloud(uid).to(p -> {
+        getCloud(uid).to(p -> { //
             for (var pp : p.getData()) {
-                servers.getFuture((int) pp).to(t, timeout1, () -> Log.warn("timeout server resolve"));
+                servers.getFuture((int) pp).to(t, timeout1, () -> Log.warn("timeout server resolve")); //
             }
         }, timeout1, () -> Log.warn("timeout cloud resolve: $uid", "uid", uid));
     }
@@ -218,7 +301,7 @@ public final class AetherCloudClient implements Destroyable {
         if (serverDescriptor == null) {
             throw new ClientApiException("Cannot get connection for null ServerDescriptor.");
         }
-        servers.putResolved((int) serverDescriptor.getId(), serverDescriptor); // Используем putResolved для BMap
+        putServerDescriptor(serverDescriptor);
         return connections.computeIfAbsent((int) serverDescriptor.getId(),
                 s -> {
                     try (var ln = logClientContext.context()) {
@@ -235,14 +318,21 @@ public final class AetherCloudClient implements Destroyable {
     public AFuture connect() {
         if (!startConnection.compareAndSet(false, true)) return startFuture;
         connect(10);
-        startFuture.to(() -> {
-            RU.scheduleAtFixedRate(destroyer, 3, TimeUnit.MILLISECONDS, this::flush);
-        }).onError(e -> {
-            Log.error("Client failed to start", e);
-        }).onCancel(() -> {
-            Log.warn("Client start was cancelled");
-        });
         return startFuture;
+    }
+
+    private Flow<ConnectionRegistration> makeConnectionReg() {
+        if (!connectionRegistrations.isEmpty()) {
+            return Flow.flow(connectionRegistrations);
+        }
+        var uris = clientState.getRegistrationUri();
+        if (uris == null || uris.isEmpty()) {
+            throw new ClientStartException("Registration URI list is void.");
+        }
+        var countServersForRegistration = Math.min(uris.size(), clientState.getCountServersForRegistration());
+        flow(uris).shuffle().limit(countServersForRegistration)
+                .map(sd -> new ConnectionRegistration(this, sd)).toCollection(connectionRegistrations);
+        return Flow.flow(connectionRegistrations);
     }
 
     /**
@@ -252,110 +342,181 @@ public final class AetherCloudClient implements Destroyable {
      */
     private void connect(int step) {
         if (destroyer.isDestroyed()) {
-            startFuture.cancel();
+            startFuture.cancel(); //
             return;
         }
         if (step == 0) {
             Log.error("All connection attempts failed.");
-            if (!startFuture.isFinalStatus()) {
-                startFuture.error(new ClientStartException("All connection attempts failed to register or connect."));
+            if (!startFuture.isFinalStatus()) { //
+                startFuture.error(new ClientStartException("All connection attempts failed to register or connect.")); //
             }
             return;
         }
 
         if (getUid() == null) {
             if (regStatus.compareAndSet(RegStatus.NO, RegStatus.BEGIN)) {
-                var uris = clientState.getRegistrationUri();
-                if (uris == null || uris.isEmpty()) {
-                    if (!startFuture.isFinalStatus()) {
-                        startFuture.error(new ClientStartException("Registration URI list is void."));
-                    }
-                    return;
-                }
+                var regs = makeConnectionReg();
                 var timeoutForConnect = clientState.getTimeoutForConnectToRegistrationServer();
-                var countServersForRegistration = Math.min(uris.size(), clientState.getCountServersForRegistration());
 
                 try {
-                    var startFutures = flow(uris).shuffle().limit(countServersForRegistration)
-                            .map(sd -> {
-                                try (var ln = logClientContext.context()) {
-                                    return new ConnectionRegistration(this, sd).connectFuture.toFuture();
-                                }
-                            })
-                            .toList();
-
-                    var anyFuture = AFuture.any(startFutures);
-
+                    var anyFuture = AFuture.any(regs.map(ConnectionRegistration::registration)); //
                     // Propagate statuses to startFuture
-                    anyFuture.to(this::startScheduledTask)
-                            .onError(startFuture::error)
-                            .onCancel(startFuture::cancel);
-
+                    anyFuture.to(this::startScheduledTask) //
+                            .onError(startFuture::error) //
+                            .onCancel(startFuture::cancel); //
                     // Timeout logic
-                    anyFuture.timeoutMs(timeoutForConnect, () -> {
-                        Log.error("Failed to connect to registration server: $uris", "uris", uris);
+                    anyFuture.timeoutMs(timeoutForConnect, () -> { //
+                        Log.warn("Failed to connect to registration server: $uris", "uris", clientState.getRegistrationUri());
                         // Retry
-                        RU.schedule(4000, () -> this.connect(step - 1));
+                        RU.schedule(1000, () -> this.connect(step - 1));
                     });
                 } catch (Exception e) {
                     Log.error("Fatal error during registration setup.", e);
-                    if (!startFuture.isFinalStatus()) {
-                        startFuture.error(new ClientStartException("Fatal error during registration setup.", e));
+                    if (!startFuture.isFinalStatus()) { //
+                        startFuture.error(new ClientStartException("Fatal error during registration setup.", e)); //
                     }
                 }
             }
         } else {
-            // --- FIX: ASYNCHRONOUSLY WAIT FOR CONNECTION WORK READY ---
             try {
                 var uid = getUid();
                 if (uid == null) {
                     throw new ClientStartException("UID is null but regStatus is not NO/BEGIN.");
                 }
-                var cloud = clientState.getCloud(uid);
-                if (cloud == null || cloud.getData().length == 0) {
-                    // This is handled by registration or is a critical state.
-                    throw new ClientStartException("Client is registered but cloud data is empty.");
+                var cloud = clouds.getFuture(uid).getNow(); //
+                boolean isCacheMissingDescriptors = false;
+                if (cloud != null && cloud.getData().length > 0) {
+                    if (Flow.flow(cloud.getData()).mapToObj(id -> servers.getFuture((int) id).getNow()).filterNotNull().isEmpty()) {
+                        isCacheMissingDescriptors = true;
+                    }
                 }
-
-                List<AFuture> readyFutures = new ArrayList<>();
-                for (var serverId : cloud.getData()) {
-                    // 1. Get/Wait for the ServerDescriptor to be present in local cache (servers BMap).
-                    ARFuture<ServerDescriptor> serverDescriptorFuture = getServer(serverId);
-
-                    // 2. Map the successful retrieval of the descriptor to the actual connection establishment
-                    //    and wait for the ConnectionWork's internal 'ready' flag (first ping).
-                    AFuture readyFuture = serverDescriptorFuture
-                            .map(this::getConnection) // ARFuture<ConnectionWork>
-                            .mapRFuture(c -> c.ready.mapToARFuture()) // ARFuture<ConnectionWork> -> ARFuture<T> (where T is ConnectionWork)
-                            .toFuture(); // Convert to AFuture for collection
-
-                    readyFutures.add(readyFuture);
+                if (cloud == null) {
+                    Log.info("Recovery required: Cloud missing from cache. Starting recovery.");
+                    triggerRecovery().to(startFuture); //
+                    return;
                 }
-
-                // Wait for ANY connection to be ready. This ensures the startFuture completes
-                // only when at least one connection is established and authenticated.
-                AFuture.any(readyFutures)
-                        .to(startFuture::done)
-                        .onError(startFuture::error)
-                        .onCancel(startFuture::cancel);
-
+                if (isCacheMissingDescriptors) {
+                    Log.info("Recovery required: ServerDescriptors missing from cache. Starting recovery.");
+                    triggerRecovery().to(startFuture); //
+                    return;
+                }
+                makeFirstConnection();
+                startFuture.done();
             } catch (Exception e) {
-                // If anything goes wrong synchronously before the async chain starts (e.g., cloud data is bad)
                 Log.error("Fatal error during connection to own cloud.", e);
-                if (!startFuture.isFinalStatus()) {
-                    startFuture.error(new ClientStartException("Fatal error during connection to own cloud.", e));
+                if (!startFuture.isFinalStatus()) { //
+                    startFuture.error(new ClientStartException("Fatal error during connection to own cloud.", e)); //
                 }
                 RU.error(e);
             }
-            // --- END FIX ---
         }
+    }
+    public AFuture forceUpdateStateFromCache() {
+        AFuture resultFuture = AFuture.make();
+        UUID uid = getUid();
+
+        if (uid == null) {
+            Log.warn("forceUpdateStateFromCache called, but client UID is null. Cannot update state.");
+            resultFuture.error(new IllegalStateException("Client is not registered, UID is null."));
+            return resultFuture;
+        }
+
+        Log.debug("forceUpdateStateFromCache: Forcing fetch and save for own UID...", "uid", uid);
+
+        // 1. Получить Cloud (из кэша или сети)
+        getCloud(uid).to(cloud -> {
+            if (cloud == null) {
+                Log.error("forceUpdateStateFromCache: Fetched cloud was null.", "uid", uid);
+                resultFuture.error(new IllegalStateException("Fetched cloud was null for UID: " + uid));
+                return;
+            }
+
+            // 2. Синхронно сохранить Cloud в state
+            // Это решает первую часть гонки
+            clientState.setCloud(uid, cloud);
+            Log.trace("forceUpdateStateFromCache: Own cloud saved to state.", "uid", uid);
+
+            var sids = cloud.getData();
+            if (sids == null || sids.length == 0) {
+                Log.warn("forceUpdateStateFromCache: Client's own cloud is empty. State updated.", "uid", uid);
+                resultFuture.done(); // Завершаем, так как серверов нет
+                return;
+            }
+
+            // 3. Собрать futures для всех ServerDescriptors
+            List<ARFuture<ServerDescriptor>> serverFutures = new ArrayList<>();
+            for (var sid : sids) {
+                serverFutures.add(getServer(sid));
+            }
+
+            // 4. Дождаться получения ВСЕХ дескрипторов (они попадут в BMap-кэш "servers")
+            ARFuture.all(serverFutures).to(() -> {
+                Log.trace("forceUpdateStateFromCache: All server descriptors fetched. Saving to state...", "uid", uid);
+
+                // 5. Теперь, когда все в кэше, СИНХРОННО сохранить их из кэша в state
+                // Это решает вторую часть гонки
+                for (var sid : sids) {
+                    ServerDescriptor descriptor = getServer(sid).getNow(); // Безопасно, т.к. all() завершился
+                    if (descriptor != null) {
+                        clientState.getServerInfo(descriptor.getId()).setDescriptor(descriptor);
+                    } else {
+                        Log.warn("forceUpdateStateFromCache: ServerDescriptor null in cache after fetch.", "sid", sid);
+                    }
+                }
+
+                // 6. Все данные для "own UID" сохранены в state. Завершаем future.
+                Log.debug("forceUpdateStateFromCache: Force update for own UID complete.", "uid", uid);
+                resultFuture.done();
+
+            }).onError(e -> {
+                Log.error("forceUpdateStateFromCache: Failed to fetch server descriptors.", e, "uid", uid);
+                resultFuture.error(e);
+            });
+
+        }).onError(e -> {
+            Log.error("forceUpdateStateFromCache: Failed to fetch own cloud.", e, "uid", uid);
+            resultFuture.error(e);
+        });
+
+        return resultFuture;
+    }
+    /**
+     * Initiates the process of resolving the Cloud and ServerDescriptors
+     * from a registration server.
+     * <p>
+     * This method is protected by an AtomicBoolean flag to prevent
+     * concurrent "storms" of recovery attempts.
+     *
+     * @return An AFuture that completes when recovery is successful.
+     */
+    private AFuture triggerRecovery() {
+        if (isRecoveryInProgress.get()) {
+            return recoveryFuture;
+        }
+        Log.info("Starting recovery process to resolve Cloud/ServerDescriptors...");
+        var regs = makeConnectionReg();
+        var cloud = clientState.getCloud(getUid());
+        AFuture recoveryFuture = AFuture.any(regs.map(c -> c.resolveCloud(cloud)));
+        recoveryFuture.to(() -> {
+            Log.info("Recovery successful. Descriptors resolved.");
+            isRecoveryInProgress.set(false);
+        }).onError(e -> { //
+            Log.error("Recovery attempt failed. Will retry later.", e);
+            RU.schedule(RECOVERY_RETRY_DELAY_MS, () -> {
+                Log.warn("Resetting recovery flag after failure timeout.");
+                isRecoveryInProgress.set(false);
+            });
+        });
+        return recoveryFuture;
     }
 
     /**
      * Placeholder for scheduled task initiation.
      */
     private void startScheduledTask() {
-        // Implementation omitted for brevity.
+        if (startScheduledTaskFlag.compareAndSet(false, true)) {
+            RU.scheduleAtFixedRate(destroyer, 3, TimeUnit.MILLISECONDS, this::flush);
+        }
     }
 
     /**
@@ -368,56 +529,75 @@ public final class AetherCloudClient implements Destroyable {
     }
 
     /**
-     * Helper method to get an authorized API future and map a function over it.
+     * Helper to get an authorized API future and map a function over it.
+     * This is used for mutations like createAccessGroup.
      *
      * @param t The function to execute on the AuthorizedApi.
      * @return A future with the result of the function.
      */
     public <T> ARFuture<T> getAuthApi1(@NotNull AFunction<AuthorizedApi, ARFuture<T>> t) {
-        if (destroyer.isDestroyed()) return ARFuture.canceled();
-        ARFuture<T> res = ARFuture.make();
-        getAuthApiFuture().mapRFuture(t).to(res);
+        if (destroyer.isDestroyed()) return ARFuture.canceled(); //
+        ARFuture<T> res = ARFuture.make(); //
+        getAuthApiFuture().mapRFuture(t).to(res); //
         return res;
     }
 
     /**
-     * Returns a future that completes with the AuthorizedApi instance or an error/cancellation.
-     * A timeout is applied to ensure the future is not left incomplete.
+     * Returns a future that completes with the AuthorizedApi instance.
+     * This is now backed by the ConnectionWork's RemoteApiFuture.
+     * This method is intended for non-batched calls (mutations) like createAccessGroup.
      *
      * @return A future containing the AuthorizedApi instance.
      */
     public ARFuture<AuthorizedApi> getAuthApiFuture() {
-        ARFuture<AuthorizedApi> res = ARFuture.make();
+        ARFuture<AuthorizedApi> res = ARFuture.make(); //
         if (destroyer.isDestroyed()) {
-            res.cancel();
+            res.cancel(); //
             return res;
         }
         // Enqueue the consumer, which will call res.done(api) later.
-        getAuthApi(res::done);
+        getAuthApi(res::done); //
 
         // Ensures the future doesn't hang indefinitely.
-        res.timeoutError(5, "Timeout waiting for AuthorizedApi to become available.");
+        res.timeoutError(8, "Timeout waiting for AuthorizedApi to become available."); //
 
         return res;
     }
 
     /**
-     * Enqueues a consumer task to be executed when the AuthorizedApi is available.
-     * This is a fire-and-forget method and relies on external mechanisms (like getAuthApiFuture)
-     * for error and timeout handling.
+     * Gets a connection, prioritizing one that is already established.
+     * If no connection is active, it triggers `makeFirstConnection` and returns null.
+     *
+     * @return An active ConnectionWork, or null if none are active.
+     */
+    private ConnectionWork getAnyConnection() {
+        if (connections.isEmpty()) {
+            // No connections exist, try to make one.
+            // The task will be picked up later by the flush mechanism.
+            makeFirstConnection();
+            return null;
+        }
+
+        // Prefer an already-authed connection
+        for (var c : connections.values()) {
+            if (c.firstAuth) {
+                return c;
+            }
+        }
+
+        // Otherwise, return the first available one
+        return connections.values().stream().findFirst().orElse(null);
+    }
+
+    /**
+     * Enqueues a task to be executed on an active AuthorizedApi.
+     * This is used for mutations (like createAccessGroup) that cannot be batched.
      *
      * @param t The consumer to execute with the AuthorizedApi.
      */
     public void getAuthApi(@NotNull AConsumer<AuthorizedApi> t) {
         if (destroyer.isDestroyed()) return;
-        queueAuth.add(a -> {
-            if (destroyer.isDestroyed()) return;
-            try {
-                t.accept(a);
-            } catch (Exception e) {
-                Log.error("Error executing AuthorizedApi consumer task.", e);
-            }
-        });
+        authTasks.add(t);
     }
 
     /**
@@ -426,9 +606,12 @@ public final class AetherCloudClient implements Destroyable {
     public void flush() {
         // Проверяем BMap на наличие pending запросов
         if (connections.isEmpty()) {
-            if (!messageNodeMap.isEmpty() || !servers.getPendingRequests().isEmpty() || !clouds.getPendingRequests().isEmpty()) {
-                makeFirstConnection();
-            }
+            if (getUid() == null) return;
+            var c = getCloud(getUid()).getNow();
+            if (c == null) return;
+            var s = getServer(c.getData()[0]).getNow();
+            if (s == null) return;
+            makeFirstConnection();
         }
         for (var c : connections.values()) {
             c.flush();
@@ -442,20 +625,33 @@ public final class AetherCloudClient implements Destroyable {
             Log.warn("current my uid is null");
             return;
         }
-        if (uid.equals(getUid())) {
-            Cloud cloud = clientState.getCloud(uid);
-            if (cloud == null || cloud.getData().length == 0) return;
 
-            int serverId = (int) cloud.getData()[0];
+        // Check BMap cache
+        Cloud cloud = clouds.getFuture(uid).getNow(); //
 
-            getServer(serverId).to(this::getConnection,
-                    timeout1, () -> Log.warn("timeout ready connection: failed to get ServerDescriptor for ID: $id", "id", serverId));
-
+        if (cloud == null || cloud.getData().length == 0) {
+            // Cloud cache is empty or cloud has no servers. Trigger recovery.
+            Log.warn("makeFirstConnection: Cloud is missing or empty. Triggering recovery.");
+            triggerRecovery();
             return;
         }
-        getServerDescriptorForUid(uid, sd -> {
-            getConnection(sd);
-        });
+
+        int serverId = (int) cloud.getData()[0];
+
+        // Check server cache directly.
+        var descriptor = servers.getFuture(serverId).getNow(); //
+
+        if (descriptor != null) {
+            // Descriptor is in cache. Proceed with connection.
+            getConnection(descriptor).connectFuture.to(startFuture::tryDone);
+        } else {
+            // Descriptor is missing. Trigger recovery (if not already running).
+            // The flush() task will call this method again later.
+            Log.warn("makeFirstConnection: ServerDescriptor missing for $id. Triggering recovery.", "id", serverId);
+            triggerRecovery();
+        }
+        return;
+
     }
 
     public Collection<ConnectionWork> getConnections() {
@@ -470,13 +666,13 @@ public final class AetherCloudClient implements Destroyable {
      */
     public ARFuture<Cloud> getCloud(@NotNull UUID uid) {
         var r = clientState.getCloud(uid);
-        if (r != null) return ARFuture.of(r);
-        var res = clouds.getFuture(uid);
+        if (r != null) return ARFuture.of(r); //
+        var res = clouds.getFuture(uid); //
 
         // Propagate error on timeout
-        res.timeout(4, () -> {
+        res.timeout(4, () -> { //
             Log.error("timeout get cloud: $uid", "uid", uid, "client", AetherCloudClient.this);
-            res.error(new ClientTimeoutException("Timeout getting cloud for: " + uid));
+            res.error(new ClientTimeoutException("Timeout getting cloud for: " + uid)); //
         });
         return res;
     }
@@ -500,7 +696,7 @@ public final class AetherCloudClient implements Destroyable {
             return;
         }
         // Используем putResolved для BMap
-        clouds.putResolved(regResp.getUid(), regResp.getCloud());
+        clouds.putResolved(regResp.getUid(), regResp.getCloud()); //
 
         clientState.setUid(regResp.getUid());
         clientState.setAlias(regResp.getAlias());
@@ -511,13 +707,13 @@ public final class AetherCloudClient implements Destroyable {
         var cloud = regResp.getCloud();
         if (cloud != null && cloud.getData().length > 0) {
             for (var serverId : cloud.getData()) {
-                getServer((int) serverId).to(this::getConnection).onError(e -> {
+                getServer((int) serverId).to(this::getConnection).onError(e -> { //
                     Log.warn("Failed to establish WorkServer connection after registration for ID: $id", "id", serverId);
                 });
             }
         }
 
-        startFuture.done();
+        startFuture.done(); //
     }
 
     public MessageNode getMessageNode(@NotNull UUID uid) {
@@ -548,8 +744,8 @@ public final class AetherCloudClient implements Destroyable {
     @Override
     public AFuture destroy(boolean force) {
         return destroyer.destroy(force)
-                .onError(e -> Log.error("Error during AetherCloudClient destroy.", e))
-                .onCancel(() -> Log.warn("AetherCloudClient destroy was cancelled."));
+                .onError(e -> Log.error("Error during AetherCloudClient destroy.", e)) //
+                .onCancel(() -> Log.warn("AetherCloudClient destroy was cancelled.")); //
     }
 
     public boolean isConnected() {
@@ -572,7 +768,7 @@ public final class AetherCloudClient implements Destroyable {
 
     public AetherCloudClient waitStart(int timeout) {
         try {
-            startFuture.toCompletableFuture().get(timeout, TimeUnit.SECONDS);
+            startFuture.toCompletableFuture().get(timeout, TimeUnit.SECONDS); //
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         } catch (ExecutionException e) {
@@ -612,40 +808,58 @@ public final class AetherCloudClient implements Destroyable {
     }
 
     public ARFuture<AccessGroupI> createAccessGroupWithOwner(UUID owner, UUID... uids) {
-        return getAuthApiFuture().mapRFuture(c -> c.createAccessGroup(owner, uids))
-                .map(id -> new AccessGroupImpl(new AccessGroup(owner, id, new UUID[0])) {
+        // Используем getAuthApi1 для "мутаций", которые возвращают результат
+        return getAuthApi1(c -> c.createAccessGroup(owner, uids)) //
+                .map(id -> new AccessGroupImpl(new AccessGroup(owner, id, new UUID[0])) { //
                     @Override
                     public ARFuture<Boolean> add(UUID uuid) {
                         if (data.contains(uuid)) {
-                            return ARFuture.of(Boolean.FALSE);
+                            return ARFuture.of(Boolean.FALSE); //
                         }
-                        return accessOperationsAdd.computeIfAbsent(id, (k) -> new ConcurrentHashMap<>()).computeIfAbsent(uuid, k -> ARFuture.make());
+                        // Добавляем операцию в очередь
+                        ARFuture<Boolean> future = accessOperationsAdd
+                                .computeIfAbsent(id, (k) -> new ConcurrentHashMap<>())
+                                .computeIfAbsent(uuid, k -> ARFuture.make());
+
+                        // Триггер для немедленной отправки
+                        AetherCloudClient.this.flush();
+                        return future;
                     }
 
                     @Override
                     public ARFuture<Boolean> remove(UUID uuid) {
                         if (!data.contains(uuid)) {
-                            return ARFuture.of(Boolean.FALSE);
+                            return ARFuture.of(Boolean.FALSE); //
                         }
-                        return accessOperationsRemove.computeIfAbsent(id, (k) -> new ConcurrentHashMap<>()).computeIfAbsent(uuid, k -> ARFuture.make());
+                        // Добавляем операцию в очередь
+                        ARFuture<Boolean> future = accessOperationsRemove
+                                .computeIfAbsent(id, (k) -> new ConcurrentHashMap<>())
+                                .computeIfAbsent(uuid, k -> ARFuture.make());
+
+                        // Триггер для немедленной отправки
+                        AetherCloudClient.this.flush();
+                        return future;
                     }
                 });
     }
 
     public void getClientApi(UUID uid, AConsumer<ServerApiByUid> c) {
+        // Добавляем задачу в очередь, ConnectionWork ее обработает
         clientTasks.add(new ClientTask(uid, c));
+        // Триггерим flush, чтобы отправить задачу
+        flush();
     }
 
     public boolean verifySign(SignedKey signedKey) {
         return CryptoUtils.verifySign(signedKey, clientState.getRootSigners());
     }
 
-    /**
-     * Sends a data payload value to a specified client.
-     *
-     * @param uid     The target client UUID.
-     * @param message The message data wrapped in a Value object.
-     */
+/**
+ * Sends a data payload value to a specified client.
+ *
+ * @param uid     The target client UUID.
+ * @param message The message data wrapped in a Value object.
+ */
     /**
      * Sends a raw byte array message to a specified client.
      *
@@ -679,7 +893,12 @@ public final class AetherCloudClient implements Destroyable {
      * @param cloud Объект Cloud.
      */
     public void setCloud(UUID uid, Cloud cloud) {
-        clouds.putResolved(uid, cloud);
+        clouds.putResolved(uid, cloud); //
+    }
+
+    public void putServerDescriptor(ServerDescriptor s) {
+        servers.putResolved((int) s.getId(), s); //
+        clientState.getServerInfo(s.getId()).setDescriptor(s);
     }
 
     public static AetherCloudClient of(ClientState state) {
@@ -727,7 +946,10 @@ public final class AetherCloudClient implements Destroyable {
         }
     }
 
-    private static class ClientTask {
+    /**
+     * Internal class to hold tasks for getClientApi.
+     */
+    static class ClientTask { // Сделал static, так как нет доступа к non-static AetherCloudClient
         final UUID uid;
         final AConsumer<ServerApiByUid> task;
 

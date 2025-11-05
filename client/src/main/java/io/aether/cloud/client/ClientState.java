@@ -22,6 +22,7 @@ public interface ClientState {
     void setMasterKey(Key key);
 
     ServerInfo getServerInfo(int sid);
+    Iterable<ServerInfo> getServerInfoAll();
 
     default ServerDescriptor getServerDescriptor(int serverId) {
         return getServerInfo(serverId).getDescriptor();
@@ -34,6 +35,7 @@ public interface ClientState {
     }
 
     Cloud getCloud(UUID uid);
+    Iterable<ClientInfo> getClientInfoAll();
 
     List<URI> getRegistrationUri();
 

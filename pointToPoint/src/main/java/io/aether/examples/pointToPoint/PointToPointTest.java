@@ -4,12 +4,10 @@ import io.aether.StandardUUIDs;
 import io.aether.api.common.CryptoLib;
 import io.aether.cloud.client.AetherCloudClient;
 import io.aether.cloud.client.ClientStateInMemory;
-import io.aether.cloud.client.MessageEventListener;
 import io.aether.common.AccessGroupI;
 import io.aether.logger.Log;
 import io.aether.utils.ConcurrentHashSet;
 import io.aether.utils.RU;
-import io.aether.utils.flow.Flow;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
 
@@ -18,7 +16,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class PointToPointTest {
@@ -47,30 +44,30 @@ public class PointToPointTest {
         client2.startFuture.to(() -> Log.info("client is registered uid2: $uid2", "uid2", client2.getUid()));
         client1.startFuture.onError(Log::error);
         client2.startFuture.onError(Log::error);
-        client1.startFuture.onCancel(()->Log.error("cancel"));
-        client2.startFuture.onCancel(()->Log.error("cancel"));
+        client1.startFuture.onCancel(() -> Log.error("cancel"));
+        client2.startFuture.onCancel(() -> Log.error("cancel"));
         client2.startFuture.onError(Log::error);
         AFuture.all(client1.startFuture, client2.startFuture).to(() -> {
             Log.info("clients is registered uid1: $uid1 uid2: $uid2", "uid1", client1.getUid(), "uid2", client2.getUid());
             AFuture checkReceiveMessage = AFuture.make();
             var message = new byte[]{1, 2, 3, 4};
             client2.onMessage((uid, msg) -> {
-                if(checkReceiveMessage.tryDone()){
+                if (checkReceiveMessage.tryDone()) {
                     Log.info("First message confirm");
-                }else{
+                } else {
                     Log.warn("Second message confirm");
                 }
             });
             Log.info("START two clients!");
             Thread.currentThread().setName("MAIN THREAD");
-            client1.sendMessage(client2.getUid(), message);
-
+            client1.sendMessage(client2.getUid(), message).to(()->{
+                client1.destroy(false).onError(testDoneFuture::error);
+            });
             checkReceiveMessage.to(() -> {
                 Log.info("TEST IS DONE!");
-                client1.destroy(false).to(() -> {
-                    client2.destroy(false).to(testDoneFuture)
-                            .onError(testDoneFuture::error);
-                }).onError(testDoneFuture::error);
+                client2.destroy(false)
+                        .to(testDoneFuture)
+                        .onError(testDoneFuture::error);
             }).onError(testDoneFuture::error);
 
         }).onError(testDoneFuture::error);
@@ -95,7 +92,7 @@ public class PointToPointTest {
             final var total = 1000000L;
             AtomicLong receiveCounter = new AtomicLong(0);
             client2.onClientStream((g) -> {
-                g.toConsumer( d -> {
+                g.toConsumer(d -> {
                     receiveCounter.addAndGet(d.length);
                 });
             });
@@ -104,7 +101,7 @@ public class PointToPointTest {
 
             while (receiveCounter.get() < total) {
                 boolean[] abortFlag = new boolean[1];
-                ch1.send(data).onCancel(()->{
+                ch1.send(data).onCancel(() -> {
                     abortFlag[0] = true;
                 });
                 if (!abortFlag[0]) {
@@ -143,12 +140,12 @@ public class PointToPointTest {
             var message = new byte[]{1, 2, 3, 4};
             var messageBack = new byte[]{1, 1, 1, 1};
             client2.onClientStream((st) -> {
-                st.toConsumer( newMessage -> {
+                st.toConsumer(newMessage -> {
                     st.send(messageBack);
                 });
             });
             client1.onClientStream((st) -> {
-                st.toConsumer( newMessage -> {
+                st.toConsumer(newMessage -> {
                     checkReceiveMessageBack.done();
                 });
             });
@@ -205,7 +202,7 @@ public class PointToPointTest {
                 AFuture checkReceiveMessage = AFuture.make();
                 var message = new byte[]{0, 0, 0, 0};
                 client2.onClientStream((st) -> {
-                    st.toConsumer( newMessage -> {
+                    st.toConsumer(newMessage -> {
                         checkReceiveMessage.done();
                     });
                 });
@@ -225,7 +222,7 @@ public class PointToPointTest {
         return testDoneFuture;
     }
 
-    private AFuture startIteration2() { // ИСПРАВЛЕНО: удален дженерик
+    private AFuture startIteration2() {
         AFuture iteration2DoneFuture = AFuture.make();
         // iteration 2
         {
@@ -241,7 +238,7 @@ public class PointToPointTest {
                 AFuture checkReceiveMessage = AFuture.make();
                 var message = new byte[]{2, 2, 2, 2};
                 client2.onClientStream((st) -> {
-                    st.toConsumer( newMessage -> {
+                    st.toConsumer(newMessage -> {
                         checkReceiveMessage.done();
                     });
                 });
@@ -287,9 +284,12 @@ public class PointToPointTest {
                 Log.info("START two clients!");
                 var chToc2 = client1.getMessageNode(client2.getUid());
                 Thread.currentThread().setName("MAIN THREAD");
-                chToc2.send(message);
+                var sendFuture = chToc2.send(message);
 
                 checkReceiveMessage.to(() -> {
+                    if (!sendFuture.isDone()) {
+                        throw new IllegalStateException();
+                    }
                     Log.info("TEST IS DONE!");
                     var f1 = client1.destroy(true);
                     var f2 = client2.destroy(true);
@@ -301,6 +301,88 @@ public class PointToPointTest {
                         startIteration2().to(testDoneFuture::done)
                                 .onError(testDoneFuture::error);
                     });
+                }).onError(testDoneFuture::error);
+            }).onError(testDoneFuture::error);
+        }
+
+        return testDoneFuture;
+    }
+
+    public AFuture pointToPointWithReconnect2() {
+        var parent = UUID.fromString("84AE8BD0-2BE4-FF65-406C-B1B655444D54");
+        clientConfig1 = new ClientStateInMemory(parent, registrationUri);
+        clientConfig2 = new ClientStateInMemory(parent, registrationUri);
+
+        AFuture testDoneFuture = AFuture.make();
+        AFuture iteration2=AFuture.make();
+        {//iteration 1
+            if (clientConfig1 == null)
+                clientConfig1 = new ClientStateInMemory(StandardUUIDs.TEST_UID, registrationUri, null, CryptoLib.HYDROGEN);
+            if (clientConfig2 == null)
+                clientConfig2 = new ClientStateInMemory(StandardUUIDs.TEST_UID, registrationUri, null, CryptoLib.HYDROGEN);
+            AetherCloudClient client1 = new AetherCloudClient(clientConfig1, "client1");
+            AetherCloudClient client2 = new AetherCloudClient(clientConfig2, "client2");
+
+            AFuture.all(client1.startFuture, client2.startFuture).to(() -> {
+                Log.info("clients is registered uid1: $uid1 uid2: $uid2", "uid1", client1.getUid(), "uid2", client2.getUid());
+                AFuture checkReceiveMessage = AFuture.make();
+                var message = new byte[]{1, 1, 1, 1};
+                client2.onClientStream((st) -> {
+                    st.toConsumer(newMessage -> {
+                        checkReceiveMessage.done();
+                    });
+                });
+                Log.info("START two clients!");
+                var chToc2 = client1.getMessageNode(client2.getUid());
+                Thread.currentThread().setName("MAIN THREAD");
+                var sendFuture = chToc2.send(message);
+
+                checkReceiveMessage.to(() -> {
+                    if (!sendFuture.isDone()) {
+                        throw new IllegalStateException();
+                    }
+                    Log.info("TEST 1 IS DONE!");
+                    var f1 = client1.destroy(true);
+                    var f2 = client2.destroy(true);
+
+                    AFuture.all(f1, f2).onError(t -> {
+                        testDoneFuture.error(new IllegalStateException("Failed to destroy clients after iteration 1: " + f1 + ":" + f2, t));
+                    }).to(() -> {
+                        Log.debug("ITERATION 2 START");
+                        iteration2.done();
+                    });
+                }).onError(testDoneFuture::error);
+            }).onError(testDoneFuture::error);
+            iteration2.to(() -> {
+                Log.info("clients is registered uid1: $uid1 uid2: $uid2", "uid1", client1.getUid(), "uid2", client2.getUid());
+                var client1_2 = new AetherCloudClient(clientConfig1, "client1_1");
+                var client2_2 = new AetherCloudClient(clientConfig2, "client2_2");
+
+                AFuture checkReceiveMessage = AFuture.make();
+                var message = new byte[]{1, 1, 1, 1};
+                client2_2.onClientStream((st) -> {
+                    st.toConsumer(newMessage -> {
+                        checkReceiveMessage.done();
+                    });
+                });
+                Log.info("START two clients!");
+                var chToc2 = client1_2.getMessageNode(client2_2.getUid());
+                Thread.currentThread().setName("MAIN THREAD");
+                var sendFuture = chToc2.send(message);
+
+                checkReceiveMessage.to(() -> {
+                    if (!sendFuture.isDone()) {
+                        throw new IllegalStateException();
+                    }
+                    Log.info("TEST 2 IS DONE!");
+                    var f1 = client1_2.destroy(true);
+                    var f2 = client2_2.destroy(true);
+
+                    AFuture.all(f1, f2).onError(t -> {
+                        testDoneFuture.error(new IllegalStateException("Failed to destroy clients after iteration 1: " + f1 + ":" + f2, t));
+                    }).to(() -> {
+                        Log.debug("ITERATION 2 START");
+                    }).to(testDoneFuture);
                 }).onError(testDoneFuture::error);
             }).onError(testDoneFuture::error);
         }

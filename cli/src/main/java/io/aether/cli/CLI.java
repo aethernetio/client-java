@@ -22,11 +22,9 @@ public class CLI {
     private final CliState cliState;
 
     public CLI(String... aa) {
-        // 1. Initialize and load persistent state
         this.cliState = new CliState();
         this.cliState.load();
 
-        // 2. Pass state to CliApi
         this.api = new CliApi(this.cliState);
 
         var consoleMgr = new ConsoleMgrCanonical(aa) {
@@ -37,32 +35,16 @@ public class CLI {
         };
 
         consoleMgr.footer = "For more information, please visit the website https://aethernet.io";
-
-        // Setup converters
         consoleMgr.regConverter(CTypeI.of(CryptoLib.class), CryptoLib::valueOf);
-
-        // Register custom converter for UUID to support aliases (user-defined and static)
         consoleMgr.regConverter(CTypeI.of(UUID.class), s -> {
             if (s == null) return null;
-            // api.resolveUuid resolves user aliases first, then static aliases
             return api.resolveUuid(s);
         });
-
         consoleMgr.regResultConverter("bin", CTypeI.of(ClientStateInMemory.class), ClientStateInMemory::save);
-
-        // Converters for Msg
         setupMsgConverters(consoleMgr);
         setupClientStateJsonConverter(consoleMgr);
-
-        // Start execution and get the result
         this.resultFuture = consoleMgr.execute(api);
-
-        // Cleanup chain
-        resultFuture.mapRFuture(v ->
-                api.destroyer.destroy(true).timeout(10, () ->
-                        Log.warn("Timeout destroying CLI resources")
-                ).mapRFuture(() -> null)
-        ).timeout(10, () -> Log.warn("Timeout result cli"));
+        resultFuture.toFuture().apply(()->api.destroyer.destroy(false)).timeout(10, () -> Log.warn("Timeout result cli"));
     }
 
     private void setupMsgConverters(ConsoleMgrCanonical consoleMgr) {

@@ -6,7 +6,12 @@ plugins {
 
 application {
     mainClass = 'io.aether.cli.CLI'
+    applicationDefaultJvmArgs = [
+            '--add-opens=java.base/jdk.internal.misc=ALL-UNNAMED',
+            '--add-opens=java.base/sun.nio.ch=ALL-UNNAMED'
+    ]
 }
+
 shadowJar {
     archiveFileName.set('aether-cli.jar')
     archiveVersion.set(version.toString())
@@ -14,19 +19,21 @@ shadowJar {
         attributes 'Main-Class': 'io.aether.cli.CLI'
     }
 }
+
 dependencies {
     implementation project(':client')
     implementation("org.slf4j:slf4j-nop:2.0.16")
     implementation 'com.google.code.gson:gson:2.10.1'
     implementation 'io.aether.crypto:hydrogen-fast:+'
     implementation 'io.aether.crypto:sodium:+'
-
 }
-java{
+
+java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(25)
     }
 }
+
 tasks.register('dist') {
     dependsOn('shadowJar')
     doLast {
@@ -37,13 +44,15 @@ tasks.register('dist') {
         }
         var outputFile = new File(outputDir, "aether-cli")
         var out = new FileOutputStream(outputFile)
-        out.write("#!/bin/sh\nexec java -jar \$0 \"\$@\"\nexit 0\n".getBytes())
+        // Добавляем JVM аргументы в shell-скрипт
+        out.write("#!/bin/sh\nexec java --add-opens=java.base/jdk.internal.misc=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED -jar \$0 \"\$@\"\nexit 0\n".getBytes())
         jar.transferTo(out)
         out.close()
         jar.close()
         outputFile.setExecutable(true)
     }
 }
+
 tasks.register('updateVersion') {
     doLast {
         def fw = new FileWriter(new File(System.getProperty("java.io.tmpdir"), "aether-cli-version.txt"));
@@ -51,12 +60,14 @@ tasks.register('updateVersion') {
         fw.close();
     }
 }
+
 processResources {
     dependsOn 'updateVersion'
     from(System.getProperty("java.io.tmpdir") + "/aether-cli-version.txt") {
         into(".")
     }
 }
+
 publishing {
     publications {
         mavenPublication(MavenPublication) {

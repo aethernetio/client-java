@@ -12,6 +12,7 @@ import io.aether.utils.RU;
 import io.aether.utils.ToString;
 import io.aether.utils.dataio.DataInOut;
 import io.aether.utils.dataio.DataInOutStatic;
+import io.aether.utils.flow.Flow;
 import io.aether.utils.slots.AMFuture;
 
 import java.io.File;
@@ -34,7 +35,7 @@ public class ClientStateInMemory implements ClientState, ToString {
     private final AMFuture<Long> pingDuration = new AMFuture<>(1000L);
     private UUID parentUid;
     private int countServersForRegistration = 1;
-    private long timeoutForConnectToRegistrationServer = 5000;
+    private long timeoutForConnectToRegistrationServer = 5650;
     private volatile UUID uid;
     private volatile UUID alias;
     private volatile Key masterKey;
@@ -89,7 +90,9 @@ public class ClientStateInMemory implements ClientState, ToString {
         sb.add("crypto lib: ").add(cryptoLib).add("\n");
         sb.add("cloud: ").add(getCloud(uid)).add("\n");
         for (var c : getCloud(uid).getData()) {
-            sb.addSpace(4).add(getServerDescriptor(c)).add("\n");
+            var sd=getServerDescriptor(c);
+            if(sd==null)continue;
+            sb.addSpace(4).add(sd).add("\n");
         }
     }
 
@@ -180,6 +183,11 @@ public class ClientStateInMemory implements ClientState, ToString {
         return servers.computeIfAbsent(sid, ServerInfo::new);
     }
 
+    @Override
+    public Iterable<ClientState.ServerInfo> getServerInfoAll() {
+        return RU.cast(servers.values());
+    }
+
     public ServerDescriptor getServerDescriptor(int serverId) {
         assert serverId > 0;
         var ds = getServerInfo(serverId);
@@ -204,6 +212,11 @@ public class ClientStateInMemory implements ClientState, ToString {
     public Cloud getCloud(UUID uid) {
         assert uid != null;
         return getUidInfo(uid).cloud;
+    }
+
+    @Override
+    public Iterable<ClientInfo> getClientInfoAll() {
+        return RU.cast(clients.values());
     }
 
     public byte[] save() {
