@@ -1,0 +1,30 @@
+{
+  "name": "gui",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "webpack --config webpack.config.js",
+    "start": "webpack serve --config webpack.config.js",
+    "protocol": "aether-protocol-gen",
+    "download:deps": "curl -o aether-client-1.0.0.tgz -u \"deploy:1930\" \"http://nexus.aethernet.io/npm-private/aether-client-1.0.0.tgz\" && curl -o aether-protocol-generator-1.0.0.tgz -u \"deploy:1930\" \"http://nexus.aethernet.io/npm-private/aether-protocol-generator-1.0.0.tgz\"",
+    "install:deps": "npm install ./aether-client-1.0.0.tgz && npm install --save-dev ./aether-protocol-generator-1.0.0.tgz",
+    "setup": "npm run download:deps && npm run install:deps && npm run protocol"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "aether-client": "file:aether-client-1.0.0.tgz"
+  },
+  "devDependencies": {
+    "aether-protocol-generator": "file:aether-protocol-generator-1.0.0.tgz",
+    "js-yaml": "^4.1.0",
+    "ts-loader": "^9.5.4",
+    "typescript": "^5.9.3",
+    "webpack": "^5.102.1",
+    "webpack-cli": "^6.0.1",
+    "webpack-dev-server": "^5.2.2"
+  }
+}
