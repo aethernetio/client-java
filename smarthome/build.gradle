@@ -1,0 +1,22 @@
+plugins {
+    id 'java'
+    id 'maven-publish'
+    id 'aether-protocol' version '1.0.0'
+}
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+publishing {
+    publications {
+        mavenPublication(MavenPublication){
+            from components.java
+            groupId "io.aether"
+            artifactId "smarthome"
+        }
+    }
+}
+dependencies {
+    implementation project(':client')
+}

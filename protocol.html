@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aether Binary Protocol Specification (Updated)</title>
+    <style>
+        :root {
+            --primary: #2c3e50;
+            --secondary: #3498db;
+            --accent: #e74c3c;
+            --light: #ecf0f1;
+            --dark: #1a252f;
+            --success: #27ae60;
+            --warning: #f39c12;
+            --info: #2980b9;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f9f9f9;
+        }
+
+        header {
+            background-color: var(--primary);
+            color: white;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        h1, h2, h3, h4 {
+            color: var(--primary);
+            margin-top: 1.5em;
+        }
+
+        h1 {
+            border-bottom: 2px solid var(--secondary);
+            padding-bottom: 10px;
+        }
+        header h1 {
+            color: white;
+        }
+        h2 {
+            border-left: 4px solid var(--secondary);
+            padding-left: 15px;
+            margin-top: 2em;
+        }
+
+        code, pre {
+            font-family: 'Consolas', monospace;
+            background-color: #f5f5f5;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-size: 0.95em;
+        }
+
+        pre {
+            padding: 15px;
+            overflow-x: auto;
+            border-left: 3px solid var(--secondary);
+            background-color: #f8f9fa;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1em 0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        th {
+            background-color: var(--primary);
+            color: white;
+            text-align: left;
+            padding: 12px;
+        }
+
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        tr:nth-child(even) {
+            background-color: #f2f2ff;
+        }
+
+        .note {
+            background-color: #e7f4ff;
+            border-left: 4px solid var(--info);
+            padding: 15px;
+            margin: 1em 0;
+        }
+
+        .warning {
+            background-color: #fff8e6;
+            border-left: 4px solid var(--warning);
+            padding: 15px;
+            margin: 1em 0;
+        }
+
+        .important {
+            background-color: #ffeeee;
+            border-left: 4px solid var(--accent);
+            padding: 15px;
+            margin: 1em 0;
+        }
+
+        .type-badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.8em;
+            font-weight: bold;
+            background: var(--secondary);
+            color: white;
+            margin-right: 5px;
+        }
+
+        .example-block {
+            background-color: #fdfdfd;
+            border: 1px dashed #ccc;
+            padding: 15px;
+            margin: 1.5em 0;
+            border-radius: 4px;
+        }
+        .example-block > p {
+            margin-top: 0;
+        }
+        .example-block pre {
+            background-color: #f5f5f5;
+            border: 1px solid #eee;
+        }
+
+
+        footer {
+            margin-top: 3em;
+            padding-top: 1em;
+            border-top: 1px solid #ddd;
+            font-size: 0.9em;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+<header>
+    <h1>Aether Binary Protocol Specification</h1>
+    <p>A complete specification, including the Transport Layer, Application Layer, and Encryption Specification.</p>
+</header>
+
+<section id="toc">
+    <h2>Table of Contents</h2>
+    <ul>
+        <li><a href="#chapter1">Chapter 1. Transport Layer (Encoding)</a>
+            <ul>
+                <li><a href="#primitives">1.1 Primitive Types</a></li>
+                <li><a href="#composite">1.2 Composite Types</a></li>
+                <li><a href="#serialization">1.3 Serialization Rules</a></li>
+                <li><a href="#dsl">1.4 DSL Specification (YAML)</a>
+                    <ul>
+                        <li><a href="#dsl-case-sensitivity">1.4.0 Declaration vs. Reference Case-Sensitivity</a></li>
+                    </ul>
+                </li>
+                <li><a href="#messaging">1.5 Message Formats (RPC)</a></li>
+            </ul>
+        </li>
+        <li><a href="#chapter2">Chapter 2. Application Layer (Registration)</a>
+            <ul>
+                <li><a href="#reg-intro">2.1 Introduction</a></li>
+                <li><a href="#reg-apis">2.2 Registration API Definitions</a></li>
+                <li><a href="#reg-flow">2.3 Step-by-Step Registration Flow</a></li>
+                <li><a href="#reg-server-to-client">2.4 Server -> Client Communication</a></li>
+            </ul>
+        </li>
+        <li><a href="#chapter3">Chapter 3. Encryption Specification (Cryptography)</a>
+            <ul>
+                <li><a href="#crypto-intro">3.1 Introduction</a></li>
+                <li><a href="#crypto-symmetric">3.2 Symmetric Encryption</a></li>
+                <li><a href="#crypto-asymmetric">3.3 Asymmetric Encryption</a></li>
+            </ul>
+        </li>
+    </ul>
+</section>
+
+<hr>
+
+<section id="chapter1">
+    <h1>Chapter 1. Transport Layer (Encoding)</h1>
+    <p>This chapter describes how data is encoded and decoded into a binary format, as well as the DSL syntax for defining types and methods.</p>
+
+    <h2 id="primitives">1.1 Primitive Types</h2>
+    <p>Below is a list of base types recognized by the DSL and their serialization representation.</p>
+    <table>
+        <thead>
+        <tr>
+            <th>Type (DSL)</th>
+            <th>Size / Format</th>
+            <th>Description</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr>
+            <td><span class="type-badge">boolean</span> (or <span class="type-badge">bool</span>)</td>
+            <td>1 byte</td>
+            <td>Boolean value (<code>0x00</code> for <code>false</code>, <code>0x01</code> for <code>true</code>).</td>
+        </tr>
+        <tr>
+            <td><span class="type-badge">byte</span></td>
+            <td>1 byte</td>
+            <td>8-bit signed integer.</td>
+        </tr>
+        <tr>
+            <td><span class="type-badge">short</span></td>
+            <td>2 bytes</td>
+            <td>16-bit signed integer (Little Endian).</td>
+        </tr>
+        <tr>
+            <td><span class="type-badge">int</span></td>
+            <td>4 bytes</td>
+            <td>32-bit signed integer (Little Endian).</td>
+        </tr>
+        <tr>
+            <td><span class="type-badge">long</span></td>
+            <td>8 bytes</td>
+            <td>64-bit signed integer (Little Endian).</td>
+        </tr>
+        <tr>
+            <td><span class="type-badge">intpack</span></td>
+            <td>1-9 bytes</td>
+            <td>Packed 64-bit integer (Variable-length). Efficient for small values.</td>
+        </tr>
+        <tr>
+            <td><span class="type-badge">float</span></td>
+            <td>4 bytes</td>
+            <td>IEEE 754, single precision (Little Endian).</td>
+        </tr>
+        <tr>
+            <td><span class="type-badge">double</span></td>
+            <td>8 bytes</td>
+            <td>IEEE 754, double precision (Little Endian).</td>
+        </tr>
+        <tr>
+            <td><span class="type-badge">string</span></td>
+            <td>Variable</td>
+            <td>Serialized as <code>byte[]</code> (UTF-8). See "Dynamic Arrays" (1.3.2).</td>
+        </tr>
+        <tr>
+            <td><span class="type-badge">uuid</span></td>
+            <td>16 bytes</td>
+            <td>Two <code>long</code>s (MostSignificantBits, then LeastSignificantBits).</td>
+        </tr>
+        <tr>
+            <td><span class="type-badge">date</span></td>
+            <td>8 bytes</td>
+            <td>Serialized as <code>long</code> (Unix timestamp, <code>getTime()</code>).</td>
+        </tr>
+        <tr>
+            <td><span class="type-badge">uri</span></td>
+            <td>Variable</td>
+            <td>Serialized as <code>string</code>.</td>
+        </tr>
+        </tbody>
+    </table>
+    <div class="note">
+        <strong>Note on Primitive Case-Insensitivity:</strong> References to primitive types are case-insensitive. For example, <code>string</code>, <code>String</code>, and <code>STRING</code> are all treated as the same base type during parsing.
+    </div>
+    <h2 id="composite">1.2 Composite Types</h2>
+    <p>The protocol supports structures (objects), enums, constants, and arrays.</p>
+
+    <h3>1.2.1 Structures (Objects)</h3>
+    <p>Defined by a set of fields (<code>fields</code>). They support inheritance from a single parent (<code>parent</code>) and can be declared abstract (<code>abstract: true</code>), which prohibits their direct serialization.</p>
+
+    <h3>1.2.2 Enums</h3>
+    <p>Defined by a list of string values (<code>enum</code>).</p>
+
+    <h3>1.2.3 Arrays</h3>
+    <p>Arrays are denoted by a <code>[]</code> (dynamic) or <code>[N]</code> (static) suffix.</p>
+    <ul>
+        <li><strong>Dynamic (<code>type[]</code>):</strong> Variable-length arrays (e.g., <code>int[]</code>, <code>string[]</code>).</li>
+        <li><strong>Static (<code>type[N]</code>):</strong> Fixed-length arrays (e.g., <code>byte[32]</code>, <code>long[4]</code>).</li>
+    </ul>
+
+    <h3 class="note">1.2.4 Constants</h3>
+    <p>
+        Structures can define <code>constants</code> — a set of "key-value" pairs.
+        Allowed value types: <code>string</code>, <code>number</code> (int/long/double), and <code>boolean</code>.
+    </p>
+    <p>
+        Constants are <strong>not serialized</strong>. Instead, the code generator creates public getters for them (e.g., <code>getMessageType()</code>).
+    </p>
+    <p>
+        This is used to identify the object type at runtime without <code>instanceof</code>. If all child classes in a hierarchy define a constant with the same name and type (e.g., <code>messageType: "LOGIN"</code> and <code>messageType: "LOGOUT"</code>), the generator will automatically create an <strong>abstract getter</strong> in the parent class (e.g., <code>public abstract String getMessageType()</code>).
+    </p>
+    <div class="warning">
+        <strong>Important Rule for Polymorphism:</strong> To make this pattern work, you must <strong>only</strong> define the constant in the <strong>child classes</strong>.
+        <br>
+        Do <strong>not</strong> add the constant definition to the abstract parent class. Defining <code>constants: { myType: "string" }</code> in the parent will <strong>not</strong> create an abstract method; it will create a <strong>concrete</strong> method that returns the literal value <code>"string"</code>, which will likely conflict with the auto-generated abstract getter and cause a compile error.
+    </div>
+
+
+    <h2 id="serialization">1.3 Serialization Rules</h2>
+
+    <h3>1.3.1 Field Order</h3>
+    <p>Fields of a structure are serialized in a strict order:</p>
+    <ol>
+        <li>Fields of the parent type (recursively, if the parent also has a parent).</li>
+        <li>Fields of the current type (in the order of their definition in the DSL).</li>
+    </ol>
+    <div class="warning"><strong>Note:</strong> Constants (<code>constants</code>) are not serialized and do not affect the binary format.</div>
+
+    <h3 id="serialization-nullable" class="important">1.3.2 Nullable Fields (Bitmask)</h3>
+    <p>
+        For every structure containing at least one nullable field (with a <code>?</code> suffix), the field serialization is preceded by a <strong>bitmask</strong>.
+        The size of this mask depends on the <strong>total number of nullable fields</strong> in the structure (including all parents):
+    </p>
+    <ul>
+        <li>1-8 nullable fields: <strong>1 byte</strong> (<code>byte</code>) mask.</li>
+        <li>9-16 nullable fields: <strong>2 bytes</strong> (<code>short</code>) mask.</li>
+        <li>17-32 nullable fields: <strong>4 bytes</strong> (<code>int</code>) mask.</li>
+        <li>33-64 nullable fields: <strong>8 bytes</strong> (<code>long</code>) mask.</li>
+    </ul>
+    <p>
+        If a bit in the mask = <strong>1</strong>: The field is <code>null</code>, and it is <strong>completely skipped</strong> during serialization.
+        If a bit = <strong>0</strong>: The field is not <code>null</code>, and it is serialized next, according to its type.
+    </p>
+
+    <h3 id="serialization-arrays" class="warning">1.3.3 Arrays</h3>
+
+    <h4>Dynamic Arrays (<code>type[]</code>)</h4>
+    <pre>[Packed Integer: N (length)][element 1][element 2]...[element N]</pre>
+    <p>The array length (N) is serialized as a <strong>packed integer</strong> (<code>intpack</code>, 1-9 bytes).</p>
+    <div class="note"><strong>Exception:</strong> <code>byte[]</code> (and <code>string</code>) is serialized as <code>[Packed Integer: N (length)][N bytes of data]</code>.</div>
+
+    <h4>Static Arrays (<code>type[N]</code>)</h4>
+    <pre>[element 1][element 2]...[element N]</pre>
+    <p>The array length is <strong>not written</strong> to the stream. The code generator inserts checks that the array length is exactly equal to <code>N</code>.</p>
+
+    <h3>1.3.4 Enums</h3>
+    <p><code>Enum</code> values are serialized as <strong>1 byte</strong>, containing the ordinal number (<code>ordinal()</code>) of the value in the list.</p>
+
+    <h3>1.3.5 Type Hierarchies (Abstract Types)</h3>
+    <p>
+        When serializing an object that is part of an inheritance hierarchy (i.e., has a <code>parent</code> or is <code>abstract</code>), a <strong>1-byte Type ID</strong> is written before the object's data.
+    </p>
+    <pre>[1 byte: Type ID][object data...]</pre>
+    <p>
+        This ID allows the deserializer to determine which specific child class to create.
+    </p>
+
+    <h2 id="dsl">1.4 DSL Specification (YAML)</h2>
+
+    <div class="important" id="dsl-case-sensitivity">
+        <h3>1.4.0 Declaration vs. Reference Case-Sensitivity</h3>
+        <p>
+            The DSL follows a specific rule for case-sensitivity:
+        </p>
+        <ul>
+            <li>
+                <strong>Declarations are Case-Sensitive:</strong> When you <em>define</em> a new type or API (e.g., <code>types: { MyObject: ... }</code> or <code>api: { MyApi: ... }</code>), the name you provide is the <strong>canonical name</strong>. The generator will create a class/interface with this exact case.
+            </li>
+            <li>
+                <strong>References are Case-Insensitive:</strong> When you <em>refer</em> to a type (e.g., in <code>parent</code>, <code>fields</code>, <code>params</code>, or <code>returns</code>), the parser is case-insensitive. It will match your reference (e.g., <code>myobject</code>, <code>MyObject</code>, or <code>MYOBJECT</code>) to the correct canonical name (<code>MyObject</code>). This also applies to primitive types (e.g., <code>string</code> and <code>String</code> are equivalent).
+            </li>
+        </ul>
+        <p>
+            <strong>Example:</strong>
+            If you define <code>types: { UserProfile: ... }</code>, you can reference it in a field as <code>user: userprofile</code>, and the generator will correctly understand this as <code>user: UserProfile</code>.
+        </p>
+        <div class="warning">
+            <strong>Collision Warning:</strong> The validator will produce an error if you try to declare two types whose names only differ by case (e.g., <code>MyObject</code> and <code>myobject</code>), as this creates an ambiguous reference.
+        </div>
+    </div>
+    <h3 id="dsl-types">1.4.1 Type Definitions (Types)</h3>
+    <p>
+        The <code>types</code> section is used to define structures, enums, and "streams".
+    </p>
+
+    <div class="example-block">
+        <p><strong>Example of Type Definitions (<code>types</code>):</strong></p>
+        <p>
+            The names <code>BaseComponent</code>, <code>LoginRequest</code>, and <code>Status</code> are just
+            examples, not part of the protocol.
+        </p>
+        <pre><code>
+types:
+  # Example 1: Abstract parent structure
+  BaseComponent:
+    abstract: true
+    fields:
+      id: uuid
+      timestamp: long
+    # Note: 'BaseComponent' does NOT define 'componentType'.
+    # Because all children ('LoginRequest', 'LogoutRequest') define it,
+    # the generator will automatically create 'public abstract String getComponentType();'
+    # in 'BaseComponent'. This is the correct pattern for polymorphism.
+
+  # Example 2: Child structure with a constant
+  LoginRequest:
+    parent: BaseComponent
+    constants:
+      componentType: "LOGIN" # <-- Generates 'public String getComponentType() { return "LOGIN"; }'
+    fields:
+      username: string
+      pass_hash: byte[32]
+
+  # Example 3: Second child structure with the same constant
+  LogoutRequest:
+    parent: BaseComponent
+    constants:
+      componentType: "LOGOUT" # <-- Generates 'public String getComponentType() { return "LOGOUT"; }'
+    fields:
+      # no fields
+
+  # Example 4: Enum
+  Status:
+    enum:
+      - OK
+      - FAILED
+      - PENDING
+</code></pre>
+    </div>
+
+    <h3 id="dsl-api">1.4.2 API Definitions (Api)</h3>
+    <p>
+        The <code>api</code> section defines RPC interfaces.
+    </p>
+
+    <div class="example-block">
+        <p><strong>Example of API Definition (<code>api</code>):</strong></p>
+        <pre><code>
+api:
+  AuthService:
+    methods:
+      # Method with parameters and return value
+      login:
+        params:
+          # Reference 'LoginRequest' is case-insensitive
+          req: loginrequest
+        returns: Status
+        throws: AuthFailedError
+</code></pre>
+    </div>
+
+    <h3 id="dsl-stream" class="important">1.4.3 Stream Definitions (Stream)</h3>
+    <p>
+        A "stream" (<code>stream</code>) is a special wrapper type that defines a binary payload. It is a powerful concept used for two primary architectural purposes:
+    </p>
+    <ol>
+        <li><strong>Encryption Wrapper:</strong> If <code>stream.crypto: true</code> is set, the entire binary payload (which is often a batch of API calls) is encrypted according to the specification in <a href="#chapter3">Chapter 3</a>. This is the primary way to achieve end-to-end encryption for a logical set of operations.</li>
+        <li><strong>Context Delegation:</strong> A stream allows for advanced "Hub-and-Spoke" architectural patterns. A root API (e.g., `api1`) can define a method that accepts a `stream` of commands for another API (e.g., `api2`) along with a context identifier (e.g., a `uid`). The logical server implementing `api1` can then instantiate an `api2` implementation *bound to that `uid` context*, and execute the batched commands from the `stream` within that specific context.</li>
+    </ol>
+    <p>Syntactically, a stream is just a wrapper around an `api`.</p>
+
+    <ul>
+        <li><code>stream.api</code>: (Required) The name of the API interface (from the <code>api</code> section) whose calls will be batched inside this stream.</li>
+        <li><code>stream.crypto</code>: (Optional) If <code>true</code>, this stream payload must be encrypted.</li>
+    </ul>
+
+    <div class="example-block">
+        <p><strong>Example of Stream Definition (<code>stream</code>):</strong></p>
+        <pre><code>
+types:
+  # This type defines a binary payload that contains
+  # a batch of calls for the "BatchApi".
+  ApiBatch:
+    stream:
+      api: "BatchApi"  # <-- Links to the API being batched
+      crypto: true     # <-- Marks this payload for encryption
+</code></pre>
+    </div>
+
+    <h2 id="messaging">1.5 Message Formats (RPC)</h2>
+    <p>This is the binary data format used when calling API methods.</p>
+
+    <h3 id="messaging-request">1.5.1 Request</h3>
+    <p>Methods are numbered starting from **ID 3**. IDs 0, 1, and 2 are reserved for responses.</p>
+
+    <h4>Request without Response (<code>void</code>, no <code>throws</code>)</h4>
+    <pre>[1 byte: Method ID (>=3)][serialized parameters...]</pre>
+
+    <h4 class="important">Request with Response (has <code>returns</code> or <code>throws</code>)</h4>
+    <pre>[1 byte: Method ID (>=3)][4 bytes: Request ID (int)][serialized parameters...]</pre>
+
+    <h3 id="messaging-response">1.5.2 Response</h3>
+    <p>Responses are always tied to a Request ID and are prefixed with a <strong>Command ID</strong>.</p>
+
+    <h4>Successful Response (Success)</h4>
+    <pre>[1 byte: Command ID = 0][4 bytes: Request ID][serialized data (returns)]</pre>
+    <p>If the method returns <code>void</code>, the <code>[serialized data]</code> is absent.</p>
+
+    <h4>Error Response (Error)</h4>
+    <pre>[1 byte: Command ID = 1][4 bytes: Request ID][serialized object (throws)]</pre>
+</section>
+
+<hr>
+
+<section id="chapter2">
+    <h1>Chapter 2. Application Layer (Registration)</h1>
+
+    <h2 id="reg-intro">2.1 Introduction</h2>
+    <p>
+        The registration process is the initial interaction a new client has with the Aether network. The client connects to a <strong>Registration Server</strong> to perform the following tasks:
+    </p>
+    <ul>
+        <li>Exchange encryption keys.</li>
+        <li>Perform Proof-of-Work (PoW).</li>
+        <li>Register the client in the system.</li>
+        <li>Receive a list of "Work Servers" for further operations.</li>
+    </ul>
+    <p>
+        The registration protocol is a multi-stage, asynchronous handshake. The client initiates each stage by sending an encrypted packet of calls (<code>stream</code>) to the Registration Server.
+    </p>
+    <p>
+        The primary API that the client uses to send commands to the server is <code>RegistrationRootApi</code>.
+    </p>
+
+    <h2 id="reg-apis">2.2 Registration API Definitions</h2>
+    <p>
+        The registration process uses several API interfaces defined in <code>ClientServerRegApi.adsl.yaml</code>. Some of these are "nested" — they only exist inside the encrypted <code>stream</code> parameters of other methods.
+    </p>
+
+    <h3>2.2.1 <code>RegistrationRootApi</code> (Client -> Server)</h3>
+    <p>This is the root API available to the client immediately after a TCP connection to the Registration Server.</p>
+    <table>
+        <thead><tr><th>Method ID</th><th>Method</th><th>Parameters</th><th>Returns</th><th>Description</th></tr></thead>
+        <tbody>
+        <tr>
+            <td><strong>3</strong></td>
+            <td><code>getAsymmetricPublicKey</code></td>
+            <td><code>cryptoLib: CryptoLib</code></td>
+            <td><code>SignedKey</code></td>
+            <td>Requests the server's public asymmetric key. This key will be used to encrypt <code>stream</code>s in Steps 2-4 (see <a href="#crypto-asymmetric">3.3</a>).</td>
+        </tr>
+        <tr>
+            <td><strong>4</strong></td>
+            <td><code>enter</code></td>
+            <td><code>cryptoLib: CryptoLib</code><br><code>stream: ServerRegistrationApiStream</code></td>
+            <td>(void)</td>
+            <td>The main method for sending commands. Contains an asymmetrically encrypted (see <a href="#crypto-asymmetric">3.3</a>) "stream" with calls to <code>ServerRegistrationApi</code>.</td>
+        </tr>
+        </tbody>
+    </table>
+
+    <h3>2.2.2 <code>ServerRegistrationApi</code> (Nested API)</h3>
+    <p>This API is used <strong>inside</strong> the <code>stream</code> parameter of the <code>RegistrationRootApi.enter</code> method (ID 4).</p>
+    <table>
+        <thead><tr><th>Method ID</th><th>Method</th><th>Parameters</th><th>Returns</th><th>Description</th></tr></thead>
+        <tbody>
+        <tr>
+            <td><strong>3</strong></td>
+            <td><code>registration</code></td>
+            <td><code>salt: string</code><br><code>suffix: string</code><br><code>passwords: int[]</code><br><code>parent: uuid</code><br><code>returnKey: Key</code><br><code>globalApi: GlobalApiStream</code></td>
+            <td>(void)</td>
+            <td>Submits PoW results. <code>returnKey</code> is the client's <strong>symmetric key</strong> (see <a href="#crypto-symmetric">3.2</a>). <code>globalApi</code> is an <strong>asymmetrically encrypted</strong> (see <a href="#crypto-asymmetric">3.3</a>) nested stream.</td>
+        </tr>
+        <tr>
+            <td><strong>4</strong></td>
+            <td><code>requestWorkProofData</code></td>
+            <td><code>parent: uuid</code><br><code>powMethods: PowMethod</code><br><code>returnKey: Key</code></td>
+            <td><code>WorkProofDTO</code></td>
+            <td>Requests data for PoW. <code>returnKey</code> is the client's <strong>symmetric key</strong> (see <a href="#crypto-symmetric">3.2</a>), which the server will use for responses (see 2.4).</td>
+        </tr>
+        <tr>
+            <td><strong>5</strong></td>
+            <td><code>resolveServers</code></td>
+            <td><code>serverIds: Cloud</code></td>
+            <td><code>ServerDescriptor[]</code></td>
+            <td>Requests server descriptors by their ID.</td>
+        </tr>
+        </tbody>
+    </table>
+
+    <h3>2.2.3 <code>GlobalRegServerApi</code> (Doubly-Nested API)</h3>
+    <p>This API is used <strong>inside</strong> the <code>stream</code> parameter of the <code>ServerRegistrationApi.registration</code> method (ID 3).</p>
+    <table>
+        <thead><tr><th>Method ID</th><th>Method</th><th>Parameters</th><th>Returns</th><th>Description</th></tr></thead>
+        <tbody>
+        <tr>
+            <td><strong>3</strong></td>
+            <td><code>setMasterKey</code></td>
+            <td><code>key: Key</code></td>
+            <td>(void)</td>
+            <td>Sends the client's <strong>symmetric</strong> master key to the server (see <a href="#crypto-symmetric">3.2</a>).</td>
+        </tr>
+        <tr>
+            <td><strong>4</strong></td>
+            <td><code>finish</code></td>
+            <td>(none)</td>
+            <td><code>(alias: uuid, uid: uuid, cloud: Cloud)</code></td>
+            <td>Completes the registration. The response is <strong>symmetrically encrypted</strong> (see <a href="#reg-flow">2.3, Step 3</a>).</td>
+        </tr>
+        </tbody>
+    </table>
+
+    <h2 id="reg-flow">2.3 Step-by-Step Registration Flow</h2>
+    <p>
+        The process consists of 4 main steps, three of which are initiated by calling <code>RegistrationRootApi.enter</code> (ID 4).
+    </p>
+
+    <h3>Step 1: Request Server's Public Key</h3>
+    <ol>
+        <li><strong>Client -> Server:</strong> Calls <code>RegistrationRootApi.getAsymmetricPublicKey</code> (ID 3), specifying the desired <code>CryptoLib</code> (<code>SODIUM</code> or <code>HYDROGEN</code>).</li>
+        <li><strong>Server -> Client:</strong> Responds (Command 0) with a <code>SignedKey</code> type.</li>
+        <li>The client verifies the key's signature and saves this <strong>asymmetric public key</strong>. It will be used to encrypt the <code>ServerRegistrationApiStream</code> in the following steps.</li>
+    </ol>
+
+    <h3>Step 2: Request Proof-of-Work (PoW) Data</h3>
+    <ol>
+        <li><strong>Client -> Server:</strong> Calls <code>RegistrationRootApi.enter</code> (ID 4).</li>
+        <li>
+            The <code>stream</code> parameter (type <code>ServerRegistrationApiStream</code>) of this call is a binary packet (<code>byte[]</code>) containing one encrypted method. The packet is encrypted <strong>asymmetrically</strong> using the key from Step 1 (see <a href="#crypto-asymmetric">3.3</a>).
+            <ul>
+                <li>Inside the <code>stream</code>: <code>ServerRegistrationApi.requestWorkProofData</code> (ID 4).</li>
+                <li>The <code>returnKey</code> parameter of this call is a <strong>symmetric key</strong> generated by the client (hereafter <code>TempKey</code>).</li>
+            </ul>
+        </li>
+        <li>
+            <strong>Server -> Client:</strong> The server responds (Command 0) to the <code>requestWorkProofData</code> call, returning a <code>WorkProofDTO</code> type.
+        </li>
+        <li class="note">
+            <strong>Important:</strong> The server remembers the <code>TempKey</code> (the client's symmetric key). It will use this key to send asynchronous responses to the client (see 2.4).
+        </li>
+    </ol>
+
+    <h3 class="important" id="reg-flow-step3">Step 3: Perform PoW and Send Keys</h3>
+    <ol>
+        <li>The client locally computes the PoW (<code>passwords</code>) based on the data from <code>WorkProofDTO</code>.</li>
+        <li><strong>Client -> Server:</strong> Calls <code>RegistrationRootApi.enter</code> (ID 4) <strong>again</strong>.</li>
+        <li>
+            The <code>stream</code> (<code>ServerRegistrationApiStream</code>) is again <strong>asymmetrically</strong> encrypted (with the key from Step 1). It contains:
+            <ul>
+                <li><code>ServerRegistrationApi.registration</code> (ID 3).</li>
+                <li>This call again includes the <code>returnKey</code> (the same <strong>symmetric <code>TempKey</code></strong> from Step 2).</li>
+                <li>This call also contains the <code>globalApi</code> parameter (<code>GlobalApiStream</code>).</li>
+            </ul>
+        </li>
+        <li>
+            The <code>globalApi</code> parameter is <strong>another nested</strong> <code>stream</code>. It is encrypted <strong>asymmetrically</strong> (see <a href="#crypto-asymmetric">3.3</a>), but using the <strong><code>GlobalKey</code></strong> (a public asymmetric key obtained from <code>WorkProofDTO</code> in Step 2). This <code>stream</code> contains:
+            <ol>
+                <li><code>GlobalRegServerApi.setMasterKey</code> (ID 3) (sends the client's <strong>symmetric <code>MasterKey</code></strong>).</li>
+                <li><code>GlobalRegServerApi.finish</code> (ID 4) (signals completion).</li>
+            </ol>
+        </li>
+        <li class="warning">
+            <strong>Server -> Client (Response to <code>finish</code>):</strong> The server responds (Command 0) to the nested <code>finish</code> call. This response (type <code>FinishResult</code>) is <strong>symmetrically</strong> encrypted (see <a href="#crypto-symmetric">3.2</a>) using the <strong><code>MasterKey</code></strong> that the client just sent in <code>setMasterKey</code>.
+        </li>
+    </ol>
+
+    <h3>Step 4: Request List of Work Servers</h3>
+    <ol>
+        <li><strong>Client -> Server:</strong> Calls <code>RegistrationRootApi.enter</code> (ID 4) for a <strong>third time</strong>.</li>
+        <li>
+            The <code>stream</code> (<code>ServerRegistrationApiStream</code>) is again <strong>asymmetrically</strong> encrypted (with the key from Step 1). It contains:
+            <ul>
+                <li><code>ServerRegistrationApi.resolveServers</code> (ID 5) (passing the <code>Cloud</code> object obtained in Step 3 as a parameter).</li>
+            </ul>
+        </li>
+        <li><strong>Server -> Client:</strong> Responds (Command 0) to the <code>resolveServers</code> call, returning <code>ServerDescriptor[]</code>.</li>
+    </ol>
+    <p>
+        <strong>Registration is complete.</strong> The client has received the list of servers (<code>ServerDescriptor[]</code>) and can now disconnect from the Registration Server.
+    </p>
+
+    <h2 id="reg-server-to-client">2.4 Server -> Client Communication</h2>
+    <p>
+        During the registration process, the Registration Server may also send asynchronous commands to the Client (e.g., for key confirmation). This uses the <code>ClientApiRegUnsafe</code> API, which the client must implement.
+    </p>
+    <table>
+        <thead><tr><th>Method ID</th><th>Method</th><th>Parameters</th><th>Description</th></tr></thead>
+        <tbody>
+        <tr>
+            <td><strong>3</strong></td>
+            <td><code>enter</code></td>
+            <td><code>stream: ClientApiRegSafeStream</code></td>
+            <td>
+                Sends a <code>stream</code> to the client. This <code>stream</code> is <strong>symmetrically</strong> encrypted (see <a href="#crypto-symmetric">3.2</a>) using the <strong><code>TempKey</code></strong> that the client provided in Steps 2 and 3.
+            </td>
+        </tr>
+        <tr>
+            <td><strong>4</strong></td>
+            <td><code>enterGlobal</code></td>
+            <td><code>stream: GlobalRegClientApiStream</code></td>
+            <td>
+                Sends a <code>stream</code> to the client. This <code>stream</code> is <strong>symmetrically</strong> encrypted (see <a href="#crypto-symmetric">3.2</a>) using the client's <strong><code>MasterKey</code></strong> (obtained in Step 3). The client uses <code>gcp::decrypt</code> to decrypt it.
+            </td>
+        </tr>
+        </tbody>
+    </table>
+    <p>
+        The client must be prepared to accept these calls, decrypt the <code>stream</code> (using the appropriate <strong>symmetric key</strong>), and process the methods nested within it.
+    </p>
+</section>
+
+<hr>
+
+<section id="chapter3">
+    <h1>Chapter 3. Encryption Specification (Cryptography)</h1>
+
+    <h2 id="crypto-intro">3.1 Introduction</h2>
+    <p>
+        The Aether protocol uses two cryptographic providers, <code>SODIUM</code> (libsodium) and <code>HYDROGEN</code> (libhydrogen), to ensure security. The choice of provider is determined by the client during the key exchange (e.g., in <code>RegistrationRootApi.getAsymmetricPublicKey</code>).
+    </p>
+    <p>
+        This chapter describes the <strong>binary format</strong> of the encrypted data (<code>byte[]</code>) that is passed in <code>stream</code> parameters. For successful integration (e.g., in C++), it is necessary to reproduce this format exactly.
+    </p>
+    <p>
+        All numerical values (lengths, IDs, nonces), unless otherwise specified, are encoded in <strong>Little Endian (LE)</strong> format.
+    </p>
+
+    <h2 id="crypto-symmetric">3.2 Symmetric Encryption</h2>
+    <p>
+        Used when both parties already share a secret key. In the registration process, this includes the <code>returnKey</code> (<code>TempKey</code>), the <code>MasterKey</code>, and the key used to encrypt the <code>finish</code> response.
+    </p>
+
+    <h3>3.2.1 Provider: <code>SODIUM</code> (ChaCha20-Poly1305)</h3>
+    <p>
+        Uses the <code>crypto_aead_chacha20poly1305_encrypt</code> algorithm.
+    </p>
+    <p><strong>Binary Format (<code>byte[]</code>):</strong></p>
+    <pre>[Encrypted Data (N bytes + 16 byte MAC)][Nonce (8 bytes, long LE)]</pre>
+    <ul>
+        <li><strong>Encrypted Data:</strong> The result of encrypting the original data (Plaintext). Its length is always 16 bytes (<code>ABYTES</code>) longer than the original data.</li>
+        <li><strong>Nonce:</strong> An 8-byte (<code>long</code>) value used for encryption, in Little Endian format. <strong>Important:</strong> The Nonce is appended to the *end* of the packet.</li>
+    </ul>
+    <p>When decrypting (<code>crypto_aead_chacha20poly1305_decrypt</code>), the Nonce (last 8 bytes) must be extracted from the packet first.</p>
+
+    <h3>3.2.2 Provider: <code>HYDROGEN</code> (Secretbox)</h3>
+    <p>
+        Uses the <code>hydro_secretbox_encrypt</code> algorithm.
+    </p>
+    <p><strong>Binary Format (<code>byte[]</code>):</strong></p>
+    <pre>[Message ID (8 bytes, long LE)][Encrypted Data (N bytes + 16 byte MAC)]</pre>
+    <ul>
+        <li><strong>Message ID:</strong> An 8-byte (<code>long</code>) value, incremented with each message, in Little Endian format. It is used as part of the Nonce (<code>msg_id</code>) in <code>hydro_secretbox</code>. <strong>Important:</strong> The Message ID is prepended to the *beginning* of the packet.</li>
+        <li><strong>Encrypted Data:</strong> The result of encryption (Plaintext). Its length is 16 bytes (<code>HEADERBYTES</code>) longer than the original data.</li>
+    </ul>
+    <p>When decrypting (<code>hydro_secretbox_decrypt</code>), the Message ID (first 8 bytes) must be extracted from the packet first.</p>
+
+    <h2 id="crypto-asymmetric">3.3 Asymmetric Encryption</h2>
+    <p>
+        Used when the client only has the recipient's public key. In the registration process, this is used for the <code>ServerRegistrationApiStream</code> and <code>GlobalApiStream</code> sent by the client to the server.
+    </p>
+
+    <h3>3.3.1 Provider: <code>SODIUM</code> (Curve25519 Box Seal)</h3>
+    <p>
+        Uses the <code>crypto_box_seal</code> algorithm. This algorithm creates an ephemeral key pair, performs encryption, and "seals" the message, including the ephemeral public key in it.
+    </p>
+    <p><strong>Binary Format (<code>byte[]</code>):</strong></p>
+    <pre>[Sealed Box (N bytes + 48 bytes Overhead)]</pre>
+    <ul>
+        <li><strong>Sealed Box:</strong> The entire data packet is the result of the <code>crypto_box_seal</code> call. Its length is 48 bytes (<code>SODIUM_CURVE_SEALBYTES</code>) longer than the original data (Plaintext).</li>
+    </ul>
+    <p>When decrypting (<code>crypto_box_seal_open</code>), the entire packet is passed to the function.</p>
+
+    <h3>3.3.2 Provider: <code>HYDROGEN</code> (Key Exchange 'N')</h3>
+    <p>
+        This provider <strong>does not use</strong> direct asymmetric encryption. Instead, it performs a <strong>Key Exchange</strong> and uses the resulting session key for <strong>symmetric</strong> encryption (as per 3.2.2).
+    </p>
+    <p>
+        It uses the <code>hydro_kx_n_1</code> (encryption) and <code>hydro_kx_n_2</code> (decryption) functions.
+    </p>
+    <p><strong>Binary Format (<code>byte[]</code>):</strong></p>
+    <pre>[Ephemeral PubKey (32 bytes)][Symmetric Packet (see 3.2.2)]</pre>
+    <ul>
+        <li><strong>Ephemeral PubKey:</strong> A 32-byte (<code>hydro_kx_N_PACKET1BYTES</code>) ephemeral public key generated by the sender.</li>
+        <li><strong>Symmetric Packet:</strong> The remaining data. This is the <strong>complete packet</strong> from <a href="#crypto-symmetric">3.2.2</a> (<code>HydrogenSymmetricEngine</code>), encrypted using the <strong>session key</strong> (<code>session_kp.tx</code>) obtained from <code>hydro_kx_n_1</code>.
+            <ul>
+                <li>The format of this packet is: <code>[Message ID (8 bytes LE)][Encrypted Data (N bytes + 16 bytes)]</code>.</li>
+            </ul>
+        </li>
+    </ul>
+    <p>When decrypting, you must:</p>
+    <ol>
+        <li>Extract the <strong>Ephemeral PubKey</strong> (the first 32 bytes).</li>
+        <li>Call <code>hydro_kx_n_2</code> (using your private key and the ephemeral public key) to derive the same <strong>session key</strong> (<code>session_kp.rx</code>).</li>
+        <li>Use this session key to <strong>symmetrically</strong> decrypt the remainder of the packet (the <code>Symmetric Packet</code>) according to the specification in 3.2.2.</li>
+    </ol>
+</section>
+
+
+<footer>
+    <p>© 2023 Aether Protocol Working Group</p>
+    <p>This document is updated based on analysis of the generator code, .adsl.yaml files, and CryptoEngine implementations.</p>
+</footer>
+</body>
+</html>

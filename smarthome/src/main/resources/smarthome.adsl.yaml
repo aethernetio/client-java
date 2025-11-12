@@ -1,0 +1,214 @@
+# ===================================================================
+# SmartHome Protocol Definition (V6 - Corrected)
+#
+# This file contains the complete, consistent API definition
+# incorporating all decisions.
+# ===================================================================
+
+types:
+  # -----------------------------------------------------------------
+  # Basic Types
+  # -----------------------------------------------------------------
+  ClientType:
+    doc: The type of client connecting to the service.
+    enum:
+      - GUI_CLIENT
+      - COMMUTATOR
+
+  DeviceStateData:
+    doc: A generic structure for reporting a device's state at a specific time.
+    fields:
+      value: String
+      timestamp: Date # 'Date' is a built-in primitive type
+
+  # -----------------------------------------------------------------
+  # "Hardware" DTOs (Used by Commutator for Registration)
+  # -----------------------------------------------------------------
+  HardwareDevice:
+    doc: Base type for a physical device attached to a Commutator.
+    abstract: true
+    fields:
+      localId: int
+      descriptor: String
+
+  HardwareSensor:
+    doc: A physical device that reports data.
+    parent: HardwareDevice
+    id: 1
+    constants:
+      hardwareType: "SENSOR"
+    fields:
+      unit: String?
+
+  HardwareActor:
+    doc: A physical device that performs actions.
+    parent: HardwareDevice
+    id: 2
+    constants:
+      hardwareType: "ACTOR"
+
+  # -----------------------------------------------------------------
+  # "Logical" DTOs (Used by Hub and GUI)
+  # -----------------------------------------------------------------
+  Device:
+    doc: Base type for a "Logical" device known to the Service. This is the main DTO for the GUI.
+    abstract: true
+    fields:
+      id: int
+      name: String
+      commutatorId: uuid
+      localDeviceId: int
+      lastState: String?
+      lastUpdated: Date?
+
+  Sensor:
+    doc: A Logical Device that represents a Sensor.
+    parent: Device
+    id: 1
+    constants:
+      deviceType: "SENSOR"
+    fields:
+      unit: String?
+
+  Actor:
+    doc: A Logical Device that represents an Actor.
+    parent: Device
+    id: 2
+    constants:
+      deviceType: "ACTOR"
+
+  # -----------------------------------------------------------------
+  # Pairing DTO
+  # -----------------------------------------------------------------
+  PendingPairing:
+    doc: A DTO for summarizing a Commutator that is awaiting pairing approval.
+    fields:
+      commutatorId: uuid
+      devices: HardwareDevice[]
+
+  # -----------------------------------------------------------------
+  # Aether Stream Definitions
+  # -----------------------------------------------------------------
+  SmartHomeServiceStream:
+    doc: A stream of commands destined FOR the Service.
+    stream:
+      api: "SmartHomeServiceApi"
+      crypto: true
+
+  SmartHomeCommutatorStream:
+    doc: A stream of commands destined FOR the Commutator.
+    stream:
+      api: "SmartHomeCommutatorApi"
+      crypto: true
+
+  SmartHomeClientStream:
+    doc: A stream of commands destined FOR the Client (GUI).
+    stream:
+      api: "SmartHomeClientApi"
+      crypto: true
+
+# ===================================================================
+# API Interface Definitions
+# ===================================================================
+
+api:
+
+  # -----------------------------------------------------------------
+  # API Implemented by the SERVICE (Hub)
+  # -----------------------------------------------------------------
+  SmartHomeServiceApi:
+    doc: The main API implemented by the central Smart Home Service (Hub).
+    methods:
+
+      register:
+        doc: Registers the calling client with the service.
+        id: 3
+        params:
+          type: ClientType
+          sensors: HardwareSensor[]
+          actors: HardwareActor[]
+
+      getAllDevices:
+        doc: Called by GUI to get a list of all *paired* logical devices.
+        id: 4
+        returns: Device[]
+
+      executeActorCommand:
+        doc: Called by GUI to send a command package to a specific actor on a specific commutator.
+        id: 5
+        params:
+          commutatorId: uuid
+          localActorId: int
+          pkg: byte[]
+        returns: Actor
+
+      getPendingPairings:
+        doc: Called by GUI to get a list of Commutators that are not yet approved.
+        id: 6
+        returns: PendingPairing[]
+
+      approvePairing:
+        doc: Called by GUI when the user approves a Commutator.
+        id: 7
+        params:
+          commutatorUuid: uuid
+
+      pushSensorData:
+        doc: Called by a paired Commutator to push new sensor data.
+        id: 8
+        params:
+          localSensorId: int
+          data: DeviceStateData # <-- This reference should now be valid
+
+      refreshAllSensorStates:
+        doc: Called by GUI to request a full sensor state refresh from all connected Commutators.
+        id: 9
+
+  # -----------------------------------------------------------------
+  # API Implemented by the COMMUTATOR
+  # -----------------------------------------------------------------
+  SmartHomeCommutatorApi:
+    doc: The API implemented by each Commutator. It receives PUSH commands from the Service.
+    methods:
+
+      confirmPairing:
+        doc: Called by the Service as the final step of pairing.
+        id: 3
+
+      executeActorCommand:
+        doc: Called by the Service to execute a command on a physical actor.
+        id: 4
+        params:
+          localActorId: int
+          pkg: byte[] # <-- [FIX] Changed from 'command: String' to 'pkg: byte[]'
+        returns: DeviceStateData # <-- This reference should now be valid
+
+      queryState:
+        doc: Called by the Service to request the current state of a *single* device.
+        id: 5
+        params:
+          localDeviceId: int
+        returns: DeviceStateData # <-- This reference should now be valid
+
+      queryAllSensorStates:
+        doc: Called by the Service to command this Commutator to read all its sensors.
+        id: 6
+
+  # -----------------------------------------------------------------
+  # API Implemented by the CLIENT (GUI)
+  # -----------------------------------------------------------------
+  SmartHomeClientApi:
+    doc: The API implemented by the GUI Client. It receives PUSH notifications from the Service.
+    methods:
+
+      deviceStateUpdated:
+        doc: PUSH notification from the Service when any device's state changes.
+        id: 3
+        params:
+          device: Device
+
+      pairingRequested:
+        doc: PUSH notification from the Service when a new Commutator connects.
+        id: 4
+        params:
+          pairingInfo: PendingPairing
