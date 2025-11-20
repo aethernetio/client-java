@@ -35,7 +35,7 @@ module.exports = {
     // This tells the dev server to serve files from the project root directory.
     // This is crucial so it can find and serve 'index.html'.
     static: {
-      directory: path.join(__dirname, '.'),
+      directory: path.join(__dirname, './dist'),
     },
     // Automatically open the browser when the server starts
     open: true,

@@ -1,202 +1,317 @@
 import { SmartHomeController } from './SmartHomeController';
-import { UUID } from 'aether-client/build/aether_client';
-import { Device, PendingPairing } from './aether_api';
+import { HardwareDevice, HardwareSensor, DeviceStateData, VariantString, VariantDouble, VariantBool } from './aether_api';
 
-// --- Константы (замени на свои) ---
-const SERVICE_UUID_STRING = "A8348A48-64CC-A8EF-6902-090F446247C8"; // UUID твоего Java-сервиса (Хаба)
-const REGISTRATION_URI = "ws://localhost:9011"; // URI твоего mock-сервера
+// --- DOM REFERENCES ---
+const statusText = document.getElementById('status-text');
+const refreshButton = document.getElementById('refresh-button') as HTMLButtonElement;
+const commutatorsTableBody = document.getElementById('commutators-table-body');
+const devicesGrid = document.getElementById('devices-grid');
+const currentCommutatorTitle = document.getElementById('current-commutator-title');
 
-// --- Глобальный контроллер ---
-const controller = new SmartHomeController();
+// CORE Connection Elements
+const coreConnectionSection = document.getElementById('core-connection-section');
+const uriInput = document.getElementById('reg-uri-input') as HTMLInputElement;
+const connectCoreButton = document.getElementById('connect-core-button');
 
-// --- Связывание с UI ---
-document.addEventListener('DOMContentLoaded', () => {
+// APP Configuration Elements
+const appConfigSection = document.getElementById('app-config-section');
+const newUuidInput = document.getElementById('new-uuid-input') as HTMLInputElement;
+const addButton = document.getElementById('add-commutator-button');
 
-    // Получаем ссылки на наши HTML-элементы
-    const statusEl = document.getElementById('status-text')!;
-    const refreshButton = document.getElementById('refresh-button')!;
-    const commutatorsContainer = document.getElementById('commutators-container')!;
-    const pairingsContainer = document.getElementById('pairings-container')!;
-    const pairingsTitle = document.getElementById('pairings-title')!;
+// --- STATE MANAGEMENT ---
+interface CommutatorInfo {
+    uuid: string;
+    regUri: string;
+    status: 'Disconnected' | 'Connecting' | 'Connected' | 'Error';
+    deviceCount: number;
+}
 
-    // 1. Подписка на событие: Изменение статуса подключения
-    controller.onConnectionStateChange.add(state => {
-        statusEl.textContent = `Статус: ${state}`;
-        if (state === 'connected') {
-            statusEl.style.color = 'green';
-            controller.fetchAllDevices();
-            controller.fetchPendingPairings();
-        } else if (state === 'error') {
-            statusEl.style.color = 'red';
-        }
-    });
+let knownDevices = new Map<number, HTMLElement>();
+let knownCommutators = new Map<string, CommutatorInfo>();
 
-    // 2. Подписка на событие: Обновление списка устройств
-    controller.onDeviceListUpdate.add(devices => {
-        console.log("Updating device list", devices);
-        renderDeviceTree(devices);
-    });
+let coreController: SmartHomeController | null = null;
+let currentCommutatorUuid: string | null = null;
+let isAetherCoreConnected = false;
 
-    // 3. Подписка на событие: Обновление ОДНОГО устройства (PUSH)
-    controller.onDeviceStateChanged.add(device => {
-        console.log("Updating single device (PUSH)", device);
-        const existingCard = document.getElementById(`device-${device.id}`);
-        if (existingCard) {
-            existingCard.replaceWith(createDeviceCard(device));
-        } else {
-            // Устройство новое, просто перезапрашиваем все
-            controller.fetchAllDevices();
-        }
-    });
 
-    // 4. Подписка на событие: Обновление списка сопряжений
-    controller.onPairingListUpdate.add(pairings => {
-        console.log("Updating pairing list", pairings);
-        renderPairingList(pairings);
-    });
+// --- RENDERING UTILITIES ---
 
-    // 5. Подписка на событие: Новый запрос на сопряжение (PUSH)
-    controller.onPairingRequested.add(pairing => {
-        console.log("New pairing request (PUSH)", pairing);
-        pairingsTitle.style.color = 'red'; // Привлекаем внимание
-        // Просто запрашиваем полный список, чтобы избежать дубликатов
-        controller.fetchPendingPairings();
-    });
+function formatState(state: DeviceStateData, device: HardwareDevice): { value: string, unit: string, time: string } {
+    if (!state || !state.payload) return { value: 'N/A', unit: '', time: 'N/A' };
 
-    // 6. Кнопка "Обновить"
-    refreshButton.onclick = () => {
-        controller.refreshAllSensors();
-    };
+    let value: string;
+    let unit = '';
 
-    // --- Фабрики для HTML-элементов ---
-
-    /**
-     * "Рисует" древовидную структуру Коммутатор -> Устройства
-     */
-    function renderDeviceTree(devices: Device[]) {
-        commutatorsContainer.innerHTML = ''; // Очистка
-
-        if (devices.length === 0) {
-            commutatorsContainer.innerHTML = '<p>Нет сопряженных устройств.</p>';
-            return;
-        }
-
-        // Шаг 1: Группируем устройства по commutatorId
-        const devicesByCommutator = new Map<string, Device[]>();
-        for (const device of devices) {
-            const commId = device.commutatorId.toString().toString();
-            if (!devicesByCommutator.has(commId)) {
-                devicesByCommutator.set(commId, []);
-            }
-            devicesByCommutator.get(commId)!.push(device);
-        }
-
-        // Шаг 2: "Рисуем" блоки для каждого коммутатора
-        for (const [commId, deviceList] of devicesByCommutator.entries()) {
-            const block = document.createElement('div');
-            block.className = 'commutator-block';
-
-            const title = document.createElement('h3');
-            title.className = 'commutator-title';
-            title.textContent = `Коммутатор: ${commId}`;
-
-            const grid = document.createElement('div');
-            grid.className = 'devices-grid';
-
-            deviceList.forEach(device =>
-                grid.appendChild(createDeviceCard(device))
-            );
-
-            block.appendChild(title);
-            block.appendChild(grid);
-            commutatorsContainer.appendChild(block);
-        }
+    if (device instanceof HardwareSensor && device.unit) {
+        unit = device.unit;
     }
 
-    /**
-     * "Рисует" список ожидающих сопряжения
-     */
-    function renderPairingList(pairings: PendingPairing[]) {
-        pairingsContainer.innerHTML = ''; // Очистка
-
-        if (pairings.length === 0) {
-            pairingsTitle.style.color = 'black';
-            pairingsContainer.innerHTML = '<p>Нет ожидающих устройств.</p>';
-            return;
-        }
-
-        pairingsTitle.style.color = 'red';
-        pairings.forEach(pairing => {
-            const div = document.createElement('div');
-            div.className = 'card pairing-card';
-
-            const devicesStr = pairing.devices.map(d => `<li>${d.descriptor} (${d.getHardwareType()})</li>`).join('');
-
-            div.innerHTML = `
-                <h4>Новый Коммутатор</h4>
-                <small>${pairing.commutatorId.toString()}</small>
-                <p>Обнаруженные устройства:</p>
-                <ul>${devicesStr}</ul>
-            `;
-
-            const btnApprove = document.createElement('button');
-            btnApprove.textContent = "Одобрить";
-            btnApprove.onclick = () => {
-                controller.approvePairing(pairing.commutatorId);
-            };
-
-            div.appendChild(btnApprove);
-            pairingsContainer.appendChild(div);
-        });
+    if (state.payload instanceof VariantDouble) {
+        value = state.payload.value.toFixed(1);
+    } else if (state.payload instanceof VariantString) {
+        value = state.payload.value;
+    } else if (state.payload instanceof VariantBool) {
+        value = state.payload.value ? 'ON' : 'OFF';
+    } else {
+        value = 'UNKNOWN';
     }
 
-    /**
-     * Создает HTML-карточку для одного устройства (Actor или Sensor)
-     */
-    function createDeviceCard(device: Device): HTMLElement {
-        const div = document.createElement('div');
-        div.className = 'card';
-        div.id = `device-${device.id}`; // Глобальный уникальный ID
+    const time = new Date(state.timestamp.getTime()).toLocaleTimeString();
 
-        const isActor = device.getDeviceType() === 'ACTOR';
-        const unit = (device as any).unit || ''; // Для сенсоров
+    return { value, unit, time };
+}
 
-        div.innerHTML = `
-            <h4>${device.name}</h4>
-            <small>Comm-UUID: ${device.commutatorId.toString()}</small><br>
-            <small>Local-ID: ${device.localDeviceId} | Global-ID: ${device.id}</small>
-            <p>Тип: <b>${device.getDeviceType()}</b></p>
-            <p>Состояние: <b>${device.lastState || 'N/A'}</b> ${unit}</p>
-            <p>Обновлено: ${device.lastUpdated ? new Date(device.lastUpdated).toLocaleString() : 'N/A'}</p>
+function renderDeviceCard(device: HardwareDevice, initialState: DeviceStateData | null = null): HTMLElement {
+    const isActor = device.getHardwareType() === 'ACTOR';
+    const deviceKey = device.localId;
+    let card = knownDevices.get(deviceKey) as HTMLElement | undefined;
+    let state = initialState;
+
+    if (!card) {
+        card = document.createElement('div');
+        card.className = `card ${isActor ? 'card-actor' : 'card-sensor'}`;
+        card.innerHTML = `
+            <h4>${device.descriptor} <small>(${isActor ? 'ACTOR' : 'SENSOR'})</small></h4>
+            <p>Состояние: <strong data-role="value">N/A</strong> <span data-role="unit"></span></p>
+            <p><small>Обновлено: <span data-role="time">N/A</span></small></p>
+            ${isActor ? '<div class="controls" data-role="controls"></div>' : ''}
         `;
+        knownDevices.set(deviceKey, card);
 
         if (isActor) {
-            const controls = document.createElement('div');
-            controls.style.marginTop = '10px';
+            const controls = card.querySelector('[data-role="controls"]')!;
 
             const btnOn = document.createElement('button');
-            btnOn.textContent = "ВКЛ (ON)";
-            btnOn.onclick = () => {
-                const pkgOn = new Uint8Array([1]);
-                controller.executeCommand(device.commutatorId, device.localDeviceId, pkgOn);
-            };
+            btnOn.textContent = 'ВКЛ';
+            btnOn.onclick = () => sendCommand(device.localId, 'ON');
 
             const btnOff = document.createElement('button');
-            btnOff.textContent = "ВЫКЛ (OFF)";
-            btnOff.onclick = () => {
-                const pkgOff = new Uint8Array([0]);
-                controller.executeCommand(device.commutatorId, device.localDeviceId, pkgOff);
-            };
+            btnOff.textContent = 'ВЫКЛ';
+            btnOff.onclick = () => sendCommand(device.localId, 'OFF');
 
             controls.appendChild(btnOn);
             controls.appendChild(btnOff);
-            div.appendChild(controls);
         }
-
-        return div;
     }
 
-    // --- 7. Запускаем! ---
-    controller.connect(SERVICE_UUID_STRING, REGISTRATION_URI);
+    (card as any).updateState = (newState: DeviceStateData) => {
+        state = newState || state;
+        if (state) {
+            const { value, unit, time } = formatState(state, device);
+            card!.querySelector('[data-role="value"]')!.textContent = value;
+            card!.querySelector('[data-role="unit"]')!.textContent = unit;
+            card!.querySelector('[data-role="time"]')!.textContent = time;
+        }
+    };
 
-}); // Конец DOMContentLoaded
+    if (initialState) {
+        (card as any).updateState(initialState);
+    }
+
+    return card;
+}
+
+
+function renderDeviceList(devices: HardwareDevice[], commutatorUuid: string) {
+    devicesGrid!.innerHTML = '';
+    knownDevices.clear();
+
+    if (devices.length === 0) {
+        devicesGrid!.innerHTML = '<p>Устройства не найдены.</p>';
+        return;
+    }
+
+    currentCommutatorTitle!.style.display = 'block';
+    currentCommutatorTitle!.textContent = `Устройства: ${commutatorUuid.substring(0, 8)}...`;
+
+    devices.forEach(device => {
+        const card = renderDeviceCard(device);
+        devicesGrid!.appendChild(card);
+    });
+}
+
+function renderCommutatorTable() {
+    commutatorsTableBody!.innerHTML = '';
+    knownCommutators.forEach(info => {
+        const row = document.createElement('tr');
+        const statusColor = info.status === 'Connected' ? 'green' : (info.status === 'Error' ? 'red' : 'orange');
+
+        const actionDisabled = !isAetherCoreConnected || info.status === 'Connected' ? 'disabled' : '';
+        const buttonText = info.status === 'Connected' ? 'Подключено' : (info.status === 'Connecting' ? '...' : 'Подключить');
+
+        row.innerHTML = `
+            <td>${info.uuid.substring(0, 8)}...</td>
+            <td><span style="color: ${statusColor}">${info.status}</span></td>
+            <td>${info.deviceCount}</td>
+            <td class="action-column">
+                <button onclick="window.connectCommutatorP2PHandler('${info.uuid}')"
+                        ${actionDisabled}>${buttonText}</button>
+            </td>
+        `;
+        commutatorsTableBody!.appendChild(row);
+    });
+}
+
+// --- CORE LOGIC HANDLERS ---
+
+async function connectAetherCore() {
+    const regUri = uriInput.value.trim();
+    if (!regUri) {
+        statusText!.textContent = 'Ошибка: Пожалуйста, введите URI регистрации.';
+        statusText!.style.color = 'red';
+        return;
+    }
+
+    statusText!.textContent = `Статус: Подключение к Aether Core (${regUri})...`;
+    connectCoreButton!.setAttribute('disabled', 'true');
+    uriInput.setAttribute('disabled', 'true');
+
+    // Полный сброс при новом подключении к Core
+    if (coreController) {
+        await coreController.disconnect().catch(console.warn);
+    }
+
+    try {
+        coreController = new SmartHomeController();
+
+        await coreController.connectAetherCore(regUri);
+
+        statusText!.textContent = `Статус: УСПЕХ! Подключено к Aether Core. Клиент UUID: ${coreController.client!.getUid()?.toString().toString().substring(0, 8)}...`;
+        statusText!.style.color = 'green';
+        isAetherCoreConnected = true;
+
+        coreConnectionSection!.style.display = 'none';
+        appConfigSection!.style.display = 'flex';
+
+        renderCommutatorTable();
+
+        // Подписываемся на события ОДИН РАЗ при создании Core Controller
+        coreController.onDeviceListUpdate.add((devices: HardwareDevice[]) => {
+            if (currentCommutatorUuid) {
+                renderDeviceList(devices, currentCommutatorUuid);
+                updateCommutatorStatus(currentCommutatorUuid, 'Connected', devices.length);
+            }
+        });
+
+        coreController.onDeviceStateChanged.add(evt => {
+            const card = knownDevices.get(evt.id);
+            if (card && (card as any).updateState) {
+                (card as any).updateState(evt.state);
+            }
+        });
+
+    } catch (e) {
+        statusText!.textContent = `Статус: ОШИБКА. Не удалось подключиться к Aether Core. Проверьте URI и сервер.`;
+        statusText!.style.color = 'red';
+        connectCoreButton!.removeAttribute('disabled');
+        uriInput.removeAttribute('disabled');
+        isAetherCoreConnected = false;
+        coreController = null;
+        console.error('Aether Core Connection Failed:', e);
+    }
+}
+
+
+// --- COMMUTATOR LOGIC HANDLERS (P2P) ---
+
+(window as any).connectCommutatorP2PHandler = async function (uuid: string) {
+    const info = knownCommutators.get(uuid);
+    if (!info || info.status === 'Connecting' || info.status === 'Connected' || !isAetherCoreConnected) return;
+    if (!coreController) return;
+
+    // 1. Сброс предыдущего P2P-канала (без разрыва связи с Core)
+    // ИСПРАВЛЕНИЕ: Используем disconnectP2P() вместо disconnect()
+    if (currentCommutatorUuid) {
+         updateCommutatorStatus(currentCommutatorUuid, 'Disconnected');
+    }
+    await coreController.disconnectP2P();
+
+    currentCommutatorUuid = uuid;
+    updateCommutatorStatus(uuid, 'Connecting');
+
+    try {
+        await coreController.connectCommutatorP2P(uuid);
+        refreshButton!.removeAttribute('disabled');
+    } catch (e) {
+        console.error(e);
+        updateCommutatorStatus(uuid, 'Error');
+        refreshButton!.setAttribute('disabled', 'true');
+    }
+}
+
+async function sendCommand(localId: number, command: string): Promise<void> {
+    if (!coreController || !coreController.commutatorApi) {
+        statusText!.textContent = 'Ошибка: P2P-соединение с коммутатором не активно.';
+        statusText!.style.color = 'red';
+        return;
+    }
+    try {
+        statusText!.textContent = `Отправка команды ${command} на ID ${localId}...`;
+        await coreController.executeCommand(localId, command);
+    } catch (e) {
+        statusText!.textContent = `Ошибка при отправке команды: ${(e as Error).message}`;
+        console.error('Command execution failed:', e);
+    }
+}
+
+function updateCommutatorStatus(uuid: string, status: CommutatorInfo['status'], deviceCount?: number) {
+    const info = knownCommutators.get(uuid);
+    if (info) {
+        info.status = status;
+        if (deviceCount !== undefined) {
+            info.deviceCount = deviceCount;
+        }
+        renderCommutatorTable();
+    }
+}
+
+
+// --- INITIALIZATION ---
+
+function initApp() {
+    connectCoreButton!.onclick = connectAetherCore;
+
+    addButton!.onclick = () => {
+        const uuid = newUuidInput.value.trim();
+        const uri = uriInput.value.trim();
+
+        if (!uuid) {
+            statusText!.textContent = 'Ошибка: UUID не может быть пустым.';
+            statusText!.style.color = 'red';
+            return;
+        }
+
+        if (!isAetherCoreConnected) {
+             statusText!.textContent = 'Ошибка: Сначала подключитесь к Aether Core.';
+             statusText!.style.color = 'red';
+             return;
+        }
+
+        if (uuid && uri && !knownCommutators.has(uuid)) {
+            knownCommutators.set(uuid, {
+                uuid,
+                regUri: uri,
+                status: 'Disconnected',
+                deviceCount: 0,
+            });
+            newUuidInput.value = '';
+            renderCommutatorTable();
+            statusText!.textContent = 'Коммутатор добавлен в список. Нажмите "Подключить".';
+        } else if (knownCommutators.has(uuid)) {
+            statusText!.textContent = 'Ошибка: Коммутатор с таким UUID уже существует.';
+        }
+    };
+
+    refreshButton!.onclick = async () => {
+        if (!coreController || !coreController.commutatorApi) return;
+        statusText!.textContent = 'Запрос последних состояний...';
+        await coreController.queryAllSensorStates();
+        statusText!.textContent = 'Запрос состояний отправлен.';
+    };
+
+    appConfigSection!.style.display = 'none';
+    uriInput.value = 'ws://localhost:9011';
+    renderCommutatorTable();
+}
+
+initApp();

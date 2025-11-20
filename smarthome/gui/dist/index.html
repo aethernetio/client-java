@@ -2,52 +2,92 @@
 <html>
 <head>
     <meta charset="utf-8"/>
-    <title>Smart Home GUI</title>
+    <title>Aether Smart Home</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f0f2f5; margin: 0; }
         header { background: #fff; border-bottom: 1px solid #ddd; padding: 10px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
         h1 { margin: 0; font-size: 1.2rem; }
         main { max-width: 1200px; margin: 20px auto; padding: 20px; }
+
+        /* Стили для формы CORE Connection (скрывается после успеха) */
+        .core-connect-form {
+            display: flex; gap: 10px; margin-bottom: 15px; padding: 10px 0; border-bottom: 1px solid #eee;
+            align-items: center;
+        }
+        .core-connect-form input { flex-grow: 1; max-width: 400px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+        .core-connect-form button { padding: 8px 15px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; transition: background 0.3s; }
+        .core-connect-form button:hover:not(:disabled) { background: #2980b9; }
+
+        /* Стили для формы App Configuration (Добавление Commutator) */
+        .app-config-form {
+            display: flex; gap: 10px; margin-bottom: 15px; align-items: center;
+        }
+        .app-config-form input { flex-grow: 1; max-width: 400px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+        .app-config-form button { padding: 8px 15px; background: #27ae60; color: white; border: none; border-radius: 4px; cursor: pointer; transition: background 0.3s; }
+        .app-config-form button:hover:not(:disabled) { background: #229954; }
+
         .status-bar { display: flex; justify-content: space-between; align-items: center; background: #fff; padding: 15px 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
         #status-text { font-weight: bold; }
 
-        .column-container { display: flex; gap: 20px; align-items: flex-start; }
-        .column { flex: 1; }
-
-        .section { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow: hidden; }
-        .section-title { font-size: 1.1rem; font-weight: 600; padding: 15px 20px; border-bottom: 1px solid #eee; margin: 0; display: flex; justify-content: space-between; align-items: center; }
-        .section-content { padding: 20px; }
-
-        .card { background: #f9f9f9; border: 1px solid #e0e0e0; border-radius: 5px; padding: 15px; margin-bottom: 15px; }
-        .card h4 { margin: 0 0 10px 0; }
-        .card p { margin: 5px 0; font-size: 0.9rem; }
-        .card small { font-size: 0.75rem; color: #666; }
-        .card button { margin-right: 5px; }
-
-        .pairing-card { border-left: 3px solid #ffa500; }
-
-        .commutator-block { margin-bottom: 20px; }
-        .commutator-title { font-size: 1rem; font-weight: 600; color: #333; border-bottom: 2px solid #3498db; padding-bottom: 5px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #eee; font-size: 0.9rem; }
+        th { background: #f0f2f5; font-weight: 600; }
+        .action-column { width: 120px; text-align: right; }
         .devices-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 15px; margin-top: 15px; }
     </style>
 </head>
 <body>
 <header>
     <h1>Aether Smart Home</h1>
+
+    <div id="core-connection-section">
+        <h3 style="margin: 5px 0;">Aether Core Connection</h3>
+        <div class="core-connect-form">
+            <label>URI Регистрации:</label>
+            <input type="text" id="reg-uri-input" placeholder="ws://localhost:9011">
+            <button id="connect-core-button">Подключиться к Aether</button>
+        </div>
+    </div>
 </header>
 
 <main>
     <div class="status-bar">
-        <span id="status-text">Статус: connecting...</span>
-        <button id="refresh-button">Обновить все сенсоры</button>
+        <span id="status-text">Статус: Ожидание подключения к Aether Core.</span>
+        <button id="refresh-button" disabled>Обновить все сенсоры</button>
     </div>
 
     <div class="column-container">
         <div class="column" style="flex: 2;">
             <section class="section">
                 <h2 class="section-title">Коммутаторы и Устройства</h2>
-                <div id="commutators-container" class="section-content">
-                    <p>Загрузка устройств...</p>
+
+                <div id="app-config-section" class="section-content" style="border-bottom: 1px solid #eee; display: none;">
+                    <h3 style="margin: 0 0 10px 0;">Добавить Коммутатор</h3>
+                    <div class="app-config-form">
+                        <input type="text" id="new-uuid-input" placeholder="UUID нового Коммутатора (для P2P)">
+                        <button id="add-commutator-button">Добавить в список</button>
+                    </div>
+                </div>
+
+                <div id="commutators-list-container" class="section-content">
+                    <table>
+                        <thead>
+                        <tr>
+                            <th>UUID</th>
+                            <th>Статус</th>
+                            <th>Устройств</th>
+                            <th class="action-column">Действия</th>
+                        </tr>
+                        </thead>
+                        <tbody id="commutators-table-body">
+                        </tbody>
+                    </table>
+
+                    <div id="devices-grid-container" style="margin-top: 20px;">
+                        <h3 id="current-commutator-title" style="display: none;">Устройства: (UUID)</h3>
+                        <div id="devices-grid" class="devices-grid">
+                        </div>
+                    </div>
                 </div>
             </section>
         </div>
@@ -56,7 +96,7 @@
             <section class="section">
                 <h2 id="pairings-title" class="section-title">Ожидают сопряжения</h2>
                 <div id="pairings-container" class="section-content">
-                    <p>Загрузка...</p>
+                    <p>В текущей P2P-схеме отсутствует центральный сервис сопряжения (Pairing).</p>
                 </div>
             </section>
         </div>

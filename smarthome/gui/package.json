@@ -4,9 +4,11 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "webpack --config webpack.config.js",
-    "start": "webpack serve --config webpack.config.js",
+    "build": "npm run protocol && webpack --config webpack.config.js",
+    "start": "webpack --config webpack.config.js && webpack serve --config webpack.config.js",
     "protocol": "aether-protocol-gen",
+    "test:e2e-node": "npm run build && jest --testTimeout=120000 test/smarthome.e2e.test.ts",
+    "test:e2e-filter": "npm run build && jest --testTimeout=120000 test/smarthome.e2e.test.ts --testNamePattern \"$JEST_FILTER\"",
     "download:deps": "curl -o aether-client-1.0.0.tgz -u \"deploy:1930\" \"http://nexus.aethernet.io/npm-private/aether-client-1.0.0.tgz\" && curl -o aether-protocol-generator-1.0.0.tgz -u \"deploy:1930\" \"http://nexus.aethernet.io/npm-private/aether-protocol-generator-1.0.0.tgz\"",
     "install:deps": "npm install ./aether-client-1.0.0.tgz && npm install --save-dev ./aether-protocol-generator-1.0.0.tgz",
     "setup": "npm run download:deps && npm run install:deps && npm run protocol"
@@ -19,12 +21,19 @@
     "aether-client": "file:aether-client-1.0.0.tgz"
   },
   "devDependencies": {
+    "@jest/globals": "^30.2.0",
+    "@types/jest": "^29.5.14",
     "aether-protocol-generator": "file:aether-protocol-generator-1.0.0.tgz",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^30.2.0",
     "js-yaml": "^4.1.0",
+    "ts-jest": "^29.4.5",
     "ts-loader": "^9.5.4",
+    "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
     "webpack": "^5.102.1",
     "webpack-cli": "^6.0.1",
-    "webpack-dev-server": "^5.2.2"
+    "webpack-dev-server": "^5.2.2",
+    "ws": "^8.18.3"
   }
 }

@@ -3,17 +3,16 @@
     "outDir": "./dist/",
     "noImplicitAny": true,
     "module": "CommonJS",
-    "target": "ES6",
+    "target": "ES2024",
     "jsx": "react",
     "moduleResolution": "node",
     "esModuleInterop": true,
     "skipLibCheck": true,
 
     "lib": [
-      "ES2023",
+      "ES2024",
       "DOM",
-      "ScriptHost",
-      "esnext.disposable"
+      "ScriptHost"
     ],
     "types": [
       "node"

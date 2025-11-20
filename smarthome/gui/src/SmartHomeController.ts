@@ -1,197 +1,187 @@
-// --- 1. Импорты из библиотеки aether-client ---
+// FILE: SmartHomeController.ts
+// =============================================================================================
 import {
     AetherCloudClient,
     ClientStateInMemory,
     MessageEventListenerDefault,
-    aCrypto,
     UUID,
     URI,
     AFuture,
     ARFuture,
     MessageNode,
     aetherApi,
-    FastApiContext // <-- Все еще нужен для типа
-} from 'aether-client/build/aether_client'; // Прямой импорт из сборки
+    FastApiContext,
+    Log,
+    LogFilter,
+    applySodium,
+    EventConsumer,
+} from 'aether-client/build/aether_client';
 
-// --- 2. Импорты сгенерированного API и DTOs ---
 import {
-    SmartHomeServiceApi,
+    SmartHomeCommutatorApi,
     SmartHomeClientApi,
-    Device,
-    Actor,
-    PendingPairing,
-    ClientType,
     DeviceStateData,
-    HardwareSensor,
-    HardwareActor,
-    SmartHomeClientApiRemote,
-    SmartHomeServiceApiRemote
-} from './aether_api'; //
+    HardwareDevice,
+    SmartHomeCommutatorApiRemote,
+    SmartHomeClientApiLocal,
+    VariantData,
+    VariantString,
+    VariantBool
+} from './aether_api';
 
-// --- 3. Вспомогательный класс для событий ---
-// (Без изменений)
-type Listener<T> = (data: T) => void;
-class EventEmitter<T> {
-    private listeners: Listener<T>[] = [];
-    add(listener: Listener<T>) { this.listeners.push(listener); }
-    fire(data: T) { this.listeners.forEach(l => l(data)); }
-}
+// ANONYMOUS_UID используется как PARENT UID.
+const ANONYMOUS_UID_STR = "237e2dc0-21a4-4e83-8184-c43052f93b79";
 
 /**
- * -----------------------------------------------------------------
- * ГЛАВНЫЙ КЛАСС КОНТРОЛЛЕРА GUI (V4 - Использует toApi)
- * -----------------------------------------------------------------
+ * P2P Controller.
+ * Подключается напрямую к Коммутатору по UUID и URI.
+ * UUID КЛИЕНТА назначается сервером Aether Core.
  */
 export class SmartHomeController {
-    // --- Публичные События ---
-    // (Без изменений)
-    public onConnectionStateChange = new EventEmitter<'connecting' | 'connected' | 'error'>();
-    public onDeviceListUpdate = new EventEmitter<Device[]>();
-    public onDeviceStateChanged = new EventEmitter<Device>();
-    public onPairingListUpdate = new EventEmitter<PendingPairing[]>();
-    public onPairingRequested = new EventEmitter<PendingPairing>();
 
-    // --- Внутренние переменные Aether ---
-    private client!: AetherCloudClient;
-    private serviceNode!: MessageNode;
-    private apiContext!: FastApiContext;     // Контекст, который создаст toApi
-    private serviceApi!: SmartHomeServiceApiRemote; // Удаленный API Сервиса
-    private localApi!: SmartHomeClientApi;   // Локальная реализация API Клиента
+    public onConnectionStateChange = new EventConsumer<'connecting' | 'connected' | 'error'>();
+    public onDeviceListUpdate = new EventConsumer<HardwareDevice[]>();
+    public onDeviceStateChanged = new EventConsumer<{id: number, state: DeviceStateData}>();
 
-    private serviceUuid!: UUID;
+    public client: AetherCloudClient | null = null;
+    public commutatorNode: MessageNode | null = null;
+    public apiContext: FastApiContext | null = null;
+    public commutatorApi: SmartHomeCommutatorApiRemote | null = null;
+    private localApi: SmartHomeClientApi;
 
     constructor() {
         this.localApi = this.createLocalApi();
     }
 
     /**
-     * 1. Подключение к Aether и к Хабу "Умного Дома"
+     * [РЕЖИМ CORE] Устанавливает соединение с сетью Aether (только регистрация).
      */
-    async connect(serviceUuidStr: string, registrationUriStr: string) {
-        console.log("Connecting to Aether network...");
+    async connectAetherCore(registrationUriStr: string): Promise<void> {
+        Log.printConsolePlain(new LogFilter());
+        await applySodium();
         this.onConnectionStateChange.fire('connecting');
+        Log.info("Connecting to Aether network (Core Registration)...");
 
         try {
-            this.serviceUuid = UUID.fromString(serviceUuidStr);
-            const registrationUri: URI[] = [registrationUriStr];
+            const registrationUri: URI[] = [registrationUriStr as any];
+            const parentUuid = UUID.fromString(ANONYMOUS_UID_STR);
 
-            const clientConfig = new ClientStateInMemory(this.serviceUuid, registrationUri, undefined, aetherApi.CryptoLib.SODIUM);
+            // Правильный конструктор (4 аргумента), как в вашем рабочем варианте
+            const clientConfig = new ClientStateInMemory(
+                parentUuid,
+                registrationUri,
+                null,
+                aetherApi.CryptoLib.SODIUM
+            );
+
             this.client = new AetherCloudClient(clientConfig, "SmartHomeGUI");
 
+            // Подключаемся к Core
             await this.client.connect().toPromise(30000);
 
-            // 3. Получаем "трубу" (MessageNode) к нашему Сервису (Хабу)
-            this.serviceNode = this.client.getMessageNode(this.serviceUuid, MessageEventListenerDefault);
+            const clientUid = this.client.getUid();
+            Log.info("Aether Core connection successful.", { assignedUuid: clientUid ? clientUid.toString() : "null" });
 
-            // 4. 🔥 НОВЫЙ ЧИСТЫЙ СПОСОБ: Используем toApi
-            //
-            // Эта строка делает ДВЕ вещи:
-            // 1. Создает FastApiContext (this.apiContext), который знает, как
-            //    отправлять (flush) данные обратно через этот serviceNode.
-            // 2. "Привязывает" входящие PUSH-вызовы (bufferIn) к нашей
-            //    локальной реализации (this.localApi).
-            //
-            this.apiContext = this.serviceNode.toApi(SmartHomeClientApi.META, this.localApi);
-
-            // 5. 🔥 Cоздаем "заглушку" (stub) для вызова API Сервиса
-            //    Мы используем apiContext, который был создан на шаге 4.
-            this.serviceApi = SmartHomeServiceApi.META.makeRemote(this.apiContext);
-
-            // 6. Регистрируемся на Сервисе
-            this.serviceApi.register(ClientType.GUI_CLIENT, [], []);
-            this.apiContext.flush(AFuture.make()); // Принудительно отправляем (register)
-
-            console.log("Successfully connected and registered with SmartHomeService!");
             this.onConnectionStateChange.fire('connected');
 
         } catch (e) {
-            console.error("Failed to connect", e);
+            Log.error("Failed to connect to Aether Core", e);
             this.onConnectionStateChange.fire('error');
-        }
-    }
-
-    // --- 2. Методы, которые будет вызывать UI ---
-    // (Без изменений, кроме вызова flush)
-
-    async fetchAllDevices() {
-        if (!this.serviceApi) return;
-        try {
-            console.log("Fetching all devices...");
-            const devices = await this.serviceApi.getAllDevices().toPromise(10000);
-            console.log("Got devices:", devices);
-            this.onDeviceListUpdate.fire(devices);
-            // .flush() не нужен, т.к. .toPromise() неявно его вызывает
-        } catch (e) {
-            console.error("Failed to fetch devices", e);
-        }
-    }
-
-    async executeCommand(commutatorId: UUID, localActorId: number, commandPkg: Uint8Array) {
-        if (!this.serviceApi) return;
-        try {
-            this.serviceApi.executeActorCommand(commutatorId, localActorId, commandPkg);
-            this.apiContext.flush(AFuture.make()); // Отправляем fire-and-forget
-        } catch (e) {
-            console.error("Failed to execute command", e);
-        }
-    }
-
-    async fetchPendingPairings() {
-        if (!this.serviceApi) return;
-        try {
-            const pairings = await this.serviceApi.getPendingPairings().toPromise(10000);
-            this.onPairingListUpdate.fire(pairings);
-        } catch (e) {
-            console.error("Failed to fetch pending pairings", e);
-        }
-    }
-
-    async approvePairing(commutatorUuid: UUID) {
-        if (!this.serviceApi) return;
-        try {
-            this.serviceApi.approvePairing(commutatorUuid);
-            this.apiContext.flush(AFuture.make()); // Отправляем fire-and-forget
-
-            // (Логика обновления UI без изменений)
-            this.fetchPendingPairings();
-            this.fetchAllDevices();
-        } catch (e) {
-            console.error("Failed to approve pairing", e);
-        }
-    }
-
-    async refreshAllSensors() {
-        if (!this.serviceApi) return;
-        try {
-            console.log("Requesting sensor refresh...");
-            this.serviceApi.refreshAllSensorStates();
-            this.apiContext.flush(AFuture.make()); // Отправляем fire-and-forget
-        } catch (e) {
-            console.error("Failed to request refresh", e);
+            this.client = null;
+            throw e;
         }
     }
 
     /**
-     * 3. Реализация PUSH API (SmartHomeClientApi)
-     * (Без изменений)
+     * [РЕЖИМ P2P] Устанавливает P2P-канал к конкретному Коммутатору.
      */
+    async connectCommutatorP2P(targetUuidStr: string): Promise<void> {
+        if (!this.client) {
+            throw new Error("Aether Core is not connected. Call connectAetherCore first.");
+        }
+
+        Log.info("Attempting to open P2P channel to commutator: " + targetUuidStr);
+
+        try {
+            const targetUuid = UUID.fromString(targetUuidStr);
+
+            this.commutatorNode = this.client.getMessageNode(targetUuid, MessageEventListenerDefault);
+            this.apiContext = this.commutatorNode.toApi(SmartHomeClientApi.META, this.localApi);
+            this.commutatorApi = SmartHomeCommutatorApi.META.makeRemote(this.apiContext);
+
+            Log.info("P2P channel opened successfully.");
+
+            await this.fetchStructure();
+
+        } catch (e) {
+            Log.error("Failed to open P2P channel or fetch structure", e);
+            // Сбрасываем P2P состояние, но НЕ уничтожаем клиент
+            await this.disconnectP2P();
+            throw e;
+        }
+    }
+
+    public async fetchStructure(): Promise<void> {
+        if (!this.commutatorApi || !this.apiContext) return;
+
+        try {
+            const structureFuture = this.commutatorApi.getSystemStructure();
+            this.commutatorApi.queryAllSensorStates();
+            await this.apiContext.flush().toPromise(5000);
+
+            const devices = await structureFuture.toPromise(5000);
+            this.onDeviceListUpdate.fire(devices);
+        } catch(e) {
+            Log.error("Error fetching structure or subscribing to PUSH", e);
+            throw e;
+        }
+    }
+
+    public executeCommand(localActorId: number, commandStr: string): Promise<void> {
+        if (!this.commutatorApi || !this.apiContext) return Promise.reject(new Error("P2P connection is not active."));
+
+        const cmd = new VariantString(commandStr);
+        this.commutatorApi.executeActorCommand(localActorId, cmd);
+        return this.apiContext.flush().toPromise(5000);
+    }
+
+    public queryAllSensorStates(): Promise<void> {
+        if (!this.commutatorApi || !this.apiContext) return Promise.reject(new Error("P2P connection is not active."));
+
+        this.commutatorApi.queryAllSensorStates();
+        return this.apiContext.flush().toPromise(5000);
+    }
+
     private createLocalApi(): SmartHomeClientApi {
         const self = this;
+        return new (class extends SmartHomeClientApiLocal<any> {
+            constructor() { super(null as any); }
 
-        return new (class implements SmartHomeClientApi {
-            getRemoteApi(): SmartHomeClientApiRemote {
-                throw new Error('Method not implemented.');
-            }
-
-            deviceStateUpdated(device: Device): void {
-                console.log("PUSH received: deviceStateUpdated", device.name);
-                self.onDeviceStateChanged.fire(device);
-            }
-
-            pairingRequested(pairingInfo: PendingPairing): void {
-                console.log("PUSH received: pairingRequested", pairingInfo.commutatorId.toString());
-                self.onPairingRequested.fire(pairingInfo);
+            deviceStateUpdated(localDeviceId: number, state: DeviceStateData): void {
+                 Log.info(`PUSH received: ID=${localDeviceId} Val=${JSON.stringify(state)}`);
+                 self.onDeviceStateChanged.fire({id: localDeviceId, state: state});
             }
         })();
+    }
+
+    /**
+     * Сбрасывает только P2P-соединение (Remote API), оставляя подключение к облаку активным.
+     */
+    public async disconnectP2P(): Promise<void> {
+        this.commutatorApi = null;
+        this.apiContext = null;
+        this.commutatorNode = null;
+    }
+
+    /**
+     * Полностью закрывает соединение с Aether Core.
+     */
+    public async disconnect(): Promise<void> {
+        if (this.client) await this.client.destroy(true).toPromise(5000);
+        this.onConnectionStateChange.fire('connecting');
+        this.client = null;
+        this.commutatorApi = null;
+        this.apiContext = null;
+        this.commutatorNode = null;
     }
 }

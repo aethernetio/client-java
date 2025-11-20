@@ -5,108 +5,7 @@ from 'aether-client';
 import * as Impl from './aether_api_impl';
 // This is always relative
 /**
- * The type of client connecting to the service.
- */
-export enum ClientType  {
-    GUI_CLIENT = 'GUI_CLIENT', COMMUTATOR = 'COMMUTATOR' 
-}
-export namespace ClientType  {
-    export const META: FastMetaType<ClientType> = new Impl.ClientTypeMetaImpl();
-    
-}
-/**
- * Base type for a "Logical" device known to the Service. This is the main DTO for the GUI.
- */
-export abstract class Device implements ToString  {
-    public abstract getDeviceType(): string;
-    public readonly id: number;
-    public readonly name: string;
-    public readonly commutatorId: UUID;
-    public readonly localDeviceId: number;
-    public readonly lastState: string | null;
-    public readonly lastUpdated: Date | null;
-    public abstract getAetherTypeId(): number;
-    public static readonly META: FastMetaType<Device> = new Impl.DeviceMetaImpl();
-    /**
-     * Creates an instance of Device.
-     * @param id - number
-     * @param name - string
-     * @param commutatorId - UUID
-     * @param localDeviceId - number
-     * @param lastState - string
-     * @param lastUpdated - Date
-     */
-    constructor(id: number, name: string, commutatorId: UUID, localDeviceId: number, lastState: string, lastUpdated: Date)  {
-        this.id = id;
-        this.name = name;
-        this.commutatorId = commutatorId;
-        this.localDeviceId = localDeviceId;
-        this.lastState = lastState;
-        this.lastUpdated = lastUpdated;
-        
-    }
-    public getId(): number  {
-        return this.id;
-        
-    }
-    public getName(): string  {
-        return this.name;
-        
-    }
-    public getCommutatorId(): UUID  {
-        return this.commutatorId;
-        
-    }
-    public getLocalDeviceId(): number  {
-        return this.localDeviceId;
-        
-    }
-    public getLastState(): string | null  {
-        return this.lastState;
-        
-    }
-    public getLastUpdated(): Date | null  {
-        return this.lastUpdated;
-        
-    }
-    /**
-     * Calculates a hash code for a static instance of Device.
-     * @param {Device | null | undefined} obj - The object to hash.
-     * @returns {number} The hash code.
-     */
-    public static staticHashCode(obj: Device | null | undefined): number  {
-        if (obj === null || obj === undefined) return 0;
-        return (obj.constructor as any).META.metaHashCode(obj);
-        
-    }
-    /**
-     * Compares a static instance of Device with another object.
-     * @param {Device | null | undefined} v1 - The first object.
-     * @param {any | null | undefined} v2 - The second object.
-     * @returns {boolean} True if the objects are equal.
-     */
-    public static staticEquals(v1: Device | null | undefined, v2: any | null | undefined): boolean  {
-        if (v1 === v2) return true;
-        if (v1 === null || v1 === undefined) return (v2 === null || v2 === undefined);
-        return (v1.constructor as any).META.metaEquals(v1, v2);
-        
-    }
-    /**
-     * Calculates a hash code for this object.
-     * @returns {number} The hash code.
-     */
-    public abstract hashCode(): number;
-    /**
-     * Checks if this object is equal to another.
-     * @param {any} other - The object to compare with.
-     * @returns {boolean} True if the objects are equal, false otherwise.
-     */
-    public abstract equals(other: any): boolean;
-    public abstract toString(result: AString): AString;
-    
-}
-/**
- * Base type for a physical device attached to a Commutator.
+ * Базовый тип физического устройства на коммутаторе.
  */
 export abstract class HardwareDevice implements ToString  {
     public abstract getHardwareType(): string;
@@ -169,97 +68,74 @@ export abstract class HardwareDevice implements ToString  {
     
 }
 /**
- * A Logical Device that represents an Actor.
- *
- * @aetherTypeId 2
+ * Абстрактный базовый класс для передачи типизированных данных.
  */
-export class Actor extends Device implements ToString  {
-    public override getDeviceType(): string  {
-        return "ACTOR";
-        
-    }
-    public override getAetherTypeId(): number  {
-        return 2;
-        
-    }
-    public static readonly META_BODY: FastMetaType<Actor> = new Impl.ActorMetaBodyImpl();
-    public static readonly META: FastMetaType<Actor> = new Impl.ActorMetaImpl();
+export abstract class VariantData implements ToString  {
+    public abstract getAetherTypeId(): number;
+    public static readonly META: FastMetaType<VariantData> = new Impl.VariantDataMetaImpl();
     /**
-     * Creates an instance of Actor.
-     * @param id - number
-     * @param name - string
-     * @param commutatorId - UUID
-     * @param localDeviceId - number
-     * @param lastState - string
-     * @param lastUpdated - Date
+     * Creates an instance of VariantData.
      */
-    constructor(id: number, name: string, commutatorId: UUID, localDeviceId: number, lastState: string, lastUpdated: Date)  {
-        super(id, name, commutatorId, localDeviceId, lastState, lastUpdated);
+    constructor()  {
         
     }
     /**
-     * Calculates a hash code for a static instance of Actor.
-     * @param {Actor | null | undefined} obj - The object to hash.
+     * Calculates a hash code for a static instance of VariantData.
+     * @param {VariantData | null | undefined} obj - The object to hash.
      * @returns {number} The hash code.
      */
-    public static staticHashCode(obj: Actor | null | undefined): number  {
-        return Actor.META.metaHashCode(obj);
+    public static staticHashCode(obj: VariantData | null | undefined): number  {
+        if (obj === null || obj === undefined) return 0;
+        return (obj.constructor as any).META.metaHashCode(obj);
         
     }
     /**
-     * Compares a static instance of Actor with another object.
-     * @param {Actor | null | undefined} v1 - The first object.
+     * Compares a static instance of VariantData with another object.
+     * @param {VariantData | null | undefined} v1 - The first object.
      * @param {any | null | undefined} v2 - The second object.
      * @returns {boolean} True if the objects are equal.
      */
-    public static staticEquals(v1: Actor | null | undefined, v2: any | null | undefined): boolean  {
-        return Actor.META.metaEquals(v1, v2);
+    public static staticEquals(v1: VariantData | null | undefined, v2: any | null | undefined): boolean  {
+        if (v1 === v2) return true;
+        if (v1 === null || v1 === undefined) return (v2 === null || v2 === undefined);
+        return (v1.constructor as any).META.metaEquals(v1, v2);
         
     }
     /**
      * Calculates a hash code for this object.
      * @returns {number} The hash code.
      */
-    public hashCode(): number  {
-        return Actor.staticHashCode(this);
-        
-    }
+    public abstract hashCode(): number;
     /**
      * Checks if this object is equal to another.
      * @param {any} other - The object to compare with.
      * @returns {boolean} True if the objects are equal, false otherwise.
      */
-    public equals(other: any): boolean  {
-        return Actor.staticEquals(this, other);
-        
-    }
-    public toString(result: AString): AString  {
-        Actor.META.metaToString(this, result);
-        return result;
-        
-    }
+    public abstract equals(other: any): boolean;
+    public abstract toString(result: AString): AString;
     
 }
 /**
- * A generic structure for reporting a device's state at a specific time.
+ * Структура состояния (значение + метка времени).
  */
 export class DeviceStateData implements ToString  {
-    public readonly value: string;
+    public readonly payload: VariantData;
     public readonly timestamp: Date;
     public static readonly META_BODY: FastMetaType<DeviceStateData> = new Impl.DeviceStateDataMetaBodyImpl();
     public static readonly META: FastMetaType<DeviceStateData> = DeviceStateData.META_BODY;
     /**
      * Creates an instance of DeviceStateData.
-     * @param value - string
+     * @param payload - VariantData
      * @param timestamp - Date
      */
-    constructor(value: string, timestamp: Date)  {
-        this.value = value;
+    constructor(payload: VariantData, timestamp: Date)  {
+        this.payload = payload;
         this.timestamp = timestamp;
+        if (payload === null || payload === undefined) throw new Error(`Field 'payload' cannot be null for type DeviceStateData.`);
         
     }
-    public getValue(): string  {
-        return this.value;
+    public getPayload(): VariantData  {
+        return this.payload;
         
     }
     public getTimestamp(): Date  {
@@ -310,7 +186,7 @@ export class DeviceStateData implements ToString  {
     
 }
 /**
- * A physical device that performs actions.
+ * Represents the HardwareActor structure.
  *
  * @aetherTypeId 2
  */
@@ -378,7 +254,7 @@ export class HardwareActor extends HardwareDevice implements ToString  {
     
 }
 /**
- * A physical device that reports data.
+ * Represents the HardwareSensor structure.
  *
  * @aetherTypeId 1
  */
@@ -453,132 +329,48 @@ export class HardwareSensor extends HardwareDevice implements ToString  {
     
 }
 /**
- * A DTO for summarizing a Commutator that is awaiting pairing approval.
- */
-export class PendingPairing implements ToString  {
-    public readonly commutatorId: UUID;
-    public readonly devices: HardwareDevice[];
-    public static readonly META_BODY: FastMetaType<PendingPairing> = new Impl.PendingPairingMetaBodyImpl();
-    public static readonly META: FastMetaType<PendingPairing> = PendingPairing.META_BODY;
-    /**
-     * Creates an instance of PendingPairing.
-     * @param commutatorId - UUID
-     * @param devices - HardwareDevice[]
-     */
-    constructor(commutatorId: UUID, devices: HardwareDevice[])  {
-        this.commutatorId = commutatorId;
-        this.devices = devices;
-        if (devices === null || devices === undefined) throw new Error(`Field 'devices' cannot be null for type PendingPairing.`);
-        
-    }
-    public getCommutatorId(): UUID  {
-        return this.commutatorId;
-        
-    }
-    public getDevices(): HardwareDevice[]  {
-        return this.devices;
-        
-    }
-    public devicesContains(el: HardwareDevice): boolean  {
-        return (this.devices as HardwareDevice[]).includes(el as any);
-        
-    }
-    /**
-     * Calculates a hash code for a static instance of PendingPairing.
-     * @param {PendingPairing | null | undefined} obj - The object to hash.
-     * @returns {number} The hash code.
-     */
-    public static staticHashCode(obj: PendingPairing | null | undefined): number  {
-        return PendingPairing.META.metaHashCode(obj);
-        
-    }
-    /**
-     * Compares a static instance of PendingPairing with another object.
-     * @param {PendingPairing | null | undefined} v1 - The first object.
-     * @param {any | null | undefined} v2 - The second object.
-     * @returns {boolean} True if the objects are equal.
-     */
-    public static staticEquals(v1: PendingPairing | null | undefined, v2: any | null | undefined): boolean  {
-        return PendingPairing.META.metaEquals(v1, v2);
-        
-    }
-    /**
-     * Calculates a hash code for this object.
-     * @returns {number} The hash code.
-     */
-    public hashCode(): number  {
-        return PendingPairing.staticHashCode(this);
-        
-    }
-    /**
-     * Checks if this object is equal to another.
-     * @param {any} other - The object to compare with.
-     * @returns {boolean} True if the objects are equal, false otherwise.
-     */
-    public equals(other: any): boolean  {
-        return PendingPairing.staticEquals(this, other);
-        
-    }
-    public toString(result: AString): AString  {
-        PendingPairing.META.metaToString(this, result);
-        return result;
-        
-    }
-    
-}
-/**
- * A Logical Device that represents a Sensor.
+ * Represents the VariantBool structure.
  *
  * @aetherTypeId 1
  */
-export class Sensor extends Device implements ToString  {
-    public readonly unit: string | null;
-    public override getDeviceType(): string  {
-        return "SENSOR";
-        
-    }
+export class VariantBool extends VariantData implements ToString  {
+    public readonly value: boolean;
     public override getAetherTypeId(): number  {
         return 1;
         
     }
-    public static readonly META_BODY: FastMetaType<Sensor> = new Impl.SensorMetaBodyImpl();
-    public static readonly META: FastMetaType<Sensor> = new Impl.SensorMetaImpl();
+    public static readonly META_BODY: FastMetaType<VariantBool> = new Impl.VariantBoolMetaBodyImpl();
+    public static readonly META: FastMetaType<VariantBool> = new Impl.VariantBoolMetaImpl();
     /**
-     * Creates an instance of Sensor.
-     * @param id - number
-     * @param name - string
-     * @param commutatorId - UUID
-     * @param localDeviceId - number
-     * @param lastState - string
-     * @param lastUpdated - Date
-     * @param unit - string
+     * Creates an instance of VariantBool.
+     * @param value - boolean
      */
-    constructor(id: number, name: string, commutatorId: UUID, localDeviceId: number, lastState: string, lastUpdated: Date, unit: string)  {
-        super(id, name, commutatorId, localDeviceId, lastState, lastUpdated);
-        this.unit = unit;
+    constructor(value: boolean)  {
+        super();
+        this.value = value;
         
     }
-    public getUnit(): string | null  {
-        return this.unit;
+    public isValue(): boolean  {
+        return this.value;
         
     }
     /**
-     * Calculates a hash code for a static instance of Sensor.
-     * @param {Sensor | null | undefined} obj - The object to hash.
+     * Calculates a hash code for a static instance of VariantBool.
+     * @param {VariantBool | null | undefined} obj - The object to hash.
      * @returns {number} The hash code.
      */
-    public static staticHashCode(obj: Sensor | null | undefined): number  {
-        return Sensor.META.metaHashCode(obj);
+    public static staticHashCode(obj: VariantBool | null | undefined): number  {
+        return VariantBool.META.metaHashCode(obj);
         
     }
     /**
-     * Compares a static instance of Sensor with another object.
-     * @param {Sensor | null | undefined} v1 - The first object.
+     * Compares a static instance of VariantBool with another object.
+     * @param {VariantBool | null | undefined} v1 - The first object.
      * @param {any | null | undefined} v2 - The second object.
      * @returns {boolean} True if the objects are equal.
      */
-    public static staticEquals(v1: Sensor | null | undefined, v2: any | null | undefined): boolean  {
-        return Sensor.META.metaEquals(v1, v2);
+    public static staticEquals(v1: VariantBool | null | undefined, v2: any | null | undefined): boolean  {
+        return VariantBool.META.metaEquals(v1, v2);
         
     }
     /**
@@ -586,7 +378,7 @@ export class Sensor extends Device implements ToString  {
      * @returns {number} The hash code.
      */
     public hashCode(): number  {
-        return Sensor.staticHashCode(this);
+        return VariantBool.staticHashCode(this);
         
     }
     /**
@@ -595,19 +387,297 @@ export class Sensor extends Device implements ToString  {
      * @returns {boolean} True if the objects are equal, false otherwise.
      */
     public equals(other: any): boolean  {
-        return Sensor.staticEquals(this, other);
+        return VariantBool.staticEquals(this, other);
         
     }
     public toString(result: AString): AString  {
-        Sensor.META.metaToString(this, result);
+        VariantBool.META.metaToString(this, result);
         return result;
         
     }
     
 }
 /**
- * A stream of commands destined FOR the Client (GUI).
+ * Для передачи сложных бинарных данных.
+ *
+ * @aetherTypeId 5
  */
+export class VariantBytes extends VariantData implements ToString  {
+    public readonly value: Uint8Array;
+    public override getAetherTypeId(): number  {
+        return 5;
+        
+    }
+    public static readonly META_BODY: FastMetaType<VariantBytes> = new Impl.VariantBytesMetaBodyImpl();
+    public static readonly META: FastMetaType<VariantBytes> = new Impl.VariantBytesMetaImpl();
+    /**
+     * Creates an instance of VariantBytes.
+     * @param value - Uint8Array
+     */
+    constructor(value: Uint8Array)  {
+        super();
+        this.value = value;
+        if (value === null || value === undefined) throw new Error(`Field 'value' cannot be null for type VariantBytes.`);
+        
+    }
+    public getValue(): Uint8Array  {
+        return this.value;
+        
+    }
+    public valueContains(el: number): boolean  {
+        return (this.value as Uint8Array).includes(el as any);
+        
+    }
+    /**
+     * Calculates a hash code for a static instance of VariantBytes.
+     * @param {VariantBytes | null | undefined} obj - The object to hash.
+     * @returns {number} The hash code.
+     */
+    public static staticHashCode(obj: VariantBytes | null | undefined): number  {
+        return VariantBytes.META.metaHashCode(obj);
+        
+    }
+    /**
+     * Compares a static instance of VariantBytes with another object.
+     * @param {VariantBytes | null | undefined} v1 - The first object.
+     * @param {any | null | undefined} v2 - The second object.
+     * @returns {boolean} True if the objects are equal.
+     */
+    public static staticEquals(v1: VariantBytes | null | undefined, v2: any | null | undefined): boolean  {
+        return VariantBytes.META.metaEquals(v1, v2);
+        
+    }
+    /**
+     * Calculates a hash code for this object.
+     * @returns {number} The hash code.
+     */
+    public hashCode(): number  {
+        return VariantBytes.staticHashCode(this);
+        
+    }
+    /**
+     * Checks if this object is equal to another.
+     * @param {any} other - The object to compare with.
+     * @returns {boolean} True if the objects are equal, false otherwise.
+     */
+    public equals(other: any): boolean  {
+        return VariantBytes.staticEquals(this, other);
+        
+    }
+    public toString(result: AString): AString  {
+        VariantBytes.META.metaToString(this, result);
+        return result;
+        
+    }
+    
+}
+/**
+ * Используется для всех чисел с плавающей запятой (float, double).
+ *
+ * @aetherTypeId 3
+ */
+export class VariantDouble extends VariantData implements ToString  {
+    public readonly value: number;
+    public override getAetherTypeId(): number  {
+        return 3;
+        
+    }
+    public static readonly META_BODY: FastMetaType<VariantDouble> = new Impl.VariantDoubleMetaBodyImpl();
+    public static readonly META: FastMetaType<VariantDouble> = new Impl.VariantDoubleMetaImpl();
+    /**
+     * Creates an instance of VariantDouble.
+     * @param value - number
+     */
+    constructor(value: number)  {
+        super();
+        this.value = value;
+        
+    }
+    public getValue(): number  {
+        return this.value;
+        
+    }
+    /**
+     * Calculates a hash code for a static instance of VariantDouble.
+     * @param {VariantDouble | null | undefined} obj - The object to hash.
+     * @returns {number} The hash code.
+     */
+    public static staticHashCode(obj: VariantDouble | null | undefined): number  {
+        return VariantDouble.META.metaHashCode(obj);
+        
+    }
+    /**
+     * Compares a static instance of VariantDouble with another object.
+     * @param {VariantDouble | null | undefined} v1 - The first object.
+     * @param {any | null | undefined} v2 - The second object.
+     * @returns {boolean} True if the objects are equal.
+     */
+    public static staticEquals(v1: VariantDouble | null | undefined, v2: any | null | undefined): boolean  {
+        return VariantDouble.META.metaEquals(v1, v2);
+        
+    }
+    /**
+     * Calculates a hash code for this object.
+     * @returns {number} The hash code.
+     */
+    public hashCode(): number  {
+        return VariantDouble.staticHashCode(this);
+        
+    }
+    /**
+     * Checks if this object is equal to another.
+     * @param {any} other - The object to compare with.
+     * @returns {boolean} True if the objects are equal, false otherwise.
+     */
+    public equals(other: any): boolean  {
+        return VariantDouble.staticEquals(this, other);
+        
+    }
+    public toString(result: AString): AString  {
+        VariantDouble.META.metaToString(this, result);
+        return result;
+        
+    }
+    
+}
+/**
+ * Используется для всех целых чисел (byte, short, int, long).
+ *
+ * @aetherTypeId 2
+ */
+export class VariantLong extends VariantData implements ToString  {
+    public readonly value: bigint;
+    public override getAetherTypeId(): number  {
+        return 2;
+        
+    }
+    public static readonly META_BODY: FastMetaType<VariantLong> = new Impl.VariantLongMetaBodyImpl();
+    public static readonly META: FastMetaType<VariantLong> = new Impl.VariantLongMetaImpl();
+    /**
+     * Creates an instance of VariantLong.
+     * @param value - bigint
+     */
+    constructor(value: bigint)  {
+        super();
+        this.value = value;
+        
+    }
+    public getValue(): bigint  {
+        return this.value;
+        
+    }
+    /**
+     * Calculates a hash code for a static instance of VariantLong.
+     * @param {VariantLong | null | undefined} obj - The object to hash.
+     * @returns {number} The hash code.
+     */
+    public static staticHashCode(obj: VariantLong | null | undefined): number  {
+        return VariantLong.META.metaHashCode(obj);
+        
+    }
+    /**
+     * Compares a static instance of VariantLong with another object.
+     * @param {VariantLong | null | undefined} v1 - The first object.
+     * @param {any | null | undefined} v2 - The second object.
+     * @returns {boolean} True if the objects are equal.
+     */
+    public static staticEquals(v1: VariantLong | null | undefined, v2: any | null | undefined): boolean  {
+        return VariantLong.META.metaEquals(v1, v2);
+        
+    }
+    /**
+     * Calculates a hash code for this object.
+     * @returns {number} The hash code.
+     */
+    public hashCode(): number  {
+        return VariantLong.staticHashCode(this);
+        
+    }
+    /**
+     * Checks if this object is equal to another.
+     * @param {any} other - The object to compare with.
+     * @returns {boolean} True if the objects are equal, false otherwise.
+     */
+    public equals(other: any): boolean  {
+        return VariantLong.staticEquals(this, other);
+        
+    }
+    public toString(result: AString): AString  {
+        VariantLong.META.metaToString(this, result);
+        return result;
+        
+    }
+    
+}
+/**
+ * Represents the VariantString structure.
+ *
+ * @aetherTypeId 4
+ */
+export class VariantString extends VariantData implements ToString  {
+    public readonly value: string;
+    public override getAetherTypeId(): number  {
+        return 4;
+        
+    }
+    public static readonly META_BODY: FastMetaType<VariantString> = new Impl.VariantStringMetaBodyImpl();
+    public static readonly META: FastMetaType<VariantString> = new Impl.VariantStringMetaImpl();
+    /**
+     * Creates an instance of VariantString.
+     * @param value - string
+     */
+    constructor(value: string)  {
+        super();
+        this.value = value;
+        
+    }
+    public getValue(): string  {
+        return this.value;
+        
+    }
+    /**
+     * Calculates a hash code for a static instance of VariantString.
+     * @param {VariantString | null | undefined} obj - The object to hash.
+     * @returns {number} The hash code.
+     */
+    public static staticHashCode(obj: VariantString | null | undefined): number  {
+        return VariantString.META.metaHashCode(obj);
+        
+    }
+    /**
+     * Compares a static instance of VariantString with another object.
+     * @param {VariantString | null | undefined} v1 - The first object.
+     * @param {any | null | undefined} v2 - The second object.
+     * @returns {boolean} True if the objects are equal.
+     */
+    public static staticEquals(v1: VariantString | null | undefined, v2: any | null | undefined): boolean  {
+        return VariantString.META.metaEquals(v1, v2);
+        
+    }
+    /**
+     * Calculates a hash code for this object.
+     * @returns {number} The hash code.
+     */
+    public hashCode(): number  {
+        return VariantString.staticHashCode(this);
+        
+    }
+    /**
+     * Checks if this object is equal to another.
+     * @param {any} other - The object to compare with.
+     * @returns {boolean} True if the objects are equal, false otherwise.
+     */
+    public equals(other: any): boolean  {
+        return VariantString.staticEquals(this, other);
+        
+    }
+    public toString(result: AString): AString  {
+        VariantString.META.metaToString(this, result);
+        return result;
+        
+    }
+    
+}
 export class SmartHomeClientStream implements ToString  {
     public readonly data: Uint8Array;
     /**
@@ -651,9 +721,6 @@ export class SmartHomeClientStream implements ToString  {
     }
     
 }
-/**
- * A stream of commands destined FOR the Commutator.
- */
 export class SmartHomeCommutatorStream implements ToString  {
     public readonly data: Uint8Array;
     /**
@@ -698,218 +765,29 @@ export class SmartHomeCommutatorStream implements ToString  {
     
 }
 /**
- * A stream of commands destined FOR the Service.
- */
-export class SmartHomeServiceStream implements ToString  {
-    public readonly data: Uint8Array;
-    /**
-     * Creates an instance of SmartHomeServiceStream.
-     * @param data - The raw byte data for this stream.
-     */
-    constructor(data: Uint8Array)  {
-        this.data = data;
-        
-    }
-    public static readonly META: FastMetaType<SmartHomeServiceStream> = new Impl.SmartHomeServiceStreamMetaImpl();
-    public toString(result: AString): AString  {
-        SmartHomeServiceStream.META.metaToString(this, result);
-        return result;
-        
-    }
-    public accept(context: FastFutureContext, provider: BytesConverter, localApi: SmartHomeServiceApi): void  {
-        const decryptedData = provider(this.data);
-        const dataInStatic = new DataInOutStatic(decryptedData);
-        if (!(SmartHomeServiceApi as any).META) throw new Error(`META not found for API type SmartHomeServiceApi`);
-        (SmartHomeServiceApi as any).META.makeLocal_fromDataIn(context, dataInStatic, localApi);
-        
-    }
-    public static fromRemote(context: FastFutureContext, provider: BytesConverter, remote: RemoteApiFuture<SmartHomeServiceApiRemote>, sendFuture: AFuture): SmartHomeServiceStream  {
-        remote.executeAll(context, sendFuture);
-        const encryptedData = provider(context.remoteDataToArrayAsArray());
-        return new SmartHomeServiceStream(encryptedData);
-        
-    }
-    public static fromRemoteConsumer(context: FastFutureContext, provider: BytesConverter, remoteConsumer: AConsumer<SmartHomeServiceApiRemote>): SmartHomeServiceStream  {
-        const api = (SmartHomeServiceApi as any).META.makeRemote(context);
-        remoteConsumer(api);
-        const encryptedData = provider(context.remoteDataToArrayAsArray());
-        return new SmartHomeServiceStream(encryptedData);
-        
-    }
-    public static fromRemoteBytes(provider: BytesConverter, remoteData: Uint8Array): SmartHomeServiceStream  {
-        const encryptedData = provider(remoteData);
-        return new SmartHomeServiceStream(encryptedData);
-        
-    }
-    
-}
-/**
- * The main API implemented by the central Smart Home Service (Hub).
- */
-export interface SmartHomeServiceApi  {
-    /**
-     * Registers the calling client with the service.
-     *
-     * @param type - ClientType
-     * @param sensors - HardwareSensor[]
-     * @param actors - HardwareActor[]
-     *
-     * @aetherMethodId 3
-     */
-    register(type: ClientType, sensors: HardwareSensor[], actors: HardwareActor[]): void;
-    /**
-     * Called by GUI to get a list of all *paired* logical devices.
-     *
-     * @returns ARFuture<Device[]>
-     *
-     * @aetherMethodId 4
-     */
-    getAllDevices(): ARFuture<Device[]>;
-    /**
-     * Called by GUI to send a command package to a specific actor on a specific commutator.
-     *
-     * @param commutatorId - UUID
-     * @param localActorId - number
-     * @param pkg - Uint8Array
-     * @returns ARFuture<Actor>
-     *
-     * @aetherMethodId 5
-     */
-    executeActorCommand(commutatorId: UUID, localActorId: number, pkg: Uint8Array): ARFuture<Actor>;
-    /**
-     * Called by GUI to get a list of Commutators that are not yet approved.
-     *
-     * @returns ARFuture<PendingPairing[]>
-     *
-     * @aetherMethodId 6
-     */
-    getPendingPairings(): ARFuture<PendingPairing[]>;
-    /**
-     * Called by GUI when the user approves a Commutator.
-     *
-     * @param commutatorUuid - UUID
-     *
-     * @aetherMethodId 7
-     */
-    approvePairing(commutatorUuid: UUID): void;
-    /**
-     * Called by a paired Commutator to push new sensor data.
-     *
-     * @param localSensorId - number
-     * @param data - DeviceStateData
-     *
-     * @aetherMethodId 8
-     */
-    pushSensorData(localSensorId: number, data: DeviceStateData): void;
-    /**
-     * Called by GUI to request a full sensor state refresh from all connected Commutators.
-     *
-     * @aetherMethodId 9
-     */
-    refreshAllSensorStates(): void;
-    
-}
-export namespace SmartHomeServiceApi  {
-    export const META: FastMetaApi<SmartHomeServiceApi, SmartHomeServiceApiRemote> = new Impl.SmartHomeServiceApiMetaImpl();
-    
-}
-export interface SmartHomeServiceApiRemote extends SmartHomeServiceApi, RemoteApi  {
-    
-}
-export abstract class SmartHomeServiceApiLocal<RT extends SmartHomeServiceApiRemote> implements SmartHomeServiceApi  {
-    protected readonly remoteApi: RT;
-    public getRemoteApi(): RT  {
-        return this.remoteApi;
-        
-    }
-    protected constructor(remoteApi: RT)  {
-        this.remoteApi = remoteApi;
-        
-    }
-    /**
-     * Registers the calling client with the service.
-     *
-     * @param type - ClientType
-     * @param sensors - HardwareSensor[]
-     * @param actors - HardwareActor[]
-     *
-     * @aetherMethodId 3
-     */
-    public abstract register(type: ClientType, sensors: HardwareSensor[], actors: HardwareActor[]): void;
-    /**
-     * Called by GUI to get a list of all *paired* logical devices.
-     *
-     * @returns ARFuture<Device[]>
-     *
-     * @aetherMethodId 4
-     */
-    public abstract getAllDevices(): ARFuture<Device[]>;
-    /**
-     * Called by GUI to send a command package to a specific actor on a specific commutator.
-     *
-     * @param commutatorId - UUID
-     * @param localActorId - number
-     * @param pkg - Uint8Array
-     * @returns ARFuture<Actor>
-     *
-     * @aetherMethodId 5
-     */
-    public abstract executeActorCommand(commutatorId: UUID, localActorId: number, pkg: Uint8Array): ARFuture<Actor>;
-    /**
-     * Called by GUI to get a list of Commutators that are not yet approved.
-     *
-     * @returns ARFuture<PendingPairing[]>
-     *
-     * @aetherMethodId 6
-     */
-    public abstract getPendingPairings(): ARFuture<PendingPairing[]>;
-    /**
-     * Called by GUI when the user approves a Commutator.
-     *
-     * @param commutatorUuid - UUID
-     *
-     * @aetherMethodId 7
-     */
-    public abstract approvePairing(commutatorUuid: UUID): void;
-    /**
-     * Called by a paired Commutator to push new sensor data.
-     *
-     * @param localSensorId - number
-     * @param data - DeviceStateData
-     *
-     * @aetherMethodId 8
-     */
-    public abstract pushSensorData(localSensorId: number, data: DeviceStateData): void;
-    /**
-     * Called by GUI to request a full sensor state refresh from all connected Commutators.
-     *
-     * @aetherMethodId 9
-     */
-    public abstract refreshAllSensorStates(): void;
-    
-}
-/**
- * The API implemented by each Commutator. It receives PUSH commands from the Service.
+ * The API implemented by each Commutator.
  */
 export interface SmartHomeCommutatorApi  {
     /**
-     * Called by the Service as the final step of pairing.
+     * Запрашивает список всех физических устройств на этом коммутаторе.
      *
-     * @aetherMethodId 3
+     * @returns ARFuture<HardwareDevice[]>
+     *
+     * @aetherMethodId 10
      */
-    confirmPairing(): void;
+    getSystemStructure(): ARFuture<HardwareDevice[]>;
     /**
-     * Called by the Service to execute a command on a physical actor.
+     * Отправить команду на конкретный актуатор.
      *
      * @param localActorId - number
-     * @param pkg - Uint8Array
+     * @param command - VariantData
      * @returns ARFuture<DeviceStateData>
      *
      * @aetherMethodId 4
      */
-    executeActorCommand(localActorId: number, pkg: Uint8Array): ARFuture<DeviceStateData>;
+    executeActorCommand(localActorId: number, command: VariantData): ARFuture<DeviceStateData>;
     /**
-     * Called by the Service to request the current state of a *single* device.
+     * Запросить текущее состояние конкретного устройства.
      *
      * @param localDeviceId - number
      * @returns ARFuture<DeviceStateData>
@@ -918,7 +796,7 @@ export interface SmartHomeCommutatorApi  {
      */
     queryState(localDeviceId: number): ARFuture<DeviceStateData>;
     /**
-     * Called by the Service to command this Commutator to read all its sensors.
+     * Попросить коммутатор прислать PUSH-уведомления о состоянии всех датчиков.
      *
      * @aetherMethodId 6
      */
@@ -943,23 +821,25 @@ export abstract class SmartHomeCommutatorApiLocal<RT extends SmartHomeCommutator
         
     }
     /**
-     * Called by the Service as the final step of pairing.
+     * Запрашивает список всех физических устройств на этом коммутаторе.
      *
-     * @aetherMethodId 3
+     * @returns ARFuture<HardwareDevice[]>
+     *
+     * @aetherMethodId 10
      */
-    public abstract confirmPairing(): void;
+    public abstract getSystemStructure(): ARFuture<HardwareDevice[]>;
     /**
-     * Called by the Service to execute a command on a physical actor.
+     * Отправить команду на конкретный актуатор.
      *
      * @param localActorId - number
-     * @param pkg - Uint8Array
+     * @param command - VariantData
      * @returns ARFuture<DeviceStateData>
      *
      * @aetherMethodId 4
      */
-    public abstract executeActorCommand(localActorId: number, pkg: Uint8Array): ARFuture<DeviceStateData>;
+    public abstract executeActorCommand(localActorId: number, command: VariantData): ARFuture<DeviceStateData>;
     /**
-     * Called by the Service to request the current state of a *single* device.
+     * Запросить текущее состояние конкретного устройства.
      *
      * @param localDeviceId - number
      * @returns ARFuture<DeviceStateData>
@@ -968,7 +848,7 @@ export abstract class SmartHomeCommutatorApiLocal<RT extends SmartHomeCommutator
      */
     public abstract queryState(localDeviceId: number): ARFuture<DeviceStateData>;
     /**
-     * Called by the Service to command this Commutator to read all its sensors.
+     * Попросить коммутатор прислать PUSH-уведомления о состоянии всех датчиков.
      *
      * @aetherMethodId 6
      */
@@ -976,25 +856,18 @@ export abstract class SmartHomeCommutatorApiLocal<RT extends SmartHomeCommutator
     
 }
 /**
- * The API implemented by the GUI Client. It receives PUSH notifications from the Service.
+ * The API implemented by the GUI Client.
  */
 export interface SmartHomeClientApi  {
     /**
-     * PUSH notification from the Service when any device's state changes.
+     * Уведомление от коммутатора об изменении состояния.
      *
-     * @param device - Device
+     * @param localDeviceId - number
+     * @param state - DeviceStateData
      *
      * @aetherMethodId 3
      */
-    deviceStateUpdated(device: Device): void;
-    /**
-     * PUSH notification from the Service when a new Commutator connects.
-     *
-     * @param pairingInfo - PendingPairing
-     *
-     * @aetherMethodId 4
-     */
-    pairingRequested(pairingInfo: PendingPairing): void;
+    deviceStateUpdated(localDeviceId: number, state: DeviceStateData): void;
     
 }
 export namespace SmartHomeClientApi  {
@@ -1015,20 +888,13 @@ export abstract class SmartHomeClientApiLocal<RT extends SmartHomeClientApiRemot
         
     }
     /**
-     * PUSH notification from the Service when any device's state changes.
+     * Уведомление от коммутатора об изменении состояния.
      *
-     * @param device - Device
+     * @param localDeviceId - number
+     * @param state - DeviceStateData
      *
      * @aetherMethodId 3
      */
-    public abstract deviceStateUpdated(device: Device): void;
-    /**
-     * PUSH notification from the Service when a new Commutator connects.
-     *
-     * @param pairingInfo - PendingPairing
-     *
-     * @aetherMethodId 4
-     */
-    public abstract pairingRequested(pairingInfo: PendingPairing): void;
+    public abstract deviceStateUpdated(localDeviceId: number, state: DeviceStateData): void;
     
 }
