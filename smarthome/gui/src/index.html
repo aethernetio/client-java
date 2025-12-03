@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Aether Smart Home P2P</title>
+    <style>
+        :root {
+            --bg-color: #eaeff2;
+            --card-bg: #fff;
+            --border-col: #b0b0b0;
+            --text-col: #111; /* Более контрастный черный */
+            --pad: 10px;
+        }
+
+        html {
+            font-size: 16px; /* База: 1rem = 16px */
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-size: 1rem; /* 16px */
+            background: var(--bg-color);
+            color: var(--text-col);
+            margin: 0;
+            padding: var(--pad);
+            box-sizing: border-box;
+            line-height: 1.4;
+        }
+
+        /* --- ЭЛЕМЕНТЫ УПРАВЛЕНИЯ --- */
+
+        button {
+            padding: 0.6rem 1.2rem; /* Крупные кнопки для тача */
+            font-size: 0.95rem;     /* ~15px */
+            cursor: pointer;
+            font-weight: 600;
+            border: 1px solid #888;
+            background: #f0f0f0;
+            border-radius: 4px;
+            touch-action: manipulation;
+        }
+        button:active { transform: translateY(1px); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .btn-red { background: #e74c3c; border-color: #c0392b; color: white; }
+        .btn-green { background: #2ecc71; border-color: #27ae60; color: white; }
+        .btn-blue { background: #3498db; border-color: #2980b9; color: white; }
+
+        input[type="text"], input[type="number"] {
+            padding: 0.5rem;
+            font-size: 1rem; /* 16px - предотвращает зум на iPhone */
+            border: 1px solid #999;
+            border-radius: 4px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        label {
+            font-weight: 500;
+            font-size: 0.95rem; /* ~15px */
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        /* --- СЕТКА И КАРТОЧКИ --- */
+
+        #header-area {
+            background: var(--card-bg);
+            border: 1px solid var(--border-col);
+            padding: 1rem;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        #main-area {
+            display: flex;
+            flex-direction: column;
+            gap: 15px; /* Чуть больше воздуха между блоками */
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-col);
+            border-radius: 6px;
+            padding: 12px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+
+        .card h3 {
+            margin: 0 0 10px 0;
+            padding-bottom: 8px;
+            font-size: 1.1rem; /* ~18px */
+            font-weight: 700;
+            border-bottom: 2px solid #eee;
+            color: #2c3e50;
+        }
+
+        /* Конфигурация (Settings) */
+        .config-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: flex-end;
+            margin-bottom: 10px;
+        }
+        .config-item { flex: 1 1 220px; }
+
+        /* --- ТАБЛИЦА --- */
+        .table-wrapper { overflow-x: auto; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.95rem; /* ~15px - читаемо */
+        }
+        th, td {
+            border: 1px solid #ccc;
+            padding: 8px 10px; /* Увеличенные отступы внутри ячеек */
+            text-align: left;
+        }
+        th { background: #f2f2f2; font-weight: 700; }
+        tr.active-row { background-color: #e0f7fa; border-left: 5px solid #00acc1; }
+        td button { padding: 0.3rem 0.6rem; font-size: 0.9rem; }
+
+        /* --- ГРАФИКИ --- */
+        .charts-wrapper {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        @media (min-width: 900px) {
+            .charts-wrapper { flexDirection: row; }
+            .charts-wrapper .card { flex: 1; }
+        }
+        .chart-container {
+            position: relative;
+            height: 260px; /* Выше, чтобы текст осей влезал */
+            width: 100%;
+        }
+
+        /* --- ПЛИТКИ УСТРОЙСТВ --- */
+        .device-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            gap: 12px;
+        }
+
+        .device-card {
+            background: #fcfcfc;
+            border: 1px solid #999;
+            border-left: 6px solid #3498db;
+            border-radius: 4px;
+            padding: 10px;
+        }
+        .device-card h4 {
+            margin: 0 0 6px 0;
+            font-size: 1rem;
+            color: #444;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .device-card .val {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #222;
+            margin-bottom: 8px;
+        }
+        /* Чекбокс и подпись крупнее */
+        .device-card label {
+            font-size: 0.95rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            padding: 4px 0;
+        }
+        .device-card input[type="checkbox"] {
+            width: 1.3rem;
+            height: 1.3rem;
+            margin: 0;
+        }
+
+    </style>
+</head>
+<body>
+
+<div id="header-area">
+    <div>
+        <div style="font-size: 1.3rem; font-weight: 800;">Aether P2P</div>
+        <div id="status-text" style="font-size: 0.9rem; margin-top: 4px; color:#555;">Waiting...</div>
+    </div>
+    <div style="display: flex; gap: 10px;">
+        <button id="refresh-button" class="btn-blue">Refetch</button>
+        <button id="reset-session-button" class="btn-red">Reset</button>
+    </div>
+</div>
+
+<div id="main-area">
+
+    <div class="card">
+        <h3>Settings</h3>
+
+        <div class="config-row" id="core-connection-section">
+            <div class="config-item" style="flex: 2;">
+                <label>Core URI:</label>
+                <div style="display: flex; gap: 5px;">
+                    <input type="text" id="reg-uri-input" value="ws://localhost:9011">
+                    <button id="connect-core-button" class="btn-blue">Connect</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="config-row" id="app-config-section">
+            <div class="config-item" style="flex: 2;">
+                <label>Add Commutator (UUID):</label>
+                <div style="display: flex; gap: 5px;">
+                    <input type="text" id="new-uuid-input" placeholder="Paste UUID here...">
+                    <button id="add-commutator-button" class="btn-green">Add</button>
+                </div>
+            </div>
+
+            <div class="config-item">
+                <label>Poll (ms):</label>
+                <input type="number" id="polling-timeout-input" value="2000">
+            </div>
+
+            <div class="config-item">
+                <label>Buffer:</label>
+                <input type="number" id="buffer-size-input" value="50" min="10" max="1000">
+            </div>
+        </div>
+
+        <div style="background: #f1f1f1; padding: 10px; border-radius: 4px; font-size: 0.95rem; display: flex; justify-content: space-between;">
+            <span>Requests: <strong id="total-req-disp">0</strong></span>
+            <span>Window Loss: <strong id="window-loss-disp" style="color: #c0392b;">0%</strong></span>
+        </div>
+    </div>
+
+    <div class="charts-wrapper">
+        <div class="card">
+            <h3>Latency (RTT)</h3>
+            <div class="chart-container">
+                <canvas id="rtt-chart"></canvas>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Sensors</h3>
+            <div class="chart-container">
+                <canvas id="sensor-chart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Active Devices</h3>
+        <div id="devices-grid" class="device-grid">
+            <div style="padding: 20px; color: #777; text-align: center;">
+                No devices visible. Select a commutator below.
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Commutators</h3>
+        <div class="table-wrapper">
+            <table id="commutator-table">
+                <thead>
+                <tr>
+                    <th>UUID</th>
+                    <th style="width: 90px;">Last Seen</th>
+                    <th style="width: 60px;">Req</th>
+                    <th style="width: 60px;">Res</th>
+                    <th style="width: 120px;">Actions</th>
+                </tr>
+                </thead>
+                <tbody id="commutators-table-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+
+<script src="bundle.js"></script>
+</body>
+</html>

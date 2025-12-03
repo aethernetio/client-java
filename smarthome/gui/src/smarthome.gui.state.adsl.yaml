@@ -1,0 +1,44 @@
+types:
+  GraphPoint:
+    fields:
+      timestamp: long
+      value: double
+
+  SensorHistorySeries:
+    fields:
+      commutatorUuid: string
+      deviceId: int
+      deviceName: string
+      unit: string?
+      points: GraphPoint[]
+
+  KnownCommutator:
+    fields:
+      uuid: string
+      label: string?
+      lastSeen: long
+      # Новые поля статистики
+      totalRequests: int
+      totalResponses: int
+
+  MetricPoint:
+    fields:
+      timestamp: long
+      rtt: int
+
+  AppStateData:
+    fields:
+      pollingTimeoutMs: int
+      pollingBufferSize: int  # Размер скользящего окна
+      targetDeviceId: int
+      targetCommutatorUuid: string?
+
+      knownCommutators: KnownCommutator[]
+      sensorHistory: SensorHistorySeries[]
+      rttMetrics: MetricPoint[]
+
+      # Общая статистика сессии (можно оставить как reference)
+      totalRequests: int
+      packetLossCount: int
+
+      visibleSensorKeys: string[]

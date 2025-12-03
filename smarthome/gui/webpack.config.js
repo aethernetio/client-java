@@ -1,43 +1,51 @@
 const path = require('path');
+const HtmlWebpackPlugin = require('html-webpack-plugin');
+// ИСПРАВЛЕНО: Правильное имя пакета
+const HtmlInlineScriptPlugin = require('html-inline-script-webpack-plugin');
 
 module.exports = {
-  mode: 'development',
+  mode: 'production',
+
   entry: './src/index.ts',
+
   module: {
     rules: [
       {
-        test: /\.tsx?$/, // This test will match both .ts and .tsx files
+        test: /\.tsx?$/,
         use: 'ts-loader',
         exclude: /node_modules/,
       },
     ],
   },
+
   resolve: {
     extensions: ['.tsx', '.ts', '.js'],
-
-    // --- ADDED SECTION ---
-    // This is required for Webpack 5+
     fallback: {
-      // We are not using bcryptjs, so we don't need a polyfill for 'crypto'.
-      // Setting this to 'false' tells Webpack to ignore it,
-      // resolving the build error from aether-client's dependencies.
       "crypto": false
     }
   },
+
   output: {
     filename: 'bundle.js',
     path: path.resolve(__dirname, 'dist'),
+    clean: true,
   },
 
-  // --- ADDED SECTION ---
-  // Configuration for the 'webpack serve' (npm start) command
+  plugins: [
+    new HtmlWebpackPlugin({
+      template: './src/index.html',
+      filename: 'index.html',
+      inject: 'body',
+      minify: false
+    }),
+    // Встраивает JS (bundle.js) прямо внутрь HTML
+    new HtmlInlineScriptPlugin()
+  ],
+
   devServer: {
-    // This tells the dev server to serve files from the project root directory.
-    // This is crucial so it can find and serve 'index.html'.
     static: {
       directory: path.join(__dirname, './dist'),
     },
-    // Automatically open the browser when the server starts
     open: true,
   }
 };
