@@ -6,7 +6,7 @@ Chart.register(...registerables);
 
 const CORE_URI = "ws://reg-dev.aethernet.io:9011";
 const WINDOW_SIZE = 50;
-const STORAGE_KEY = 'aether_simple_v3';
+const STORAGE_KEY = 'aether_complex_v1';
 
 interface DeviceStats {
     uuid: string;
@@ -32,12 +32,7 @@ interface SavedState {
     showLossTotal: boolean;
     showLossWin: boolean;
     showRtt: boolean;
-    devices: {
-        uuid: string;
-        isPlotting: boolean;
-        isPaused: boolean;
-        color: string;
-    }[];
+    devices: { uuid: string; isPlotting: boolean; isPaused: boolean; color: string; }[];
 }
 
 const devices = new Map<string, DeviceStats>();
@@ -64,39 +59,25 @@ async function init() {
     controller.onConnectionState.add(state => {
         if (state === 'core_connected') {
             coreStatus.innerHTML = '<span class="status-dot dot-green"></span> Core Online';
-
-            // 1. Обрабатываем URL (если есть)
             checkUrlAndConnect();
-
-            // 2. ИСПРАВЛЕНИЕ: Восстанавливаем соединения для ВСЕХ сохраненных устройств
-            // Мы вызываем connectDevice, а не startPollingLoop.
-            // Цикл запустится автоматически по событию onDeviceConnected.
             devices.forEach(d => {
-                if (d.isActive) {
-                    controller.connectDevice(d.uuid);
-                }
+                if (d.isActive) controller.connectDevice(d.uuid);
             });
-
         } else if (state === 'disconnected') {
             coreStatus.innerHTML = '<span class="status-dot dot-red"></span> Disconnected';
-        } else if (state === 'connecting') {
+        } else {
             coreStatus.innerHTML = '<span class="status-dot dot-gray"></span> Connecting...';
         }
     });
 
     controller.onDeviceConnected.add(uuid => {
-        // Если это новое устройство (которого нет в стейте), добавляем его
         if (!devices.has(uuid)) {
             addDeviceToState(uuid);
             renderTable();
             saveState();
         }
-
-        // Запускаем опрос, если он еще не идет
         const dev = devices.get(uuid)!;
-        if (!dev.isLoopRunning) {
-            startPollingLoop(dev);
-        }
+        if (!dev.isLoopRunning) startPollingLoop(dev);
     });
 
     document.getElementById('btn-add')!.onclick = () => {
@@ -104,6 +85,14 @@ async function init() {
         if (uuid) {
             connectAndAdd(uuid);
             uuidInput.value = '';
+        }
+    };
+
+    document.getElementById('btn-reset')!.onclick = () => {
+        if (confirm("Full Reset?")) {
+            isResetting = true;
+            localStorage.removeItem(STORAGE_KEY);
+            window.location.reload();
         }
     };
 
@@ -149,19 +138,17 @@ function addDeviceToState(uuid: string) {
 function checkUrlAndConnect() {
     const params = new URLSearchParams(window.location.search);
     const targetUuid = params.get('uuid');
-    if (targetUuid) connectAndAdd(targetUuid);
+    if (targetUuid) {
+        connectAndAdd(targetUuid);
+    }
 }
 
 async function startPollingLoop(device: DeviceStats) {
     if (device.isLoopRunning) return;
     device.isLoopRunning = true;
 
-    console.log(`Started loop for ${device.shortId}`);
-
     while (device.isActive) {
         const periodMs = parseInt(periodInput.value) || 500;
-
-        // Пауза
         if (device.isPaused) {
             await new Promise(r => setTimeout(r, 500));
             continue;
@@ -169,7 +156,6 @@ async function startPollingLoop(device: DeviceStats) {
 
         const timeoutMs = parseInt(timeoutInput.value) || 2000;
         const reqCount = parseInt(countInput.value) || 50;
-
         device.totalRequests++;
         const startTime = Date.now();
         let success = false;
@@ -178,31 +164,23 @@ async function startPollingLoop(device: DeviceStats) {
             const timeoutPromise = new Promise<never>((_, reject) =>
                 setTimeout(() => reject(new Error("TIMEOUT")), timeoutMs)
             );
-
             const requestPromise = controller.requestRecords(device.uuid, reqCount);
             const records = await Promise.race([requestPromise, timeoutPromise]);
-
             success = true;
             const rtt = Date.now() - startTime;
 
             if (records && records.length > 0) {
                 device.dataPoints = [];
                 let cursorTime = Date.now();
-
                 for (const rec of records) {
                     const rawVal = rec.value & 0xFF;
                     const temperature = (rawVal / 3.0) - 30.0;
-
                     device.dataPoints.push({ x: cursorTime, y: temperature });
-
-                    const diffSeconds = rec.time & 0xFF;
-                    const diffMs = diffSeconds * 1000;
-                    cursorTime -= diffMs;
+                    cursorTime -= (rec.time & 0xFF) * 1000;
                 }
             }
 
-            const metricTime = Date.now();
-            device.rttPoints.push({x: metricTime, y: rtt});
+            device.rttPoints.push({x: Date.now(), y: rtt});
             if (device.rttPoints.length > 50) device.rttPoints.shift();
 
         } catch (e) {
@@ -216,12 +194,9 @@ async function startPollingLoop(device: DeviceStats) {
         device.windowBuffer.push(success);
         if (device.windowBuffer.length > WINDOW_SIZE) device.windowBuffer.shift();
 
-        const lostInWindow = device.windowBuffer.filter(x => !x).length;
-        const lossPct = (lostInWindow / device.windowBuffer.length) * 100;
-
+        const lossPct = (device.windowBuffer.filter(x => !x).length / device.windowBuffer.length) * 100;
         device.lossTotalPoints.push({x: now, y: device.totalLost});
         if (device.lossTotalPoints.length > 50) device.lossTotalPoints.shift();
-
         device.lossWindowPoints.push({x: now, y: lossPct});
         if (device.lossWindowPoints.length > 50) device.lossWindowPoints.shift();
 
@@ -232,7 +207,6 @@ async function startPollingLoop(device: DeviceStats) {
 
 function saveState() {
     if (isResetting) return;
-
     const state: SavedState = {
         pollPeriod: parseInt(periodInput.value) || 500,
         pollTimeout: parseInt(timeoutInput.value) || 2000,
@@ -243,12 +217,7 @@ function saveState() {
         devices: []
     };
     devices.forEach(d => {
-        state.devices.push({
-            uuid: d.uuid,
-            isPlotting: d.isPlotting,
-            isPaused: d.isPaused,
-            color: d.color
-        });
+        state.devices.push({ uuid: d.uuid, isPlotting: d.isPlotting, isPaused: d.isPaused, color: d.color });
     });
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
@@ -261,11 +230,9 @@ function loadState() {
         if (state.pollPeriod) periodInput.value = state.pollPeriod.toString();
         if (state.pollTimeout) timeoutInput.value = state.pollTimeout.toString();
         if (state.requestCount) countInput.value = state.requestCount.toString();
-
         optLossTotal.checked = !!state.showLossTotal;
         optLossWin.checked = !!state.showLossWin;
         optRtt.checked = !!state.showRtt;
-
         if (state.devices) {
             state.devices.forEach(savedDev => {
                 const stats: DeviceStats = {
@@ -288,7 +255,7 @@ function loadState() {
             });
             renderTable();
         }
-    } catch (e) { console.error("State load error", e); }
+    } catch (e) {}
 }
 
 function initChart() {
@@ -303,19 +270,10 @@ function initChart() {
             parsing: false,
             interaction: { mode: 'nearest', axis: 'x', intersect: false },
             scales: {
-                x: {
-                    type: 'linear',
-                    position: 'bottom',
-                    ticks: { callback: (val) => new Date(Number(val)).toLocaleTimeString() }
-                },
+                x: { type: 'linear', position: 'bottom', ticks: { callback: (val) => new Date(Number(val)).toLocaleTimeString() } },
                 y: { beginAtZero: false }
             },
-            plugins: {
-                legend: {
-                    position: 'top',
-                    labels: { boxWidth: 10, padding: 10, font: { size: 11 } }
-                }
-            }
+            plugins: { legend: { position: 'top', labels: { boxWidth: 10, padding: 10, font: { size: 11 } } } }
         }
     });
 }
@@ -329,45 +287,10 @@ function updateChartUI() {
     const datasets: any[] = [];
     devices.forEach(d => {
         if (!d.isPlotting || !d.isActive) return;
-
-        datasets.push({
-            label: `${d.shortId} (°C)`,
-            data: d.dataPoints,
-            borderColor: d.color,
-            borderWidth: 2,
-            pointRadius: 1,
-            tension: 0.1
-        });
-
-        if (optRtt.checked) {
-            datasets.push({
-                label: `${d.shortId} (RTT)`,
-                data: d.rttPoints,
-                borderColor: d.color,
-                borderDash: [5, 5],
-                borderWidth: 1,
-                pointRadius: 0
-            });
-        }
-        if (optLossTotal.checked) {
-            datasets.push({
-                label: `${d.shortId} (Loss)`,
-                data: d.lossTotalPoints,
-                borderColor: '#e74c3c',
-                borderWidth: 1,
-                pointRadius: 0
-            });
-        }
-        if (optLossWin.checked) {
-            datasets.push({
-                label: `${d.shortId} (Loss %)`,
-                data: d.lossWindowPoints,
-                borderColor: '#f39c12',
-                borderDash: [2, 2],
-                borderWidth: 1,
-                pointRadius: 0
-            });
-        }
+        datasets.push({ label: `${d.shortId} (°C)`, data: d.dataPoints, borderColor: d.color, borderWidth: 2, pointRadius: 1, tension: 0.1 });
+        if (optRtt.checked) datasets.push({ label: `${d.shortId} (RTT)`, data: d.rttPoints, borderColor: d.color, borderDash: [5, 5], borderWidth: 1, pointRadius: 0 });
+        if (optLossTotal.checked) datasets.push({ label: `${d.shortId} (Loss)`, data: d.lossTotalPoints, borderColor: '#e74c3c', borderWidth: 1, pointRadius: 0 });
+        if (optLossWin.checked) datasets.push({ label: `${d.shortId} (Loss %)`, data: d.lossWindowPoints, borderColor: '#f39c12', borderDash: [2, 2], borderWidth: 1, pointRadius: 0 });
     });
     chart.data.datasets = datasets;
     chart.update();
@@ -387,7 +310,6 @@ function renderTable() {
         tdCheck.appendChild(cb);
 
         const tdInfo = document.createElement('td');
-
         const divId = document.createElement('div');
         divId.style.fontWeight = 'bold';
         divId.style.fontFamily = 'monospace';
@@ -399,17 +321,10 @@ function renderTable() {
         const divBtns = document.createElement('div');
         divBtns.style.display = 'flex';
         divBtns.style.gap = '5px';
-
         const btnPause = document.createElement('button');
-        // Кнопка: если пауза (true), показываем Play. Если работает, показываем Pause.
         btnPause.textContent = d.isPaused ? '▶' : '⏸';
         btnPause.className = d.isPaused ? 'btn-icon btn-run' : 'btn-icon btn-pause';
-        btnPause.onclick = () => {
-            d.isPaused = !d.isPaused;
-            saveState();
-            renderTable();
-        };
-
+        btnPause.onclick = () => { d.isPaused = !d.isPaused; saveState(); renderTable(); };
         divBtns.appendChild(btnPause);
         tdInfo.appendChild(divId);
         tdInfo.appendChild(divBtns);

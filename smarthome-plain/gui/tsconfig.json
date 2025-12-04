@@ -3,7 +3,7 @@
  "outDir": "./dist/",
  "noImplicitAny": true,
  "module": "CommonJS",
- "target": "ES2024",
+ "target": "ES2022",
  "jsx": "react",
  "moduleResolution": "node",
  "esModuleInterop": true,

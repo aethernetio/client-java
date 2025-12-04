@@ -1,6 +1,6 @@
 {
   "name": "aether-client",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "main": "build/aether_client.js",
   "types": "build/aether_client.d.ts",
   "files": [
@@ -29,7 +29,7 @@
     "protocol": "ts-node generator/AetherProtocolPlugin.ts",
     "test:p2p": "jest aether_point_to_point.test.ts",
     "test:browser": "npx webpack --config webpack.config.mjs --env buildTarget=test && CHROME_BIN=/usr/bin/yandex-browser npx karma start karma.conf.js",
-    "pub": "npm run build && npm pack && curl -T aether-client-1.0.0.tgz -u \"deploy:1930\" \"http://nexus.aethernet.io/npm-private/aether-client-1.0.0.tgz\""
+    "pub": "npm run build && npm pack && curl -T aether-client-1.0.1.tgz -u \"deploy:1930\" \"https://nexus.aethernet.io/npm-private/aether-client-1.0.1.tgz\""
   },
   "overrides": {
     "chokidar": "3.5.3",

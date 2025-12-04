@@ -125,6 +125,7 @@ public final class AetherCloudClient implements Destroyable {
     }
 
     public AetherCloudClient(ClientState store, String name) {
+        Objects.requireNonNull(store);
         logClientContext = Log.of("SystemComponent", "Client", "ClientName", name);
         try (var ln = logClientContext.context()) {
             this.clientState = store;

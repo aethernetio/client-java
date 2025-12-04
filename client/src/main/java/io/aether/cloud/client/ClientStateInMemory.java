@@ -227,7 +227,7 @@ public class ClientStateInMemory implements ClientState, ToString {
 
     public void save(File file) {
         try {
-            Files.write(file.toPath(), save(), StandardOpenOption.TRUNCATE_EXISTING);
+            Files.write(file.toPath(), save(), StandardOpenOption.CREATE);
         } catch (IOException e) {
             Log.error("Cannot save a store", e);
             throw new RuntimeException(e);

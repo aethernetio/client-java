@@ -3,11 +3,20 @@ const HtmlWebpackPlugin = require('html-webpack-plugin');
 const HtmlInlineScriptPlugin = require('html-inline-script-webpack-plugin');
 
 module.exports = {
-  mode: 'production',
-
-  entry: './src/index.ts',
-
+  mode: 'development',
+  devtool: false,
   stats: 'errors-only',
+
+  entry: {
+    simple: './src/simple.ts',
+    complex: './src/complex.ts',
+  },
+
+  optimization: {
+    minimize: false,
+    moduleIds: 'named',
+    chunkIds: 'named',
+  },
 
   module: {
     rules: [
@@ -27,16 +36,25 @@ module.exports = {
   },
 
   output: {
-    filename: 'bundle.js',
+    filename: '[name].bundle.js',
     path: path.resolve(__dirname, 'dist'),
     clean: true,
     publicPath: '',
+    pathinfo: false,
   },
 
   plugins: [
     new HtmlWebpackPlugin({
-      template: './src/index.html',
-      filename: 'index.html',
+      template: './src/simple.html',
+      filename: 'simple.html',
+      chunks: ['simple'],
+      inject: 'body',
+      minify: false
+    }),
+    new HtmlWebpackPlugin({
+      template: './src/complex.html',
+      filename: 'complex.html',
+      chunks: ['complex'],
       inject: 'body',
       minify: false
     }),
@@ -47,11 +65,17 @@ module.exports = {
     static: {
       directory: path.join(__dirname, './dist'),
     },
-    open: true,
+    open: ['/simple.html'],
     client: {
       logging: 'none',
       overlay: false,
       progress: false,
     },
+    historyApiFallback: {
+      rewrites: [
+        { from: /^\/simple/, to: '/simple.html' },
+        { from: /^\/complex/, to: '/complex.html' },
+      ]
+    }
   }
 };
