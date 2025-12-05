@@ -3,23 +3,27 @@ package io.aether.cloud.client;
 import io.aether.logger.Log;
 import io.aether.net.fastMeta.FastMetaApi;
 import io.aether.net.fastMeta.FastMetaClient;
-import io.aether.net.fastMeta.FastMetaNet; // <-- Импорт добавлен
+import io.aether.net.fastMeta.FastMetaNet;
 import io.aether.net.fastMeta.RemoteApi;
-// import io.aether.net.fastMeta.nio.FastMetaClientNIO; // <-- Импорт удален
 import io.aether.utils.RU;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
-import io.aether.utils.interfaces.AFunction; // <-- Импорт добавлен
+import io.aether.utils.interfaces.AFunction;
 import io.aether.utils.interfaces.Destroyable;
 
 import java.net.URI;
 
+/**
+ * Abstract base class for handling connections in the Aether Cloud client.
+ * Manages the lifecycle of the underlying FastMetaClient and connection state.
+ */
 public abstract class Connection<LT, RT extends RemoteApi> implements Destroyable {
     protected final AetherCloudClient client;
     protected final URI uri;
     protected final ARFuture<RT> connectFuture = ARFuture.make();
     protected final FastMetaClient<LT, RT> fastMetaClient;
     protected volatile RT rootApi;
+
     public Connection(
             AetherCloudClient client,
             URI uri,
@@ -42,6 +46,8 @@ public abstract class Connection<LT, RT extends RemoteApi> implements Destroyabl
             return localApi;
         };
         FastMetaNet.WritableConsumer writableConsumer = isWritable -> {
+            onConnectionStateChanged(isWritable);
+
             if (isWritable) {
                 if (this.rootApi != null) {
                     this.connectFuture.tryDone(this.rootApi);
@@ -62,6 +68,15 @@ public abstract class Connection<LT, RT extends RemoteApi> implements Destroyabl
                 writableConsumer
         );
         client.destroyer.add(fastMetaClient);
+    }
+
+    /**
+     * Hook method called when the underlying transport writability changes.
+     * Can be overridden by subclasses to react to reconnects (e.g., reset auth state).
+     *
+     * @param isWritable True if the connection is now writable (connected), false otherwise.
+     */
+    protected void onConnectionStateChanged(boolean isWritable) {
     }
 
     public RT getRootApi() {
@@ -90,7 +105,6 @@ public abstract class Connection<LT, RT extends RemoteApi> implements Destroyabl
 
     @Override
     public AFuture destroy(boolean force) {
-//        new RuntimeException().printStackTrace();
         Log.info("Destroying Connection to " + uri);
         return fastMetaClient.destroy(force);
     }

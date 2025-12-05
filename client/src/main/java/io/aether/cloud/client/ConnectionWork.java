@@ -22,6 +22,10 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
+/**
+ * Handles the specific connection logic for Work Servers, including authentication,
+ * batching of API requests, and message routing.
+ */
 public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> implements ClientApiUnsafe {
     public final AtomicLong lastBackPing = new AtomicLong(Long.MAX_VALUE);
     final ClientApiSafe apiSafe;
@@ -35,7 +39,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
 
     public ConnectionWork(AetherCloudClient client, ServerDescriptor s) {
         super(client, s.getIpAddress().getURI(AetherCodec.TCP), ClientApiUnsafe.META, LoginApi.META);
-        this.apiSafe = new MyClientApiSafe(client, this); // Передаем 'this'
+        this.apiSafe = new MyClientApiSafe(client, this);
         cryptoEngine = client.getCryptoEngineForServer(s.getId());
         serverDescriptor = s;
         this.basicStatus = false;
@@ -69,6 +73,17 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         };
     }
 
+    @Override
+    protected void onConnectionStateChanged(boolean isWritable) {
+        if (isWritable) {
+            Log.info("Network restored. Resetting auth state and forcing flush.", "uri", uri);
+            this.firstAuth = false;
+            this.flush();
+        } else {
+            this.firstAuth = false;
+        }
+    }
+
     /**
      * This method is added as a permanent task to 'remoteApiFuture' and is called
      * during the 'apiSafeCtx.flush()' process. It collects all pending batched
@@ -82,7 +97,6 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
 
         Integer[] requestServers = client.servers.getRequestsFor(Integer.class, this);
         if (requestServers.length > 0) {
-            // Преобразование Integer[] в short[] для API
             short[] serverIds = new short[requestServers.length];
             for (int i = 0; i < requestServers.length; i++) {
                 serverIds[i] = requestServers[i].shortValue();
@@ -90,13 +104,11 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             a.resolverServers(serverIds);
         }
 
-        // ClientGroups (NEW)
         UUID[] requestClientGroups = client.clientGroups.getRequestsFor(UUID.class, this);
         if (requestClientGroups.length > 0) {
             a.requestAccessGroupsForClients(requestClientGroups);
         }
 
-        // AccessGroups (NEW)
         Long[] requestAccessGroups = client.accessGroups.getRequestsFor(Long.class, this);
         if (requestAccessGroups.length > 0) {
             long[] groupIds = new long[requestAccessGroups.length];
@@ -106,32 +118,25 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             a.requestAccessGroupsItems(groupIds);
         }
 
-        // AllAccessedClients (NEW)
         UUID[] requestAllAccessed = client.allAccessedClients.getRequestsFor(UUID.class, this);
         if (requestAllAccessed.length > 0) {
             a.requestAllAccessedClients(requestAllAccessed);
         }
 
-        // AccessCheckCache (NEW)
         AccessCheckPair[] requestAccessCheck = client.accessCheckCache.getRequestsFor(AccessCheckPair.class, this);
         if (requestAccessCheck.length > 0) {
             a.requestAccessCheck(requestAccessCheck);
         }
 
-        // === 2. Mutation Requests (Access Group Add/Remove) ===
-
-        // Add Operations
         for (Map.Entry<Long, Map<UUID, ARFuture<Boolean>>> entry : client.accessOperationsAdd.entrySet()) {
             long groupId = entry.getKey();
             UUID[] uidsToAdd = entry.getValue().keySet().toArray(new UUID[0]);
             if (uidsToAdd.length > 0) {
                 Log.debug("Flushing ADD request for group $gid: $uids", "gid", groupId, "uids", uidsToAdd);
                 a.addItemsToAccessGroup(groupId, uidsToAdd);
-                // Мы не удаляем фьючерсы отсюда, мы ждем ответа от MyClientApiSafe
             }
         }
 
-        // Remove Operations
         for (Map.Entry<Long, Map<UUID, ARFuture<Boolean>>> entry : client.accessOperationsRemove.entrySet()) {
             long groupId = entry.getKey();
             UUID[] uidsToRemove = entry.getValue().keySet().toArray(new UUID[0]);
@@ -151,7 +156,6 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             a.client(task.uid, new ClientApiStream(apiSafeCtx, task.task::accept));
         }
 
-        // === 4. Message Stream Logic (unchanged) ===
         List<Message> messageForSend = null;
         for (var m : client.messageNodeMap.values()) {
             if (m.connectionsOut.contains(this)) {
@@ -182,7 +186,6 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             a.sendMessages(messageForSend.toArray(new Message[0]));
         }
 
-        // 4. Ping Logic (ADDED: complete the ready future)
         if (!firstAuth) {
             firstAuth = true;
             a.ping(0).to(() -> {
@@ -249,7 +252,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
      */
     private static class MyClientApiSafe implements ClientApiSafe {
         private final AetherCloudClient client;
-        private final ConnectionWork connection; // Ссылка на ConnectionWork
+        private final ConnectionWork connection;
 
         public MyClientApiSafe(AetherCloudClient client, ConnectionWork connection) {
             this.client = client;
@@ -268,9 +271,6 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         public void requestTelemetry() {
         }
 
-        /**
-         * Handles response for batched AccessGroup requests.
-         */
         @Override
         public void sendAccessGroups(AccessGroup[] groups) {
             Log.debug("Received $count AccessGroups", "count", groups.length);
@@ -281,19 +281,12 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             }
         }
 
-        /**
-         * Handles response for batched client group list requests.
-         */
         @Override
         public void sendAccessGroupForClient(UUID uid, long[] groups) {
             Log.debug("Received AccessGroups for client $uid", "uid", uid);
-            client.clientGroups.putResolved(uid, LongSet.of(groups)); //
+            client.clientGroups.putResolved(uid, LongSet.of(groups));
         }
 
-        /**
-         * Handles server push notification for added group items.
-         * This confirms a mutation request.
-         */
         @Override
         public void addItemsToAccessGroup(long id, UUID[] groups) {
             Log.debug("Server confirmed ADD items to group $id", "id", id);
@@ -309,10 +302,8 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                     client.accessOperationsAdd.remove(id);
                 }
             }
-            // Обновляем BMap-кэш
             client.accessGroups.getFuture(id).to(group -> {
                 if (group != null) {
-                    // Создаем новый, так как AccessGroup неизменяемый
                     List<UUID> newUuids = new ArrayList<>(List.of(group.getData()));
                     newUuids.addAll(List.of(groups));
                     AccessGroup newGroup = new AccessGroup(group.getOwner(), group.getId(),
@@ -322,10 +313,6 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             });
         }
 
-        /**
-         * Handles server push notification for removed group items.
-         * This confirms a mutation request.
-         */
         @Override
         public void removeItemsFromAccessGroup(long id, UUID[] groups) {
             Log.debug("Server confirmed REMOVE items from group $id", "id", id);
@@ -341,7 +328,6 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                     client.accessOperationsRemove.remove(id);
                 }
             }
-            // Обновляем BMap-кэш
             client.accessGroups.getFuture(id).to(group -> {
                 if (group != null) {
                     List<UUID> newUuids = new ArrayList<>(List.of(group.getData()));
@@ -353,26 +339,18 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             });
         }
 
-        /**
-         * Handles server push notification for groups added TO A CLIENT.
-         */
         @Override
         public void addAccessGroupsToClient(UUID uid, long[] groups) {
             Log.debug("Server pushed ADD groups to client $uid", "uid", uid);
-            // Обновляем BMap-кэш
             client.clientGroups.getFuture(uid).to(existingGroups -> {
                 var newGroups = (existingGroups == null) ? LongSet.of() : new LongArraySet(existingGroups);
                 for (long g : groups) newGroups.add(g);
             });
         }
 
-        /**
-         * Handles server push notification for groups removed FROM A CLIENT.
-         */
         @Override
         public void removeAccessGroupsFromClient(UUID uid, long[] groups) {
             Log.debug("Server pushed REMOVE groups from client $uid", "uid", uid);
-            // Обновляем BMap-кэш
             client.clientGroups.getFuture(uid).to(existingGroups -> {
                 if (existingGroups != null) {
                     var newGroups = new LongArraySet(existingGroups);
@@ -381,26 +359,20 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             });
         }
 
-        /**
-         * Handles response for batched getAllAccessedClients requests.
-         */
         @Override
         public void sendAllAccessedClients(UUID uid, UUID[] accessedClients) {
             Log.debug("Received $count AccessedClients for $uid", "count", accessedClients.length, "uid", uid);
-            client.allAccessedClients.putResolved(uid, ObjectSet.of(accessedClients)); //
+            client.allAccessedClients.putResolved(uid, ObjectSet.of(accessedClients));
         }
 
-        /**
-         * Handles response for batched access check requests.
-         */
         @Override
         public void sendAccessCheckResults(AccessCheckResult[] results) {
             Log.debug("Received $count AccessCheckResults", "count", results.length);
             for (AccessCheckResult result : results) {
                 if (result != null) {
                     client.accessCheckCache.putResolved(
-                            new AccessCheckPair(result.getSourceUid(), result.getTargetUid()), //
-                            result.isHasAccess() //
+                            new AccessCheckPair(result.getSourceUid(), result.getTargetUid()),
+                            result.isHasAccess()
                     );
                 }
             }
