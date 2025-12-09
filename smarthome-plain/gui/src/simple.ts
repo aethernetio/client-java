@@ -1,6 +1,7 @@
 import { SmartHomeController } from './SmartHomeController';
 
-const CORE_URI = "ws://reg-dev.aethernet.io:9011";
+const CORE_URI = "wss://reg-dev.aethernet.io:9012";
+// const CORE_URI = "wss://localhost:9012";
 const POLL_PERIOD_MS = 1000;
 const POLL_TIMEOUT_MS = 2000;
 const STORAGE_KEY = 'aether_single_device_v1';

@@ -4,7 +4,8 @@ import { Record } from './aether_api';
 
 Chart.register(...registerables);
 
-const CORE_URI = "ws://reg-dev.aethernet.io:9011";
+const CORE_URI = "wss://reg-dev.aethernet.io:9012";
+// const CORE_URI = "wss://localhost:9012";
 const WINDOW_SIZE = 50;
 const STORAGE_KEY = 'aether_complex_v1';
 

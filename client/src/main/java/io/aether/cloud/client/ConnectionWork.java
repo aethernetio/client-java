@@ -40,37 +40,10 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
     public ConnectionWork(AetherCloudClient client, ServerDescriptor s) {
         super(client, s.getIpAddress().getURI(AetherCodec.TCP), ClientApiUnsafe.META, LoginApi.META);
         this.apiSafe = new MyClientApiSafe(client, this);
+        apiSafeCtx = new MyFastApiContext(client);
         cryptoEngine = client.getCryptoEngineForServer(s.getId());
         serverDescriptor = s;
         this.basicStatus = false;
-        apiSafeCtx = new FastApiContext() {
-            @Override
-            public void flush(AFuture sendFuture) {
-                if (fastMetaClient == null || !fastMetaClient.isWritable()) {
-                    sendFuture.cancel();
-                    return;
-                }
-
-                boolean hasWork = true;
-
-                if (!hasWork) {
-                    sendFuture.done();
-                    return;
-                }
-                getRootApiFuture().to(api -> {
-                    ConnectionWork.this.flushBackgroundRequests(makeRemote(AuthorizedApi.META), sendFuture);
-                    var d = remoteDataToArray();
-                    if (d.length == 0) {
-                        sendFuture.done();
-                        return;
-                    }
-                    var loginStream = new LoginStream(cryptoEngine::encrypt, d);
-                    api.loginByAlias(client.getAlias(), loginStream);
-                    rootApi.flush(sendFuture);
-                }, sendFuture::error).onCancel(sendFuture::cancel);
-
-            }
-        };
     }
 
     @Override
@@ -416,5 +389,40 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             client.onNewChild.fire(uid);
         }
 
+    }
+
+    private class MyFastApiContext extends FastApiContext {
+        private final AetherCloudClient client;
+
+        public MyFastApiContext(AetherCloudClient client) {
+            this.client = client;
+        }
+
+        @Override
+        public void flush(AFuture sendFuture) {
+            if (fastMetaClient == null || !fastMetaClient.isWritable()) {
+                sendFuture.cancel();
+                return;
+            }
+
+            boolean hasWork = true;
+
+            if (!hasWork) {
+                sendFuture.done();
+                return;
+            }
+            getRootApiFuture().to(api -> {
+                ConnectionWork.this.flushBackgroundRequests(makeRemote(AuthorizedApi.META), sendFuture);
+                var d = remoteDataToArray();
+                if (d.length == 0) {
+                    sendFuture.done();
+                    return;
+                }
+                var loginStream = new LoginStream(cryptoEngine::encrypt, d);
+                api.loginByAlias(client.getAlias(), loginStream);
+                rootApi.flush(sendFuture);
+            }, sendFuture::error).onCancel(sendFuture::cancel);
+
+        }
     }
 }
