@@ -210,6 +210,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
     }
 
     public void flush() {
+        if(apiSafeCtx==null)return;
         if (!inProcess.compareAndSet(false, true)) return;
         lastWorkTime = RU.time();
         var f = AFuture.make();

@@ -1,5 +1,5 @@
 plugins {
-    id 'java'
+    id 'application'
     id 'maven-publish'
     id 'aether-protocol' version '1.0.0'
 }
@@ -7,6 +7,14 @@ java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(25)
     }
+}
+application {
+    mainClass = 'io.aether.example.smarthome.plain.SmartHomePlainApp'
+
+    applicationDefaultJvmArgs = [
+            '--enable-native-access=ALL-UNNAMED'
+    ]
+
 }
 publishing {
     publications {
@@ -19,4 +27,7 @@ publishing {
 }
 dependencies {
     implementation project(':client')
+    implementation 'io.aether.crypto:hydrogen-fast:+'
+    implementation 'io.aether.crypto:sodium:+'
+    implementation 'io.aether:net-netty:+'
 }

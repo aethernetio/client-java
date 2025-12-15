@@ -46,14 +46,16 @@ module.exports = {
   plugins: [
     new HtmlWebpackPlugin({
       template: './src/simple.html',
-      filename: 'simple.html',
+      // ИЗМЕНЕНО: simple.html -> temp_test_plain.html
+      filename: 'temp_test_plain.html',
       chunks: ['simple'],
       inject: 'body',
       minify: false
     }),
     new HtmlWebpackPlugin({
       template: './src/complex.html',
-      filename: 'complex.html',
+      // ИЗМЕНЕНО: complex.html -> temp_test.html
+      filename: 'temp_test.html',
       chunks: ['complex'],
       inject: 'body',
       minify: false
@@ -65,7 +67,8 @@ module.exports = {
     static: {
       directory: path.join(__dirname, './dist'),
     },
-    open: ['/simple.html'],
+    // ИЗМЕНЕНО: открываем новый файл по умолчанию
+    open: ['/temp_test_plain.html'],
     client: {
       logging: 'none',
       overlay: false,
@@ -73,8 +76,9 @@ module.exports = {
     },
     historyApiFallback: {
       rewrites: [
-        { from: /^\/simple/, to: '/simple.html' },
-        { from: /^\/complex/, to: '/complex.html' },
+        // ИЗМЕНЕНО: обновлены правила перезаписи путей для dev-сервера
+        { from: /^\/simple/, to: '/temp_test_plain.html' },
+        { from: /^\/complex/, to: '/temp_test.html' },
       ]
     }
   }
