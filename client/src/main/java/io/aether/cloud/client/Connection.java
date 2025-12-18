@@ -56,7 +56,7 @@ public abstract class Connection<LT, RT extends RemoteApi> implements Destroyabl
                     this.connectFuture.tryError(new IllegalStateException("Connection established but rootApi is null."));
                 }
             } else {
-                Log.warn("Connection lost.", "uri", uri);
+                Log.trace("Connection lost.", "uri", uri);
             }
         };
         FastMetaNet factory = FastMetaNet.INSTANCE.get();
