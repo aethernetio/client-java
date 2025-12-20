@@ -105,7 +105,7 @@ public abstract class Connection<LT, RT extends RemoteApi> implements Destroyabl
 
     @Override
     public AFuture destroy(boolean force) {
-        Log.info("Destroying Connection to " + uri);
+        Log.trace("Destroying Connection to " + uri);
         return fastMetaClient.destroy(force);
     }
 }

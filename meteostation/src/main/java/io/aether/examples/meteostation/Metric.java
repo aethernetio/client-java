@@ -15,7 +15,7 @@ public class Metric implements ToString {
     }
 
     @Override
-    public AString toString(AString sb) {
+    public AString toAString(AString sb) {
         sb.add(id).add(":").add(value);
         return sb;
     }

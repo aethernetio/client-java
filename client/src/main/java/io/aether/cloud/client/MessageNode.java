@@ -44,8 +44,9 @@ public class MessageNode implements ToString {
     }
 
     @Override
-    public void toString(AString sb) {
+    public AString toAString(AString sb) {
         sb.add("MessageNode(").add(consumer).add(")");
+        return sb;
     }
 
     @Override

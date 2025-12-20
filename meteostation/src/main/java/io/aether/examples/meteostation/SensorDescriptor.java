@@ -10,7 +10,7 @@ public abstract class SensorDescriptor implements ToString {
     public final String name;
 
     @Override
-    public AString toString(AString sb) {
+    public AString toAString(AString sb) {
         return sb.add(id).add(':').add(name);
     }
 

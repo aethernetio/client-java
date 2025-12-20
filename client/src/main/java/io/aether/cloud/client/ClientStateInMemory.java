@@ -12,7 +12,6 @@ import io.aether.utils.RU;
 import io.aether.utils.ToString;
 import io.aether.utils.dataio.DataInOut;
 import io.aether.utils.dataio.DataInOutStatic;
-import io.aether.utils.flow.Flow;
 import io.aether.utils.slots.AMFuture;
 
 import java.io.File;
@@ -80,8 +79,7 @@ public class ClientStateInMemory implements ClientState, ToString {
         return toString2();
     }
 
-    @Override
-    public void toString(AString sb) {
+    public AString toAString(AString sb) {
         sb.add("Client State:\n");
         sb.add("uid: ").add(uid).add("\n");
         sb.add("alias: ").add(alias).add("\n");
@@ -94,6 +92,7 @@ public class ClientStateInMemory implements ClientState, ToString {
             if(sd==null)continue;
             sb.addSpace(4).add(sd).add("\n");
         }
+        return sb;
     }
 
     @Override

@@ -4,7 +4,6 @@ import com.google.gson.GsonBuilder;
 import io.aether.StandardUUIDs;
 import io.aether.api.common.AccessGroup;
 import io.aether.api.common.CryptoLib;
-import io.aether.api.common.ServerDescriptor;
 import io.aether.cloud.client.*;
 import io.aether.common.AccessGroupI;
 import io.aether.logger.Log;
@@ -275,8 +274,9 @@ public class CliApi {
         }
 
         @Override
-        public void toString(AString sb) {
+        public AString toAString(AString sb) {
             sb.add(address).add(":").add(data);
+            return sb;
         }
     }
 

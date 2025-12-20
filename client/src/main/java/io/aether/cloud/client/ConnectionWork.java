@@ -38,7 +38,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
     volatile boolean firstAuth;
 
     public ConnectionWork(AetherCloudClient client, ServerDescriptor s) {
-        super(client, s.getIpAddress().getURI(AetherCodec.UDP), ClientApiUnsafe.META, LoginApi.META);
+        super(client, s.getIpAddress().getURI(AetherCodec.TCP), ClientApiUnsafe.META, LoginApi.META);
         this.apiSafe = new MyClientApiSafe(client, this);
         apiSafeCtx = new MyFastApiContext(client);
         cryptoEngine = client.getCryptoEngineForServer(s.getId());

@@ -18,7 +18,7 @@ public class MetricFull extends Metric {
     }
 
     @Override
-    public AString toString(AString sb) {
+    public AString toAString(AString sb) {
         sb.add(producer).add(":").add(time).add(":").add(id).add(":").add(value);
         return sb;
     }
