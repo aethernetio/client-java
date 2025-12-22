@@ -13,7 +13,6 @@ import io.aether.utils.ToString;
 import io.aether.utils.dataio.DataInOut;
 import io.aether.utils.dataio.DataInOutStatic;
 import io.aether.utils.slots.AMFuture;
-
 import java.io.File;
 import java.io.IOException;
 import java.net.URI;
@@ -22,21 +21,32 @@ import java.nio.file.StandardOpenOption;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
-
 import static io.aether.utils.flow.Flow.flow;
 
 public class ClientStateInMemory implements ClientState, ToString {
+
     private final List<URI> registrationUri = new CopyOnWriteArrayList<>();
+
     private final Map<Integer, ServerInfo> servers = new ConcurrentHashMap<>();
+
     private final Map<UUID, ClientInfoMutable> clients = new ConcurrentHashMap<>();
+
     private final Set<SignChecker> rootSigners = new ConcurrentHashSet<>();
+
     private final CryptoLib cryptoLib;
+
     private final AMFuture<Long> pingDuration = new AMFuture<>(1000L);
+
     private UUID parentUid;
+
     private int countServersForRegistration = 1;
+
     private long timeoutForConnectToRegistrationServer = 5650;
+
     private volatile UUID uid;
+
     private volatile UUID alias;
+
     private volatile Key masterKey;
 
     public ClientStateInMemory(UUID parentUid, List<URI> registrationUri, Set<SignChecker> rootSigners) {
@@ -48,11 +58,9 @@ public class ClientStateInMemory implements ClientState, ToString {
         this.cryptoLib = cryptoLib;
         this.parentUid = parentUid;
         this.registrationUri.addAll(registrationUri);
-        if (rootSigners != null) this.rootSigners.addAll(rootSigners);
-        this.rootSigners.addAll(Set.of(
-                SignChecker.of("SODIUM:4F202A94AB729FE9B381613AE77A8A7D89EDAB9299C3320D1A0B994BA710CCEB"),
-                SignChecker.of("HYDROGEN:883B4D7E0FB04A38CA12B3A451B00942048858263EE6E6D61150F2EF15F40343")
-        ));
+        if (rootSigners != null)
+            this.rootSigners.addAll(rootSigners);
+        this.rootSigners.addAll(Set.of(SignChecker.of("SODIUM:4F202A94AB729FE9B381613AE77A8A7D89EDAB9299C3320D1A0B994BA710CCEB"), SignChecker.of("HYDROGEN:883B4D7E0FB04A38CA12B3A451B00942048858263EE6E6D61150F2EF15F40343")));
     }
 
     public ClientStateInMemory(UUID parentUid, List<URI> registrationUri) {
@@ -67,7 +75,7 @@ public class ClientStateInMemory implements ClientState, ToString {
         this.parentUid = dto.getParentUid();
         this.masterKey = dto.getMasterKey();
         this.cryptoLib = dto.getCryptoLib();
-        this.rootSigners.addAll(flow(dto.getRootSigners()).map(v-> CryptoUtils.of(v).asSignPublic().toSignChecker()).toSet());
+        this.rootSigners.addAll(flow(dto.getRootSigners()).map(v -> CryptoUtils.of(v).asSignPublic().toSignChecker()).toSet());
         this.countServersForRegistration = dto.getCountServersForRegistration();
         this.timeoutForConnectToRegistrationServer = dto.getTimeoutForConnectToRegistrationServer();
         this.registrationUri.addAll(Arrays.asList(dto.getRegistrationUri()));
@@ -87,9 +95,10 @@ public class ClientStateInMemory implements ClientState, ToString {
         sb.add("master key: ").add(masterKey).add("\n");
         sb.add("crypto lib: ").add(cryptoLib).add("\n");
         sb.add("cloud: ").add(getCloud(uid)).add("\n");
-        for (var c : getCloud(uid).getData()) {
-            var sd=getServerDescriptor(c);
-            if(sd==null)continue;
+                for (var c : getCloud(uid).toCloud().getData()) {
+            var sd = getServerDescriptor(c);
+            if (sd == null)
+                continue;
             sb.addSpace(4).add(sd).add("\n");
         }
         return sb;
@@ -193,7 +202,7 @@ public class ClientStateInMemory implements ClientState, ToString {
         return ds.descriptor;
     }
 
-    public void saveCloud(UUID uid, Cloud cloud) {
+        public void saveCloud(UUID uid, ClientCloud cloud) {
         getUidInfo(uid).cloud = cloud;
     }
 
@@ -202,13 +211,13 @@ public class ClientStateInMemory implements ClientState, ToString {
         return clients.computeIfAbsent(uid, ClientInfoMutable::new);
     }
 
-    public void setCloud(UUID uid, Cloud cloud) {
+        public void setCloud(UUID uid, ClientCloud cloud) {
         var u = getUidInfo(uid);
         u.cloud = cloud;
         saveCloud(uid, cloud);
     }
 
-    public Cloud getCloud(UUID uid) {
+    public ClientCloud getCloud(UUID uid) {
         assert uid != null;
         return getUidInfo(uid).cloud;
     }
@@ -234,27 +243,12 @@ public class ClientStateInMemory implements ClientState, ToString {
     }
 
     private ClientStateForSave toDTO() {
-        return new ClientStateForSave(
-                flow(registrationUri).toArray(URI.class),
-                flow(servers.values()).map(s -> s.descriptor).filterNotNull().toArray(ServerDescriptor.class),
-                flow(clients.values())
-                        .filter(s -> s.getCloud() != null)
-                        .map(s -> new io.aether.api.clienttypes.ClientInfo(s.getUid(), s.getCloud()))
-                        .toArray(io.aether.api.clienttypes.ClientInfo.class),
-                flow(rootSigners)
-                        .map(SignChecker::getPublicKey)
-                        .map(CryptoUtils::of)
-                        .cast(KeySignPublic.class)
-                        .toArray(KeySignPublic.class),
-                cryptoLib,
-                pingDuration.getNow(),
-                parentUid,
-                countServersForRegistration,
-                timeoutForConnectToRegistrationServer,
-                uid,
-                alias,
-                masterKey
-        );
+        return new io.aether.api.clienttypes.ClientStateForSave(flow(registrationUri).toArray(URI.class), flow(servers.values()).map(s -> s.descriptor).filterNotNull().toArray(ServerDescriptor.class), flow(clients.values()).filter(s -> s.getCloud() != null).map(s -> {
+            var cc = s.getCloud();
+            var weightsMap = cc.getWeights();
+            var weightsArray = weightsMap.entrySet().stream().map(e -> new io.aether.api.clienttypes.CloudWeight(e.getKey(), e.getValue())).toArray(io.aether.api.clienttypes.CloudWeight[]::new);
+            return new io.aether.api.clienttypes.ClientInfo(s.getUid(), cc.toCloud(), weightsArray);
+        }).toArray(io.aether.api.clienttypes.ClientInfo.class), flow(rootSigners).map(io.aether.crypto.SignChecker::getPublicKey).map(io.aether.api.CryptoUtils::of).cast(KeySignPublic.class).toArray(KeySignPublic.class), cryptoLib, pingDuration.getNow(), parentUid, countServersForRegistration, timeoutForConnectToRegistrationServer, uid, alias, masterKey);
     }
 
     public static ClientStateInMemory load(File file) {
@@ -276,7 +270,9 @@ public class ClientStateInMemory implements ClientState, ToString {
     }
 
     public static class ServerInfo implements ClientState.ServerInfo {
+
         final int sid;
+
         volatile ServerDescriptor descriptor;
 
         public ServerInfo(int sid) {
@@ -305,14 +301,21 @@ public class ClientStateInMemory implements ClientState, ToString {
     }
 
     public static class ClientInfoMutable implements ClientState.ClientInfo {
-        public final UUID uid;
-        public volatile Cloud cloud;
 
-        public ClientInfoMutable(io.aether.api.clienttypes.ClientInfo c) {
-            this(c.getUid(), c.getCloud());
+        public final UUID uid;
+
+        public volatile ClientCloud cloud;
+
+                public ClientInfoMutable(io.aether.api.clienttypes.ClientInfo c) {
+            this(c.getUid(), new ClientCloud(c.getUid(), c.getCloud()));
+            if (c.getWeights() != null) {
+                for (var w : c.getWeights()) {
+                    this.cloud.setWeight(w.getSid(), w.getWeight());
+                }
+            }
         }
 
-        public ClientInfoMutable(UUID uid, Cloud cloud) {
+                public ClientInfoMutable(UUID uid, ClientCloud cloud) {
             this.uid = uid;
             this.cloud = cloud;
         }
@@ -326,13 +329,13 @@ public class ClientStateInMemory implements ClientState, ToString {
             return uid;
         }
 
-        @Override
-        public Cloud getCloud() {
+                @Override
+        public ClientCloud getCloud() {
             return cloud;
         }
 
         @Override
-        public void setCloud(Cloud cloud) {
+        public void setCloud(ClientCloud cloud) {
             this.cloud = cloud;
         }
     }

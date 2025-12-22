@@ -83,7 +83,7 @@ public class CLI {
                     "uid", v.getUid(),
                     "alias", v.getAlias(),
                     "cloud", v.getCloud(v.getUid()),
-                    "serverDescriptors", Flow.flow(v.getCloud(v.getUid()).getData())
+                    "serverDescriptors", Flow.flow(v.getCloud(v.getUid()).getOrderedSids())
                             .mapToInt()
                             .mapToObj(v::getServerDescriptor)
                             .toMapExtractKey(ServerDescriptor::getId)

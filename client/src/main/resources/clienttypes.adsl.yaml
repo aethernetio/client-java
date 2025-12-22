@@ -1,10 +1,15 @@
 include:
   - common
 types:
+  CloudWeight:
+    fields:
+      sid: short
+      weight: long
   ClientInfo:
     fields:
       uid: UUID
       cloud: Cloud
+      weights: CloudWeight[]
   ClientStateForSave:
     fields:
       registrationUri: URI[]

@@ -1,6 +1,8 @@
 package io.aether.cloud.client;
 
-import io.aether.api.common.*;
+import io.aether.api.common.CryptoLib;
+import io.aether.api.common.Key;
+import io.aether.api.common.ServerDescriptor;
 import io.aether.crypto.SignChecker;
 import io.aether.utils.slots.AMFuture;
 
@@ -19,9 +21,8 @@ public interface ClientState {
 
     void setAlias(UUID alias);
 
-    void setMasterKey(Key key);
-
     ServerInfo getServerInfo(int sid);
+
     Iterable<ServerInfo> getServerInfoAll();
 
     default ServerDescriptor getServerDescriptor(int serverId) {
@@ -30,11 +31,10 @@ public interface ClientState {
 
     ClientInfo getClientInfo(UUID uid);
 
-    default void setCloud(UUID uid, Cloud cloud) {
-        getClientInfo(uid).setCloud(cloud);
-    }
+    void setCloud(UUID uid, ClientCloud cloud);
 
-    Cloud getCloud(UUID uid);
+    ClientCloud getCloud(UUID uid);
+
     Iterable<ClientInfo> getClientInfoAll();
 
     List<URI> getRegistrationUri();
@@ -51,11 +51,14 @@ public interface ClientState {
 
     io.aether.api.common.Key getMasterKey();
 
+    void setMasterKey(Key key);
+
     CryptoLib getCryptoLib();
 
     Set<SignChecker> getRootSigners();
 
     interface ServerInfo {
+
         int getServerId();
 
         ServerDescriptor getDescriptor();
@@ -66,8 +69,8 @@ public interface ClientState {
     interface ClientInfo {
         UUID getUid();
 
-        Cloud getCloud();
+        ClientCloud getCloud();
 
-        void setCloud(Cloud cloud);
+        void setCloud(ClientCloud cloud);
     }
 }
