@@ -84,7 +84,7 @@ public final class AetherCloudClient implements Destroyable {
 
     final Queue<AConsumer<AuthorizedApi>> authTasks = new ConcurrentLinkedQueue<>();
 
-    private final CloudPriorityManager priorityManager = new CloudPriorityManager();
+    final CloudPriorityManager priorityManager = new CloudPriorityManager();
 
     private final ClientState clientState;
 
@@ -213,14 +213,37 @@ public final class AetherCloudClient implements Destroyable {
         }, timeout1, () -> Log.warn("timeout cloud resolve: $uid", "uid", uid));
     }
 
+    /**
+     * Retrieves an existing ConnectionWork or creates a new one for the specified server.
+     * Configures a state listener to detect connection loss, triggering a priority demotion
+     * in the CloudPriorityManager and an automatic failover to the next available server.
+     *
+     * @param serverDescriptor The metadata of the server to connect to.
+     * @return A ConnectionWork instance with an attached failover listener.
+     */
     ConnectionWork getConnection(@NotNull ServerDescriptor serverDescriptor) {
         if (serverDescriptor == null) {
             throw new ClientApiException("Cannot get connection for null ServerDescriptor.");
         }
+        int sid = (int) serverDescriptor.getId();
         putServerDescriptor(serverDescriptor);
-        return connections.computeIfAbsent((int) serverDescriptor.getId(), s -> {
+        return connections.computeIfAbsent(sid, s -> {
             try (var ln = logClientContext.context()) {
-                return new ConnectionWork(this, serverDescriptor);
+                ConnectionWork conn = new ConnectionWork(this, serverDescriptor);
+                // Adaptive Cloud: Listen for connection state changes to handle failures.
+                conn.stateListeners.add(isWritable -> {
+                    if (!isWritable) {
+                        UUID uid = getUid();
+                        if (uid != null) {
+                            Log.info("Connection to server failed or lost. Demoting SID and attempting failover.", "sid", sid);
+                            // Lower the priority of the failed server using the verified demote method.
+                            priorityManager.demote(uid, (short) sid);
+                            // Re-initiate connection process to find and connect to the next best SID.
+                            makeFirstConnection();
+                        }
+                    }
+                });
+                return conn;
             }
         });
     }
@@ -397,7 +420,8 @@ public final class AetherCloudClient implements Destroyable {
             return null;
         }
         for (var c : connections.values()) {
-            if (c.firstAuth) return c;
+            if (c.firstAuth)
+                return c;
         }
         return connections.values().stream().findFirst().orElse(null);
     }
@@ -422,6 +446,11 @@ public final class AetherCloudClient implements Destroyable {
         }
     }
 
+    /**
+     * Establishes connections to all servers in the client's cloud.
+     * This ensures the client is reachable via any server in their cloud (recipient strategy).
+     * If any connection fails, its SID is demoted and the process continues.
+     */
     void makeFirstConnection() {
         if (destroyer.isDestroyed())
             return;
@@ -433,11 +462,24 @@ public final class AetherCloudClient implements Destroyable {
                 triggerRecovery();
                 return;
             }
+            // Get Sids ordered by Experience Weight (Primary first)
             short[] orderedSids = priorityManager.getOrderedSids(uid, cloud);
-            int serverId = (int) orderedSids[0];
-            getServer(serverId).to(descriptor -> {
-                getConnection(descriptor).connectFuture.to(startFuture::tryDone);
-            }).onError(e -> triggerRecovery());
+            // Connect to ALL servers in the cloud to ensure message delivery from any path
+            for (short sid : orderedSids) {
+                getServer((int) sid).to(descriptor -> {
+                    ConnectionWork conn = getConnection(descriptor);
+                    // For the primary (top) server, link it to the client's start status
+                    if (sid == orderedSids[0]) {
+                        conn.connectFuture.to(startFuture::tryDone);
+                    }
+                }).onError(e -> {
+                    priorityManager.demote(uid, sid);
+                    // Recursively try to fix the list if the primary node is unreachable
+                    if (sid == orderedSids[0]) {
+                        makeFirstConnection();
+                    }
+                });
+            }
         });
     }
 
@@ -447,7 +489,8 @@ public final class AetherCloudClient implements Destroyable {
 
     public ARFuture<Cloud> getCloud(@NotNull UUID uid) {
         var r = clientState.getCloud(uid);
-        if (r != null) return ARFuture.of(r.toCloud());
+        if (r != null)
+            return ARFuture.of(r.toCloud());
         var res = clouds.getFuture(uid);
         res.timeout(4, () -> {
             Log.error("timeout get cloud: $uid", "uid", uid);
@@ -560,16 +603,20 @@ public final class AetherCloudClient implements Destroyable {
 
     public ARFuture<AccessGroupI> createAccessGroupWithOwner(UUID owner, UUID... uids) {
         return getAuthApi1(c -> c.createAccessGroup(owner, uids)).map(id -> new AccessGroupImpl(new AccessGroup(owner, id, new UUID[0])) {
+
             @Override
             public ARFuture<Boolean> add(UUID uuid) {
-                if (data.contains(uuid)) return ARFuture.of(Boolean.FALSE);
+                if (data.contains(uuid))
+                    return ARFuture.of(Boolean.FALSE);
                 ARFuture<Boolean> future = accessOperationsAdd.computeIfAbsent(id, (k) -> new ConcurrentHashMap<>()).computeIfAbsent(uuid, k -> ARFuture.make());
                 AetherCloudClient.this.flush();
                 return future;
             }
+
             @Override
             public ARFuture<Boolean> remove(UUID uuid) {
-                if (!data.contains(uuid)) return ARFuture.of(Boolean.FALSE);
+                if (!data.contains(uuid))
+                    return ARFuture.of(Boolean.FALSE);
                 ARFuture<Boolean> future = accessOperationsRemove.computeIfAbsent(id, (k) -> new ConcurrentHashMap<>()).computeIfAbsent(uuid, k -> ARFuture.make());
                 AetherCloudClient.this.flush();
                 return future;
@@ -614,25 +661,41 @@ public final class AetherCloudClient implements Destroyable {
     }
 
     private enum RegStatus {
+
         NO, BEGIN, CONFIRM
     }
 
     public static class ClientStartException extends RuntimeException {
-        public ClientStartException(String message) { super(message); }
-        public ClientStartException(String message, Throwable cause) { super(message, cause); }
+
+        public ClientStartException(String message) {
+            super(message);
+        }
+
+        public ClientStartException(String message, Throwable cause) {
+            super(message, cause);
+        }
     }
 
     public static class ClientApiException extends RuntimeException {
-        public ClientApiException(String message) { super(message); }
+
+        public ClientApiException(String message) {
+            super(message);
+        }
     }
 
     public static class ClientTimeoutException extends RuntimeException {
-        public ClientTimeoutException(String message) { super(message); }
+
+        public ClientTimeoutException(String message) {
+            super(message);
+        }
     }
 
     static class ClientTask {
+
         final UUID uid;
+
         final AConsumer<ServerApiByUid> task;
+
         public ClientTask(UUID uid, AConsumer<ServerApiByUid> task) {
             this.uid = uid;
             this.task = task;

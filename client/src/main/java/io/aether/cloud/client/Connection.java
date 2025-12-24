@@ -10,7 +10,7 @@ import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
 import io.aether.utils.interfaces.AFunction;
 import io.aether.utils.interfaces.Destroyable;
-
+import io.aether.utils.slots.EventConsumer;
 import java.net.URI;
 
 /**
@@ -18,18 +18,24 @@ import java.net.URI;
  * Manages the lifecycle of the underlying FastMetaClient and connection state.
  */
 public abstract class Connection<LT, RT extends RemoteApi> implements Destroyable {
+
     protected final AetherCloudClient client;
+
     protected final URI uri;
+
     protected final ARFuture<RT> connectFuture = ARFuture.make();
+
     protected final FastMetaClient<LT, RT> fastMetaClient;
+
     protected volatile RT rootApi;
 
-    public Connection(
-            AetherCloudClient client,
-            URI uri,
-            FastMetaApi<LT, ?> localApiMeta,
-            FastMetaApi<?, RT> remoteApiMeta
-    ) {
+    /**
+     * Observable state listeners triggered when the connection writability or availability changes.
+     * The boolean value represents the current 'isWritable' status.
+     */
+    public final EventConsumer<Boolean> stateListeners = new EventConsumer<>();
+
+    public Connection(AetherCloudClient client, URI uri, FastMetaApi<LT, ?> localApiMeta, FastMetaApi<?, RT> remoteApiMeta) {
         assert uri != null;
         this.uri = uri;
         this.client = client;
@@ -47,7 +53,6 @@ public abstract class Connection<LT, RT extends RemoteApi> implements Destroyabl
         };
         FastMetaNet.WritableConsumer writableConsumer = isWritable -> {
             onConnectionStateChanged(isWritable);
-
             if (isWritable) {
                 if (this.rootApi != null) {
                     this.connectFuture.tryDone(this.rootApi);
@@ -60,13 +65,7 @@ public abstract class Connection<LT, RT extends RemoteApi> implements Destroyabl
             }
         };
         FastMetaNet factory = FastMetaNet.INSTANCE.get();
-        this.fastMetaClient = factory.makeClient(
-                uri,
-                localApiMeta,
-                remoteApiMeta,
-                localApiProvider,
-                writableConsumer
-        );
+        this.fastMetaClient = factory.makeClient(uri, localApiMeta, remoteApiMeta, localApiProvider, writableConsumer);
         client.destroyer.add(fastMetaClient);
     }
 
@@ -92,8 +91,10 @@ public abstract class Connection<LT, RT extends RemoteApi> implements Destroyabl
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o)
+            return true;
+        if (o == null || getClass() != o.getClass())
+            return false;
         var that = (Connection<?, ?>) o;
         return uri.equals(that.uri);
     }

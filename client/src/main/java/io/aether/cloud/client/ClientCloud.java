@@ -41,13 +41,24 @@ public class ClientCloud {
 
     public synchronized void smartMerge(Cloud newCloud) {
         short[] newData = newCloud.getData();
+        
+        // 1. Применяем механизм "забывания" (снижаем веса на 10% при каждом обновлении)
+        weights.replaceAll((sid, weight) -> (long)(weight * 0.9));
+
+        // 2. Расчет среднего балла для новичков
         long avg = weights.values().stream().mapToLong(Long::longValue).sum() / Math.max(1, weights.size());
 
+        // 3. Интеграция новых и удаление старых
         for (short sid : newData) weights.putIfAbsent(sid, avg);
         weights.keySet().removeIf(sid -> {
             for (short n : newData) if (n == sid) return false;
             return true;
         });
+
+        // 4. Нормализация (вычитаем минимум, чтобы держать значения в узком диапазоне)
+        long min = weights.values().stream().mapToLong(Long::longValue).min().orElse(0L);
+        if (min != 0) weights.replaceAll((sid, weight) -> weight - min);
+
         this.sids = newData;
     }
 

@@ -27,14 +27,23 @@ import java.util.concurrent.atomic.AtomicLong;
  * batching of API requests, and message routing.
  */
 public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> implements ClientApiUnsafe {
+
     public final AtomicLong lastBackPing = new AtomicLong(Long.MAX_VALUE);
+
     final ClientApiSafe apiSafe;
+
     final FastApiContext apiSafeCtx;
+
     final CryptoEngine cryptoEngine;
+
     private final ServerDescriptor serverDescriptor;
+
     final private AtomicBoolean inProcess = new AtomicBoolean();
+
     boolean basicStatus;
+
     long lastWorkTime;
+
     volatile boolean firstAuth;
 
     public ConnectionWork(AetherCloudClient client, ServerDescriptor s) {
@@ -46,6 +55,12 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         this.basicStatus = false;
     }
 
+    /**
+     * Handles changes in the connection state. Resets the internal authentication
+     * flag and fires the state listeners to notify the client for failover logic.
+     *
+     * @param isWritable True if the connection is active and writable, false otherwise.
+     */
     @Override
     protected void onConnectionStateChanged(boolean isWritable) {
         if (isWritable) {
@@ -55,6 +70,8 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         } else {
             this.firstAuth = false;
         }
+        // Trigger listeners in the base class to notify AetherCloudClient
+        stateListeners.fire(isWritable);
     }
 
     /**
@@ -67,7 +84,6 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         if (requestCloud.length > 0) {
             a.resolverClouds(requestCloud);
         }
-
         Integer[] requestServers = client.servers.getRequestsFor(Integer.class, this);
         if (requestServers.length > 0) {
             short[] serverIds = new short[requestServers.length];
@@ -76,12 +92,10 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             }
             a.resolverServers(serverIds);
         }
-
         UUID[] requestClientGroups = client.clientGroups.getRequestsFor(UUID.class, this);
         if (requestClientGroups.length > 0) {
             a.requestAccessGroupsForClients(requestClientGroups);
         }
-
         Long[] requestAccessGroups = client.accessGroups.getRequestsFor(Long.class, this);
         if (requestAccessGroups.length > 0) {
             long[] groupIds = new long[requestAccessGroups.length];
@@ -90,17 +104,14 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             }
             a.requestAccessGroupsItems(groupIds);
         }
-
         UUID[] requestAllAccessed = client.allAccessedClients.getRequestsFor(UUID.class, this);
         if (requestAllAccessed.length > 0) {
             a.requestAllAccessedClients(requestAllAccessed);
         }
-
         AccessCheckPair[] requestAccessCheck = client.accessCheckCache.getRequestsFor(AccessCheckPair.class, this);
         if (requestAccessCheck.length > 0) {
             a.requestAccessCheck(requestAccessCheck);
         }
-
         for (Map.Entry<Long, Map<UUID, ARFuture<Boolean>>> entry : client.accessOperationsAdd.entrySet()) {
             long groupId = entry.getKey();
             UUID[] uidsToAdd = entry.getValue().keySet().toArray(new UUID[0]);
@@ -109,7 +120,6 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                 a.addItemsToAccessGroup(groupId, uidsToAdd);
             }
         }
-
         for (Map.Entry<Long, Map<UUID, ARFuture<Boolean>>> entry : client.accessOperationsRemove.entrySet()) {
             long groupId = entry.getKey();
             UUID[] uidsToRemove = entry.getValue().keySet().toArray(new UUID[0]);
@@ -118,33 +128,30 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                 a.removeItemsFromAccessGroup(groupId, uidsToRemove);
             }
         }
-
         while (true) {
             var t = client.authTasks.poll();
-            if (t == null) break;
+            if (t == null)
+                break;
             t.accept(a);
         }
         AetherCloudClient.ClientTask task;
         while ((task = client.clientTasks.poll()) != null) {
             a.client(task.uid, new ClientApiStream(apiSafeCtx, task.task::accept));
         }
-
         List<Message> messageForSend = null;
         for (var m : client.messageNodeMap.values()) {
             if (m.connectionsOut.contains(this)) {
                 List<Tuple2<byte[], AFuture>> mm = new ArrayList<>();
                 RU.readAll(m.bufferOut, mm::add);
                 if (!mm.isEmpty()) {
-                    Log.debug("message send client to server: $uidFrom -> $uidTo",
-                            "uidFrom", client.getUid(),
-                            "uidTo", m.consumer);
+                    Log.debug("message send client to server: $uidFrom -> $uidTo", "uidFrom", client.getUid(), "uidTo", m.consumer);
                     if (messageForSend == null) {
                         messageForSend = new ObjectArrayList<>();
                     }
-                    Flow.flow(mm)
-                            .map(v -> new Message(m.consumer, v.val1()))
-                            .toCollection(messageForSend);
+                    Flow.flow(mm).map(v -> new Message(m.consumer, v.val1())).toCollection(messageForSend);
                     sendFuture.to(() -> {
+                        // Adaptive Cloud: Promote connection on successful send
+                        client.priorityManager.promote(client.getUid(), (short) serverDescriptor.getId());
                         for (var v : mm) {
                             v.val2().done();
                         }
@@ -158,7 +165,6 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         if (messageForSend != null && !messageForSend.isEmpty()) {
             a.sendMessages(messageForSend.toArray(new Message[0]));
         }
-
         if (!firstAuth) {
             firstAuth = true;
             a.ping(0).to(() -> {
@@ -199,7 +205,8 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
 
     public void scheduledWork() {
         var t = RU.time();
-        if ((t - lastWorkTime < client.getPingTime() || !inProcess.compareAndSet(false, true))) return;
+        if ((t - lastWorkTime < client.getPingTime() || !inProcess.compareAndSet(false, true)))
+            return;
         lastWorkTime = t;
         var f = AFuture.make();
         f.addListener(v -> inProcess.set(false));
@@ -210,8 +217,10 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
     }
 
     public void flush() {
-        if(apiSafeCtx==null)return;
-        if (!inProcess.compareAndSet(false, true)) return;
+        if (apiSafeCtx == null)
+            return;
+        if (!inProcess.compareAndSet(false, true))
+            return;
         lastWorkTime = RU.time();
         var f = AFuture.make();
         f.addListener(v -> inProcess.set(false));
@@ -224,8 +233,10 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
     /**
      * Implements the ClientApiSafe interface to handle responses from the server.
      */
-    private static class MyClientApiSafe implements ClientApiSafe {
+    private class MyClientApiSafe implements ClientApiSafe {
+
         private final AetherCloudClient client;
+
         private final ConnectionWork connection;
 
         public MyClientApiSafe(AetherCloudClient client, ConnectionWork connection) {
@@ -280,8 +291,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                 if (group != null) {
                     List<UUID> newUuids = new ArrayList<>(List.of(group.getData()));
                     newUuids.addAll(List.of(groups));
-                    AccessGroup newGroup = new AccessGroup(group.getOwner(), group.getId(),
-                            newUuids.stream().distinct().toArray(UUID[]::new));
+                    AccessGroup newGroup = new AccessGroup(group.getOwner(), group.getId(), newUuids.stream().distinct().toArray(UUID[]::new));
                     client.accessGroups.putResolved(id, newGroup);
                 }
             });
@@ -306,8 +316,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                 if (group != null) {
                     List<UUID> newUuids = new ArrayList<>(List.of(group.getData()));
                     newUuids.removeAll(List.of(groups));
-                    AccessGroup newGroup = new AccessGroup(group.getOwner(), group.getId(),
-                            newUuids.toArray(new UUID[0]));
+                    AccessGroup newGroup = new AccessGroup(group.getOwner(), group.getId(), newUuids.toArray(new UUID[0]));
                     client.accessGroups.putResolved(id, newGroup);
                 }
             });
@@ -344,10 +353,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             Log.debug("Received $count AccessCheckResults", "count", results.length);
             for (AccessCheckResult result : results) {
                 if (result != null) {
-                    client.accessCheckCache.putResolved(
-                            new AccessCheckPair(result.getSourceUid(), result.getTargetUid()),
-                            result.isHasAccess()
-                    );
+                    client.accessCheckCache.putResolved(new AccessCheckPair(result.getSourceUid(), result.getTargetUid()), result.isHasAccess());
                 }
             }
         }
@@ -355,6 +361,10 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         @Override
         public void sendMessages(Message[] msg) {
             Log.trace("receive messages: $count", "count", msg.length);
+            // Adaptive Cloud: Promote connection on data receipt
+            client.priorityManager.promote(client.getUid(), (short) serverDescriptor.getId());
+            // Adaptive Cloud: Promote on data receipt
+            client.priorityManager.promote(client.getUid(), (short) connection.getServerDescriptor().getId());
             for (var m : msg) {
                 Log.trace("receive message $uid1 <- $uid2", "uid1", client.getUid(), "uid2", m.getUid());
                 client.getMessageNode(m.getUid(), MessageEventListener.DEFAULT).sendMessageFromServerToClient(m.getData());
@@ -389,10 +399,10 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         public void newChild(UUID uid) {
             client.onNewChild.fire(uid);
         }
-
     }
 
     private class MyFastApiContext extends FastApiContext {
+
         private final AetherCloudClient client;
 
         public MyFastApiContext(AetherCloudClient client) {
@@ -405,9 +415,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                 sendFuture.cancel();
                 return;
             }
-
             boolean hasWork = true;
-
             if (!hasWork) {
                 sendFuture.done();
                 return;
@@ -423,7 +431,6 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                 api.loginByAlias(client.getAlias(), loginStream);
                 rootApi.flush(sendFuture);
             }, sendFuture::error).onCancel(sendFuture::cancel);
-
         }
     }
 }
