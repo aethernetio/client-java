@@ -34,6 +34,11 @@ import java.util.concurrent.Executors;
  */
 @Doc("Command Line Interface API for Aether Cloud Client operations.")
 public class CliApi {
+    static {
+        // Устанавливаем глобальный контекст для всех логов CLI
+        io.aether.logger.Log.of(io.aether.logger.Log.SYSTEM_COMPONENT, "CLI").context();
+    }
+
     private static final Executor CLI_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
         var t = new Thread(r, "CLI-Async-Worker");
         t.setDaemon(true);
@@ -114,7 +119,7 @@ public class CliApi {
         AFuture destroyFuture = AFuture.make();
         DESTROY_EXECUTOR.execute(() -> {
             try {
-                logFlow("Starting safe destroy of CLI resources");
+                                Log.info("Starting safe destroy of CLI resources");
                 destroyer.destroy(true).timeout(10, () -> {
                     Log.warn("Timeout during safe destroy");
                 }).to(destroyFuture);
@@ -129,7 +134,7 @@ public class CliApi {
     @Doc("Show version of cli instrument")
     @Example("$exCmd version")
     public String version() {
-        logFlow("Executing command: version");
+                Log.info("Executing command: version");
         try (var is = new BufferedReader(new InputStreamReader(getClass().getResourceAsStream("/aether-cli-version.txt")))) {
             return is.readLine();
         } catch (Exception e) {
@@ -144,7 +149,7 @@ public class CliApi {
             @Doc("Specify a time limit for the object creation")
             @Optional("10")
             int timeout) {
-        logFlow("Executing command: create", "timeout", timeout);
+                Log.info("Executing command: create", "timeout", timeout);
         createApi = new CreateApi();
         return createApi;
     }
@@ -155,7 +160,7 @@ public class CliApi {
             @Doc("Previously saved client state file")
             @Optional(value = "state.bin")
             File state) {
-        logFlow("Executing command: change", "stateFile", state);
+                Log.info("Executing command: change", "stateFile", state);
 
         ClientStateInMemory loadedState = ClientStateInMemory.load(state);
         if (loadedState == null) {
@@ -180,7 +185,7 @@ public class CliApi {
             UUID uid1,
             @Doc("Client 2 UUID or alias. \n" + UUID_ALIASES_DOC)
             UUID uid2) {
-        logFlow("Executing command: checkAccess", "stateFile", state, "uid1", uid1, "uid2", uid2);
+                Log.info("Executing command: checkAccess", "stateFile", state, "uid1", uid1, "uid2", uid2);
 
         ClientStateInMemory loadedState = ClientStateInMemory.load(state);
         if (loadedState == null) {
@@ -198,9 +203,9 @@ public class CliApi {
 
         // Explicitly specify the generic type for ARFuture.run to avoid error
         return ARFuture.<Boolean>run2(CLI_EXECUTOR, () -> finalClient.checkAccess(uid1, uid2))
-                .apply(() -> {
-                    // Asynchronously destroy client after operation completion via executor
-//                    completeCliSession(destroyer, finalClient.destroy(true));
+                                .apply(() -> {
+                    destroyer.remove(finalClient);
+                    finalClient.destroy(true);
                 });
     }
 
@@ -212,7 +217,7 @@ public class CliApi {
             File state,
             @Doc("Destination UUID address or alias. \n" + UUID_ALIASES_DOC)
             UUID address) {
-        logFlow("Executing command: send", "stateFile", state, "address", address);
+                Log.info("Executing command: send", "stateFile", state, "address", address);
 
         ClientStateInMemory loadedState = ClientStateInMemory.load(state);
         if (loadedState == null) {
@@ -235,7 +240,7 @@ public class CliApi {
     @Api
     @Doc("Show client state, groups, aliases, and incoming messages")
     public ShowApi show(/* --- state parameter removed --- */) {
-        logFlow("Executing command: show");
+                Log.info("Executing command: show");
         showApi = new ShowApi(this.cliState);
         return showApi;
     }
@@ -243,17 +248,12 @@ public class CliApi {
     @Api
     @Doc("Set properties, like user-defined aliases")
     public SetApi set() {
-        logFlow("Executing command: set");
+                Log.info("Executing command: set");
         setApi = new SetApi(this.cliState);
         return setApi;
     }
 
-    private static void logFlow(String message, Object... args) {
-        var l = new ArrayList<>(Arrays.asList(args));
-        l.add(Log.SYSTEM_COMPONENT);
-        l.add("CLI");
-        Log.info(message, l.toArray());
-    }
+    
 
     /**
      * Message container class.
@@ -317,7 +317,7 @@ public class CliApi {
             public AFuture add(
                     @Doc("Set of client UUIDs or aliases to add. \n" + UUID_ALIASES_DOC)
                     @StdIn Set<UUID> uid) {
-                logFlow("ChangeGroupApi: add started", "groupId", id);
+                                Log.info("ChangeGroupApi: add started", "groupId", id);
                 AFuture res = AFuture.make();
 
                 // CAPTURE: Capture the reference to the Destroyer in the outer (safe) scope
@@ -325,14 +325,14 @@ public class CliApi {
 
                 AFuture.run(CLI_EXECUTOR, () -> {
                     client.getAuthApi(a -> {
-                        logFlow("ChangeGroupApi: got AuthApi, starting add op");
+                                                Log.info("ChangeGroupApi: got AuthApi, starting add op");
                         AFuture.all(Flow.flow(uid).map(u -> a.addToAccessGroup(id, u)).map(ARFuture::toFuture).toList()).to(res);
                     });
                 });
 
-                return res.apply(() -> {
-                    logFlow("ChangeGroupApi: add finished. Starting asynchronous destroy.");
-//                    completeCliSession(apiDestroyer, client.destroy(true));
+                                return res.apply(() -> {
+                    apiDestroyer.remove(client);
+                    client.destroy(true);
                 });
             }
 
@@ -341,7 +341,7 @@ public class CliApi {
             public AFuture remove(
                     @Doc("Set of client UUIDs or aliases to remove. \n" + UUID_ALIASES_DOC)
                     Set<UUID> uid) {
-                logFlow("ChangeGroupApi: remove started", "groupId", id);
+                                Log.info("ChangeGroupApi: remove started", "groupId", id);
                 AFuture res = AFuture.make();
 
                 // CAPTURE: Capture the reference to the Destroyer in the outer (safe) scope
@@ -349,14 +349,15 @@ public class CliApi {
 
                 AFuture.run(CLI_EXECUTOR, () -> {
                     client.getAuthApi(a -> {
-                        logFlow("ChangeGroupApi: got AuthApi, starting remove op");
+                                                Log.info("ChangeGroupApi: got AuthApi, starting remove op");
                         AFuture.all(Flow.flow(uid).map(u -> a.removeFromAccessGroup(id, u)).map(ARFuture::toFuture).toList()).to(res);
                     });
                 });
 
-                return res.apply(() -> {
-                    logFlow("ChangeGroupApi: remove finished. Starting asynchronous destroy.");
-//                    completeCliSession(apiDestroyer, client.destroy(true));
+                                return res.apply(() -> {
+                    Log.info("ChangeGroupApi: remove finished.");
+                    apiDestroyer.remove(client);
+                    client.destroy(true);
                 });
             }
         }
@@ -442,13 +443,13 @@ public class CliApi {
             }
             UUID finalTargetClient = targetUuid;
             ARFuture<Set<Long>> res = ARFuture.make();
-            CLI_EXECUTOR.execute(() -> {
+                        CLI_EXECUTOR.execute(() -> {
                 client.getClientGroups(finalTargetClient).to(res);
             });
 
             return res.apply(() -> {
-                // Asynchronously destroy client after operation completion via executor
-//                completeCliSession(destroyer, client.destroy(true));
+                CliApi.this.destroyer.remove(client);
+                client.destroy(true);
             });
         }
 
@@ -476,14 +477,14 @@ public class CliApi {
             CliApi.this.destroyer.add(client); // Add to the root destroyer
 
             ARFuture<List<AccessGroup>> res = ARFuture.make();
-            CLI_EXECUTOR.execute(() -> {
+                        CLI_EXECUTOR.execute(() -> {
                 ARFuture.all(Flow.flow(ids)
                         .map(groupId -> client.getGroup(groupId).map(v -> v))
                         .toList()).to(res);
             });
             return res.apply(() -> {
-                // Asynchronously destroy client after operation completion via executor
-//                completeCliSession(destroyer, client.destroy(true));
+                CliApi.this.destroyer.remove(client);
+                client.destroy(true);
             });
         }
 
@@ -516,13 +517,13 @@ public class CliApi {
             }
             UUID finalTargetClient = targetUuid;
             ARFuture<Set<UUID>> res = ARFuture.make();
-            CLI_EXECUTOR.execute(() -> {
+                        CLI_EXECUTOR.execute(() -> {
                 client.getAllAccessedClients(finalTargetClient).to(res);
             });
 
             return res.apply(() -> {
-                // Asynchronously destroy client after operation completion via executor
-//                completeCliSession(destroyer, client.destroy(true));
+                CliApi.this.destroyer.remove(client);
+                client.destroy(true);
             });
         }
 
@@ -557,36 +558,36 @@ public class CliApi {
             ClientStateInMemory requiredState = loadRequiredState(state);
             // -------------------------
 
-            logFlow("ShowApi: messages command started", "waitTimeMs", waitTime, "filterUids", filter, "notUids", not);
+                        Log.info("ShowApi: messages command started", "waitTimeMs", waitTime, "filterUids", filter, "notUids", not);
             // Create client locally
             var client = new AetherCloudClient(requiredState); // Use the checked state
             CliApi.this.destroyer.add(client);
-            logFlow("ShowApi: Client instance created", "clientUid", client.getUid());
+                        Log.info("ShowApi: Client instance created", "clientUid", client.getUid());
 
             // CAPTURE: Capture the reference to the Destroyer in the outer (safe) scope
             Destroyer apiDestroyer = CliApi.this.destroyer;
 
             client.onClientStream(m -> {
                 UUID consumerUid = m.getConsumerUUID();
-                logFlow("ShowApi: received new MessageNode stream", "consumerUid", consumerUid);
+                                Log.info("ShowApi: received new MessageNode stream", "consumerUid", consumerUid);
 
                 m.toConsumer(d -> {
-                    logFlow("ShowApi: Message data received from stream", "from", consumerUid, "dataLength", d.length);
+                                        Log.info("ShowApi: Message data received from stream", "from", consumerUid, "dataLength", d.length);
 
                     boolean isFiltered = false;
                     if (filter != null && !filter.contains(consumerUid)) {
-                        logFlow("ShowApi: Message SKIPPED (Filter check failed)", "from", consumerUid);
+                                                Log.info("ShowApi: Message SKIPPED (Filter check failed)", "from", consumerUid);
                         isFiltered = true;
                     }
                     if (!isFiltered && not != null && not.contains(consumerUid)) {
-                        logFlow("ShowApi: Message SKIPPBLED (Exclude check failed)", "from", consumerUid);
+                                                Log.info("ShowApi: Message SKIPPBLED (Exclude check failed)", "from", consumerUid);
                         isFiltered = true;
                     }
 
                     if (!isFiltered) {
                         var msg = new Msg(consumerUid, d);
                         messages.fire(msg);
-                        logFlow("ShowApi: Message PROCESSED and fired to console", "from", consumerUid, "dataLength", d.length);
+                                                Log.info("ShowApi: Message PROCESSED and fired to console", "from", consumerUid, "dataLength", d.length);
                     }
                 });
             });
@@ -594,18 +595,18 @@ public class CliApi {
             // Start connection in CLI_EXECUTOR
             AFuture.run(CLI_EXECUTOR, client::connect)
                     .to(() -> {
-                        logFlow("ShowApi: Client connect successful. Scheduling timeout.", "clientUid", client.getUid());
+                                                Log.info("ShowApi: Client connect successful. Scheduling timeout.", "clientUid", client.getUid());
 
                         // Schedule forced termination after waitTime.
                         RU.schedule(waitTime, () -> {
-                            logFlow("ShowApi: Timeout triggered after %s ms. Starting client destroy.", waitTime);
+                                                        Log.info("ShowApi: Timeout triggered after %s ms. Starting client destroy.", waitTime);
                             apiDestroyer.destroy(true);
                         });
-                        logFlow("ShowApi: Timeout scheduled", "waitTimeMs", waitTime);
+                                                Log.info("ShowApi: Timeout scheduled", "waitTimeMs", waitTime);
                     }).onError(e -> {
-                        logFlow("ShowApi: Client connect FAILED. Scheduling exit.", "error", e.getMessage());
+                                                Log.info("ShowApi: Client connect FAILED. Scheduling exit.", "error", e.getMessage());
                         RU.schedule(10, () -> {
-                            logFlow("ShowApi: Client connect failed, completing session.");
+                                                        Log.info("ShowApi: Client connect failed, completing session.");
                             apiDestroyer.destroy(true);
                         });
                     });
@@ -645,7 +646,7 @@ public class CliApi {
                 @Doc("A custom alias to save for the new client's UUID in ~/.aether-cli-state.json")
                 String alias
         ) {
-            logFlow("CreateApi: client creation started", "parent", parent, "alias", alias);
+                    Log.info("CreateApi: client creation started", "parent", parent, "alias", alias);
 
             if (dev) {
                 regUri = URI.create("tcp://reg-dev.aethernet.io:9010");
@@ -655,12 +656,21 @@ public class CliApi {
             CliApi.this.destroyer.add(client);
             ARFuture<ClientState> result = ARFuture.make();
             Log.debug("Wait start client");
-            client.startFuture.to(() -> {
+                        client.startFuture.to(() -> {
                 client.forceUpdateStateFromCache()
-                        .to(()->result.done(state))
+                        .to(() -> {
+                            // Закрываем регистрационное соединение после успеха
+                            CliApi.this.destroyer.remove(client);
+                            client.destroy(true);
+                            result.done(state);
+                        })
                         .onError(result);
             }).onError(e -> {
                 Log.error("create client exception", e);
+                // Очистка при ошибке
+                CliApi.this.destroyer.remove(client);
+                client.destroy(true);
+                result.error(e);
             });
             return result;
         }
@@ -676,7 +686,7 @@ public class CliApi {
                 UUID owner,
                 @Doc("Set of client UUIDs or aliases to initially include in the group. \n" + UUID_ALIASES_DOC)
                 @Optional Set<UUID> uids) {
-            logFlow("CreateApi: group creation started");
+                        Log.info("CreateApi: group creation started");
 
             ClientStateInMemory loadedState = ClientStateInMemory.load(state);
             if (loadedState == null) {
@@ -705,9 +715,10 @@ public class CliApi {
 
             return ARFuture.<AccessGroupI>run(CLI_EXECUTOR, () ->
                     client.createAccessGroupWithOwner(finalOwner, finalUids.toArray(new UUID[0])).get()
-            ).apply(() -> {
-                logFlow("CreateApi: group creation finished. Starting asynchronous destroy.");
-//                completeCliSession(apiDestroyer, client.destroy(true));
+                        ).apply(() -> {
+                Log.info("CreateApi: group creation finished.");
+                apiDestroyer.remove(client);
+                client.destroy(true);
             }).map(AccessGroupI::getId);
         }
     }
@@ -729,10 +740,10 @@ public class CliApi {
 
         @Doc("Send a text message")
         @Example("$exCmd send TEST text \"Hello, world!\"")
-        public AFuture text(
+                public AFuture text(
                 @Doc("Text content to send")
                 String text) {
-            logFlow("SendApi: sending text message", "textLength", text.length());
+            Log.info("SendApi: sending text message", "textLength", text.length());
             AFuture res = AFuture.make();
 
             // Wait for client to be ready before sending
@@ -740,8 +751,13 @@ public class CliApi {
                 st.send(text.getBytes(StandardCharsets.UTF_8)).to(res);
             });
 
-            return res.to(() -> {
-                logFlow("SendApi: send finished. Starting asynchronous destroy.");
+            // CAPTURE: Ссылка на Destroyer для очистки после отправки
+            Destroyer apiDestroyer = CliApi.this.destroyer;
+
+            return res.apply(() -> {
+                Log.info("SendApi: send text finished.");
+                apiDestroyer.remove(client);
+                client.destroy(true);
             });
         }
 
@@ -750,7 +766,7 @@ public class CliApi {
         public AFuture file(
                 @Doc("File to send")
                 File file) {
-            logFlow("SendApi: sending file", "fileName", file.getName());
+                        Log.info("SendApi: sending file", "fileName", file.getName());
             AFuture res = AFuture.make();
 
             // Wait for client to be ready before sending
@@ -768,9 +784,10 @@ public class CliApi {
             // CAPTURE: Capture the reference to the Destroyer in the outer (safe) scope
             Destroyer apiDestroyer = CliApi.this.destroyer;
 
-            return res.apply(() -> {
-                logFlow("SendApi: send finished. Starting asynchronous destroy.");
-//                completeCliSession(apiDestroyer, client.destroy(true));
+                        return res.apply(() -> {
+                Log.info("SendApi: send file finished.");
+                apiDestroyer.remove(client);
+                client.destroy(true);
             });
         }
 
@@ -779,7 +796,7 @@ public class CliApi {
         public AFuture stdIn(
                 @Doc("Data read from standard input")
                 @StdIn byte[] data) {
-            logFlow("SendApi: sending stdin data", "dataLength", data.length);
+                        Log.info("SendApi: sending stdin data", "dataLength", data.length);
             AFuture res = AFuture.make();
 
             // Wait for client to be ready before sending
@@ -791,9 +808,10 @@ public class CliApi {
             // CAPTURE: Capture the reference to the Destroyer in the outer (safe) scope
             Destroyer apiDestroyer = CliApi.this.destroyer;
 
-            return res.apply(() -> {
-                logFlow("SendApi: send (stdin) finished. Starting asynchronous destroy.");
-//                completeCliSession(apiDestroyer, client.destroy(true));
+                        return res.apply(() -> {
+                Log.info("SendApi: send (stdin) finished.");
+                apiDestroyer.remove(client);
+                client.destroy(true);
             });
         }
     }
@@ -832,7 +850,7 @@ public class CliApi {
             }
 
             cliState.addAlias(aliasName, uuid.toString());
-            logFlow("SetApi: Saved alias '" + aliasName + "' for UUID " + uuid);
+                        Log.info("SetApi: Saved alias '" + aliasName + "' for UUID " + uuid);
             // Returns void, as the operation is synchronous
         }
     }

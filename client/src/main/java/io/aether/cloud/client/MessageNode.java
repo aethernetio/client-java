@@ -32,6 +32,7 @@ public class MessageNode implements ToString {
     private final AetherCloudClient client;
     private volatile MessageEventListener strategy;
 
+    private static final int MAX_BUFFER_SIZE = 1000;
     public MessageNode(AetherCloudClient client, UUID consumer, MessageEventListener strategy) {
         Log.trace("open message node ($client) from $uidFrom to $uidTo", "client", client.getName(), "uidTo", consumer, "uidFrom", client.getUid());
         this.client = client;
@@ -63,8 +64,19 @@ public class MessageNode implements ToString {
     }
 
     public AFuture send(byte[] msg) {
+        if (bufferOut.size() >= 50) {
+            Tuple2<byte[], AFuture> oldest = bufferOut.pollFirst();
+            if (oldest != null) {
+                Log.warn("MessageNode buffer pressure, dropping oldest message", "uidTo", consumer);
+                    oldest.val2().error(new RuntimeException("Outgoing message queue overflow"));
+            }
+        }
         AFuture f = AFuture.make();
-        bufferOut.add(Tuple.of(msg, f));
+        if (bufferOut.size() < MAX_BUFFER_SIZE) {
+            bufferOut.addLast(Tuple.of(msg, f));
+        } else {
+            f.error(new RuntimeException("Critical buffer overflow"));
+        }
         return f;
     }
 

@@ -28,11 +28,11 @@ public class ClientCloud {
     }
 
     public void promote(short sid) {
-        weights.merge(sid, 50L, Long::sum);
+        weights.merge(sid, 60L, Long::sum);
     }
 
     public void demote(short sid) {
-        weights.merge(sid, -100L, Long::sum);
+        weights.merge(sid, -90L, Long::sum);
     }
 
     public Cloud toCloud() {
@@ -43,7 +43,7 @@ public class ClientCloud {
         short[] newData = newCloud.getData();
         
         // 1. Применяем механизм "забывания" (снижаем веса на 10% при каждом обновлении)
-        weights.replaceAll((sid, weight) -> (long)(weight * 0.9));
+        weights.replaceAll((sid, weight) -> (long)(weight * 0.92));
 
         // 2. Расчет среднего балла для новичков
         long avg = weights.values().stream().mapToLong(Long::longValue).sum() / Math.max(1, weights.size());

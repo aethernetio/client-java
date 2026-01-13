@@ -1,179 +1,159 @@
 import { SmartHomeController } from './SmartHomeController';
 
 const CORE_URI = "wss://dbservice.aethernet.io:9013";
-// const CORE_URI = "wss://localhost:9012";
-const POLL_PERIOD_MS = 1000;
-const POLL_TIMEOUT_MS = 2000;
+const POLL_TIMEOUT_MS = 5000;
 const STORAGE_KEY = 'aether_single_device_v1';
-
-interface SingleDeviceState {
-    uuid: string;
-    isActive: boolean;
-}
-
-const screenConnect = document.getElementById('screen-connect')!;
-const screenDisplay = document.getElementById('screen-display')!;
-const uuidInput = document.getElementById('uuid-input') as HTMLInputElement;
-const btnConnect = document.getElementById('btn-connect')!;
 
 const tempDisplay = document.getElementById('temp-display')!;
 const statusDot = document.getElementById('status-dot')!;
 const statusText = document.getElementById('status-text')!;
 const updateTimeEl = document.getElementById('update-time')!;
 const pingDisplay = document.getElementById('ping-display')!;
-const uuidDisplay = document.getElementById('display-uuid')!;
+const minPingDisplay = document.getElementById('min-ping-display')!;
 const locationDisplay = document.getElementById('display-location')!;
-const linkAdvanced = document.getElementById('link-advanced') as HTMLAnchorElement;
+const eventLog = document.getElementById('event-log')!;
+const btnConnect = document.getElementById('btn-connect')!;
+
+btnConnect.onclick = () => {
+    const uuid = uuidInput.value.trim();
+    if (uuid) {
+        localStorage.setItem(STORAGE_KEY, uuid);
+        currentDevice = { uuid: uuid, isActive: true };
+        
+        screenConnect.classList.remove('visible');
+        screenDisplay.classList.add('visible');
+        
+        // Manual connect log (silent)
+        controller.connectDevice(uuid);
+        // pollingLoop triggered via onDeviceConnected listener
+    }
+};
+
+const uuidInput = document.getElementById('uuid-input') as HTMLInputElement;
+const screenConnect = document.getElementById('screen-connect')!;
+const screenDisplay = document.getElementById('screen-display')!;
 
 const controller = new SmartHomeController();
-let currentDevice: SingleDeviceState | null = null;
-let isCoreReady = false;
 
-/**
- * Initializes the application state, checks URL parameters, and sets up event listeners.
- */
+let minLatency = 60000;
+let lastTemp: string = "--";
+let lastLatency = 0;
+let currentDevice: {uuid: string, isActive: boolean} | null = null;
+
+
+function addLog(msg: string) {
+    const time = new Date().toLocaleTimeString();
+    const entry = document.createElement('div');
+    entry.style.borderBottom = "1px solid #f0f0f0";
+    entry.textContent = `[${time}] ${msg}`;
+    eventLog.prepend(entry);
+}
+
+
+function updateStatus(text: string, cssClass: string, target: 'cloud' | 'sensor' = 'cloud') {
+    statusText.textContent = text;
+    const dotId = target === 'cloud' ? 'status-dot-cloud' : 'status-dot-sensor';
+    const dot = document.getElementById(dotId)!;
+    dot.className = `icon-status ${cssClass}`;
+}
+
+function updateUI(temp: number, latency: number) {
+    tempDisplay.innerHTML = `${temp.toFixed(1)}<span class="unit">°C</span>`;
+    updateTimeEl.textContent = `Updated: ${new Date().toLocaleTimeString()}`;
+    pingDisplay.textContent = `Ping: ${latency}ms`;
+    minPingDisplay.textContent = `Min: ${minLatency}ms`;
+}
+
+
+
+
+async function pollingLoop() {
+    if (!currentDevice || !currentDevice.isActive) return;
+
+    let responded = false;
+    const timeout = setTimeout(() => {
+        if (!responded) {
+            updateStatus('Timeout', 'st-red', 'sensor');
+            // Если за 3 сек не ответил — пробуем снова
+            pollingLoop();
+        }
+    }, 3000);
+
+    try {
+        updateStatus('Requesting...', 'st-blue', 'sensor');
+        const startTime = Date.now();
+        const records = await controller.requestRecords(currentDevice.uuid, 1);
+        
+        responded = true;
+        clearTimeout(timeout);
+        
+        const latency = Date.now() - startTime;
+        if (records && records.length > 0) {
+            const rawVal = records[0].value & 0xFF;
+            const temp = (rawVal / 3.0) - 30.0;
+            minLatency = Math.min(minLatency, latency);
+            lastTemp = temp.toFixed(1);
+            updateUI(temp, latency);
+            updateStatus('Online', 'st-green', 'sensor');
+            setTimeout(pollingLoop, 10000); // Успех: ждем 10с
+        } else {
+            throw new Error("Empty");
+        }
+    } catch (e) {
+        responded = true;
+        clearTimeout(timeout);
+        updateStatus('Error', 'st-red', 'sensor');
+        setTimeout(pollingLoop, 3000); // Ошибка: ждем 3с
+    }
+}
+
+
+
 async function init() {
     const urlParams = new URLSearchParams(window.location.search);
-    const urlUuid = urlParams.get('id') || urlParams.get('uuid');
+    const targetUuid = urlParams.get('uuid') || localStorage.getItem(STORAGE_KEY);
     const urlLocation = urlParams.get('location');
-    const storedUuid = localStorage.getItem(STORAGE_KEY);
 
-    const targetUuid = urlUuid || storedUuid;
-
-    if (urlLocation) {
-        locationDisplay.textContent = urlLocation;
-    } else {
-        locationDisplay.textContent = "";
-    }
+    if (urlLocation) locationDisplay.textContent = urlLocation;
+    
+    minPingDisplay.ondblclick = () => {
+        minLatency = 60000;
+        addLog("Min Latency reset");
+        if (lastTemp !== "--") updateUI(parseFloat(lastTemp), lastLatency);
+    };
 
     if (targetUuid) {
-        showDisplayScreen(targetUuid);
+        screenConnect.classList.remove('visible');
+        screenDisplay.classList.add('visible');
+        currentDevice = { uuid: targetUuid, isActive: true };
     } else {
         screenConnect.classList.add('visible');
     }
 
-    btnConnect.onclick = () => {
-        const val = uuidInput.value.trim();
-        if (val) {
-            localStorage.setItem(STORAGE_KEY, val);
-            const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + '?uuid=' + val;
-            window.history.pushState({path:newUrl},'',newUrl);
-
-            showDisplayScreen(val);
-            if (isCoreReady) startDeviceWork();
-        }
-    };
 
     controller.onConnectionState.add(state => {
         if (state === 'core_connected') {
-            isCoreReady = true;
-            updateStatus('Core Online', 'st-gray');
-            startDeviceWork();
-        } else if (state === 'disconnected') {
-            isCoreReady = false;
-            updateStatus('Disconnected', 'st-red');
+            updateStatus('Cloud OK', 'st-green', 'cloud');
+            if (currentDevice) controller.connectDevice(currentDevice.uuid);
         } else {
-            updateStatus('Connecting...', 'st-gray');
+            updateStatus('Offline', 'st-red', 'cloud');
         }
     });
 
+
     controller.onDeviceConnected.add(uuid => {
-        if (currentDevice && currentDevice.uuid === uuid) {
-            updateStatus('Live', 'st-green');
-            pollingLoop();
-        }
+        if (currentDevice?.uuid === uuid) pollingLoop();
     });
 
     await controller.connectCore(CORE_URI);
 }
 
-/**
- * Transitions the UI to the display screen.
- * @param uuid - The UUID of the device to display.
- */
-function showDisplayScreen(uuid: string) {
-    screenConnect.classList.remove('visible');
-    screenDisplay.classList.add('visible');
-    uuidDisplay.textContent = uuid;
-
-    if (linkAdvanced) {
-        linkAdvanced.href = `temp_test.html?uuid=${uuid}`;
-    }
-
-    currentDevice = {
-        uuid: uuid,
-        isActive: true
-    };
-}
-
-/**
- * Initiates the device connection if the core is ready.
- */
-function startDeviceWork() {
-    if (currentDevice && isCoreReady) {
-        controller.connectDevice(currentDevice.uuid);
-    }
-}
-
-/**
- * Periodically polls the device for data and updates the UI.
- * Calculates request latency.
- */
-async function pollingLoop() {
-    if (!currentDevice || !currentDevice.isActive) return;
-
-    while (currentDevice.isActive) {
-        try {
-            const timeoutPromise = new Promise<never>((_, reject) =>
-                setTimeout(() => reject(new Error("TIMEOUT")), POLL_TIMEOUT_MS)
-            );
-
-            const startTime = Date.now();
-
-            const requestPromise = controller.requestRecords(currentDevice.uuid, 1);
-            const records = await Promise.race([requestPromise, timeoutPromise]);
-
-            const latency = Date.now() - startTime;
-
-            if (records && records.length > 0) {
-                const rec = records[0];
-
-                const rawVal = rec.value & 0xFF;
-                const temp = (rawVal / 3.0) - 30.0;
-
-                updateUI(temp, latency);
-                updateStatus('Live', 'st-green');
-            }
-
-        } catch (e) {
-            updateStatus('Timeout', 'st-red');
-            pingDisplay.textContent = '';
-        }
-
-        await new Promise(r => setTimeout(r, POLL_PERIOD_MS));
-    }
-}
-
-/**
- * Updates the temperature display, timestamp, and latency information.
- * @param temp - The calculated temperature value.
- * @param latency - The round-trip time of the request in milliseconds.
- */
-function updateUI(temp: number, latency: number) {
-    tempDisplay.innerHTML = `${temp.toFixed(1)}<span class="unit">°C</span>`;
-    const now = new Date();
-    updateTimeEl.textContent = `Updated at ${now.toLocaleTimeString()}`;
-    pingDisplay.textContent = `Latency: ${latency}ms`;
-}
-
-/**
- * Updates the status text and indicator color.
- * @param text - The status message to display.
- * @param cssClass - The CSS class for the status dot (e.g., 'st-green').
- */
-function updateStatus(text: string, cssClass: string) {
-    statusText.textContent = text;
-    statusDot.className = `icon-status ${cssClass}`;
-}
-
 document.addEventListener('DOMContentLoaded', init);
+
+// Safari wake-up fix
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        // Safari wake-up: Silent refresh
+        if (currentDevice?.isActive) pollingLoop();
+    }
+});

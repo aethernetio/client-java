@@ -142,7 +142,14 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         for (var m : client.messageNodeMap.values()) {
             if (m.connectionsOut.contains(this)) {
                 List<Tuple2<byte[], AFuture>> mm = new ArrayList<>();
-                RU.readAll(m.bufferOut, mm::add);
+                int currentBatchSize = 0;
+                final int MAX_BATCH_BYTES = 512 * 1024; // 512 KB для Java
+                while (true) {
+                    var entry = m.bufferOut.peekFirst();
+                    if (entry == null || (currentBatchSize + entry.val1().length > MAX_BATCH_BYTES)) break;
+                    mm.add(m.bufferOut.pollFirst());
+                    currentBatchSize += mm.get(mm.size()-1).val1().length;
+                }
                 if (!mm.isEmpty()) {
                     Log.debug("message send client to server: $uidFrom -> $uidTo", "uidFrom", client.getUid(), "uidTo", m.consumer);
                     if (messageForSend == null) {
@@ -425,6 +432,20 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                 var d = remoteDataToArray();
                 if (d.length == 0) {
                     sendFuture.done();
+                    return;
+                }
+
+
+                    Log.info("NETWORK_DEBUG: Preparing LoginStream", 
+                        "data_len", d.length, 
+                        "sid", serverDescriptor.getId(),
+                        "pending_clouds", client.clouds.getPendingRequests(),
+                        "pending_servers", client.servers.getPendingRequests()
+                    );
+
+
+                if (d.length > 500000) {
+                    Log.error("NETWORK_DEBUG: LoginStream packet is too large, dropping!", "size", d.length);
                     return;
                 }
                 var loginStream = new LoginStream(cryptoEngine::encrypt, d);

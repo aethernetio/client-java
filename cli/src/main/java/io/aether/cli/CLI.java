@@ -1,6 +1,7 @@
 package io.aether.cli;
 
 import io.aether.api.common.CryptoLib;
+import io.aether.logger.LogFilter;
 import io.aether.api.common.ServerDescriptor;
 import io.aether.cloud.client.ClientStateInMemory;
 import io.aether.logger.Log;
@@ -21,7 +22,20 @@ public class CLI {
     private final ARFuture<Object> resultFuture;
     private final CliState cliState;
 
-    public CLI(String... aa) {
+        public CLI(String... aa) {
+        // Проверяем наличие флага подробного логирования
+        boolean verbose = java.util.Arrays.asList(aa).contains("--verbose") || java.util.Arrays.asList(aa).contains("-v");
+        
+        // Создаем и настраиваем фильтр
+        LogFilter filter = new LogFilter();
+        if (!verbose) {
+            // В обычном режиме показываем только логи самого CLI (согласно правилам фильтрации)
+            filter.filter(n -> n.check(Log.SYSTEM_COMPONENT,"CLI"));
+        }
+        
+        // Включаем цветной вывод в консоль с применением фильтра
+        Log.printConsoleColored(filter);
+
         this.cliState = new CliState();
         this.cliState.load();
 
@@ -43,8 +57,9 @@ public class CLI {
         consoleMgr.regResultConverter("bin", CTypeI.of(ClientStateInMemory.class), ClientStateInMemory::save);
         setupMsgConverters(consoleMgr);
         setupClientStateJsonConverter(consoleMgr);
-        this.resultFuture = consoleMgr.execute(api);
-        resultFuture.toFuture().apply(()->api.destroyer.destroy(false)).timeout(10, () -> Log.warn("Timeout result cli"));
+                this.resultFuture = consoleMgr.execute(api);
+        // Гарантируем закрытие всех ресурсов после завершения работы ConsoleMgr
+        resultFuture.toFuture().apply(() -> api.destroyer.destroy(true));
     }
 
     private void setupMsgConverters(ConsoleMgrCanonical consoleMgr) {
@@ -96,7 +111,14 @@ public class CLI {
         return resultFuture;
     }
 
-    public static void main(String... aa) {
-        new CLI(aa);
+                        public static void main(String... aa) {
+        var cli = new CLI(aa);
+        try {
+            // Блокируем основной поток до завершения асинхронной команды.
+            // Фильтрация и вывод логов уже настроены в конструкторе CLI.
+            cli.getResultFuture().get();
+        } catch (Exception e) {
+            Log.error("CLI Execution failed", e);
+        }
     }
 }

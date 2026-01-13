@@ -95,6 +95,7 @@ public final class AetherCloudClient implements Destroyable {
     private final AtomicBoolean startScheduledTaskFlag = new AtomicBoolean();
 
     private final Set<ConnectionRegistration> connectionRegistrations = new ConcurrentHashSet<>();
+    private boolean beginConnect;
 
     private String name;
 
@@ -249,25 +250,22 @@ public final class AetherCloudClient implements Destroyable {
     }
 
     public AFuture connect() {
-        if (!startConnection.compareAndSet(false, true))
-            return startFuture;
-        connect(10);
+        if (beginConnect) return startFuture;
+        beginConnect = true;
+        connect(1);
         return startFuture;
     }
 
     private Flow<ConnectionRegistration> makeConnectionReg() {
-        if (!connectionRegistrations.isEmpty()) {
-            return Flow.flow(connectionRegistrations);
+        if (connectionRegistrations.isEmpty()) {
+            List<java.net.URI> uris = clientState.getRegistrationUri();
+            uris.stream()
+                .limit(3)
+                .map(uri -> new ConnectionRegistration(this, uri))
+                .forEach(connectionRegistrations::add);
         }
-        var uris = clientState.getRegistrationUri();
-        if (uris == null || uris.isEmpty()) {
-            throw new ClientStartException("Registration URI list is void.");
-        }
-        var countServersForRegistration = Math.min(uris.size(), clientState.getCountServersForRegistration());
-        flow(uris).shuffle().limit(countServersForRegistration).map(sd -> new ConnectionRegistration(this, sd)).toCollection(connectionRegistrations);
         return Flow.flow(connectionRegistrations);
     }
-
     private void connect(int step) {
         if (destroyer.isDestroyed()) {
             startFuture.cancel();
@@ -289,7 +287,7 @@ public final class AetherCloudClient implements Destroyable {
                     anyFuture.to(this::startScheduledTask).onError(startFuture::error).onCancel(startFuture::cancel);
                     anyFuture.timeoutMs(timeoutForConnect, () -> {
                         Log.warn("Failed to connect to registration server: $uris", "uris", clientState.getRegistrationUri());
-                        RU.schedule(1000, () -> this.connect(step - 1));
+                        RU.schedule(5000, () -> connect(step));
                     });
                 } catch (Exception e) {
                     Log.error("Fatal error during registration setup.", e);

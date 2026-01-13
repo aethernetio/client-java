@@ -5,139 +5,64 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Aether Thermometer</title>
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: #f4f6f8;
-            color: #222;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-        }
 
-        .container {
-            text-align: center;
-            background: white;
-            padding: 40px;
-            border-radius: 20px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.05);
-            width: 100%;
-            max-width: 400px;
-            position: relative;
-        }
+         body { font-family: -apple-system, sans-serif; background-color: #000; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+          .container { text-align: center; background: #111; padding: 40px; border-radius: 28px; width: 100%; max-width: 400px; position: relative; border: 1px solid #222; }
+         #screen-connect, #screen-display { display: none; }
+         .visible { display: block !important; }
+         input { font-size: 1.1rem; padding: 12px; width: 100%; box-sizing: border-box; margin-bottom: 15px; border: 1px solid #333; background: #1a1a1a; color: #fff; border-radius: 12px; text-align: center; }
+         button { background: #fff; color: #000; border: none; padding: 12px 24px; font-size: 1.1rem; border-radius: 12px; cursor: pointer; width: 100%; font-weight: 600; }
+         .temp-value { font-size: 7rem; font-weight: 700; margin: 0; line-height: 1; letter-spacing: -3px; color: #d1d1d1; }
+         .unit { font-size: 0.4em; vertical-align: super; opacity: 0.3; }
+         .meta-info { margin-top: 25px; font-size: 1.1rem; display: flex; align-items: center; justify-content: center; gap: 10px; }
+         .icon-status { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+         .st-gray { background: #444; }
+         .st-green { background: #00ff00; box-shadow: 0 0 10px #00ff00; }
+         .st-blue { background: #007aff; box-shadow: 0 0 10px #007aff; }
+         .st-red { background: #ff3b30; }
+         .location-text { margin-bottom: 5px; font-size: 1.4rem; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 1px; }
 
-        #screen-connect, #screen-display { display: none; }
-        .visible { display: block !important; }
 
-        input[type="text"] {
-            font-size: 1.1rem; padding: 12px; width: 100%;
-            box-sizing: border-box; margin-bottom: 15px;
-            border: 1px solid #ddd; border-radius: 8px;
-            text-align: center;
-        }
-        button {
-            background: #222; color: white; border: none;
-            padding: 12px 24px; font-size: 1.1rem; border-radius: 8px;
-            cursor: pointer; width: 100%; font-weight: 600;
-        }
-        button:hover { background: #000; }
 
-        .temp-value {
-            font-size: 6rem;
-            font-weight: 700;
-            margin: 0;
-            line-height: 1;
-            letter-spacing: -2px;
-        }
-        .unit {
-            font-size: 0.4em;
-            vertical-align: super;
-            opacity: 0.5;
-        }
+         #event-log div { border-bottom: 1px solid #1a1a1a !important; padding: 6px 0; }
 
-        .meta-info {
-            margin-top: 20px;
-            font-size: 1.1rem;
-            color: #666;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-        }
 
-        .icon-status {
-            width: 12px; height: 12px; border-radius: 50%; display: inline-block;
-        }
-        .st-gray { background: #ccc; }
-        .st-green { background: #2ecc71; box-shadow: 0 0 8px #2ecc71; }
-        .st-red { background: #e74c3c; }
-
-        .device-id {
-            margin-top: 30px;
-            font-family: monospace;
-            color: #bbb;
-            font-size: 0.8rem;
-        }
-
-        .location-text {
-            margin-top: 15px;
-            padding-top: 15px;
-            border-top: 1px solid #eee;
-            font-size: 1.2rem;
-            font-weight: 500;
-            color: #333;
-            word-wrap: break-word;
-        }
-        .location-text:empty {
-            display: none;
-        }
-
-        .advanced-link {
-            display: block;
-            margin-top: 25px;
-            font-size: 0.9rem;
-            color: #3498db;
-            text-decoration: none;
-            border: 1px solid #3498db;
-            padding: 8px;
-            border-radius: 6px;
-            transition: background 0.2s, color 0.2s;
-        }
-        .advanced-link:hover {
-            background: #3498db;
-            color: white;
-        }
-    </style>
+</style>
 </head>
 <body>
-
 <div class="container">
-
     <div id="screen-connect">
         <h2 style="margin-top:0">Connect Device</h2>
         <input type="text" id="uuid-input" placeholder="Device UUID">
         <button id="btn-connect">Connect</button>
     </div>
-
     <div id="screen-display">
-        <div id="temp-display" class="temp-value">--<span class="unit">°C</span></div>
-
-        <div class="meta-info">
-            <span id="status-dot" class="icon-status st-gray"></span>
-            <span id="status-text">Connecting...</span>
-        </div>
-        <div id="update-time" style="color:#999; font-size: 0.9rem; margin-top:5px">Waiting for data...</div>
-
-        <div id="ping-display" style="color:#bbb; font-size: 0.8rem; margin-top:2px"></div>
-
-        <div class="device-id" id="display-uuid"></div>
         <div id="display-location" class="location-text"></div>
+        <div id="temp-display" class="temp-value">--<span class="unit">°C</span></div>
+        <div class="meta-info">
 
-        <a id="link-advanced" href="temp_test.html" class="advanced-link">Advanced Dashboard &rarr;</a>
+
+
+             <div style="display: flex; flex-direction: column; align-items: center; gap: 12px; margin-top: 20px;">
+                 <div style="display: flex; gap: 20px; color: #666; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;">
+                     <span style="display: flex; align-items: center; gap: 6px;">
+                         <span id="status-dot-cloud" class="icon-status st-gray"></span> Cloud
+                     </span>
+                     <span style="display: flex; align-items: center; gap: 6px;">
+                         <span id="status-dot-sensor" class="icon-status st-gray"></span> Sensor
+                     </span>
+                 </div>
+                 
+                 <div id="status-text" style="color: #444; font-size: 0.9rem;">Connecting...</div>
+
+                 <div style="display: flex; flex-direction: column; gap: 4px; margin-top: 10px;">
+                     <div id="update-time" style="color:#666; font-size: 0.9rem;">Waiting...</div>
+                     <div id="ping-display" style="color:#444; font-size: 0.8rem;"></div>
+                     <div id="min-ping-display" style="color:#444; font-size: 0.8rem; cursor:pointer" title="Double click to reset"></div>
+                 </div>
+             </div>
+
     </div>
-
 </div>
-
 </body>
 </html>
