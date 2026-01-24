@@ -117,8 +117,8 @@ export class SmartHomeController {
 
     // Возвращаем Promise<Record[]>
     // DEBUG: Checking request frequency
-    console.debug("SmartHome: requestRecords called", { uuid, count });
     requestRecords(uuid: string, count: number): Promise<Record[]> {
+        Log.debug("SmartHome: requestRecords called", { uuid:uuid, count:count });
         const session = this.sessions.get(uuid);
         if (!session) return Promise.reject(new Error("Device disconnected"));
 

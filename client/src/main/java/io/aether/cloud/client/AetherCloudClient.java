@@ -371,11 +371,11 @@ public final class AetherCloudClient implements Destroyable {
         var regs = makeConnectionReg();
         var cloudData = clientState.getCloud(getUid());
         var cloud = (cloudData != null) ? cloudData.toCloud() : null;
-        AFuture recoveryFutureLocal = AFuture.any(regs.map(c -> (AFuture) c.resolveCloud(cloud)));
+        AFuture recoveryFutureLocal = AFuture.any(regs.map(c -> c.resolveCloud(cloud)));
         recoveryFutureLocal.to(() -> {
             Log.info("Recovery successful.");
             isRecoveryInProgress.set(false);
-            recoveryFuture.done();
+            recoveryFuture.tryDone();
         }).onError(e -> {
             Log.error("Recovery attempt failed.", e);
             RU.schedule(RECOVERY_RETRY_DELAY_MS, () -> isRecoveryInProgress.set(false));
