@@ -6,6 +6,7 @@ import io.aether.logger.Log;
 import io.aether.net.fastMeta.FastApiContextLocal;
 import io.aether.net.fastMeta.FastFutureContext;
 import io.aether.net.fastMeta.FastMetaApi;
+import io.aether.net.fastMeta.FlushReport;
 import io.aether.utils.AString;
 import io.aether.utils.ConcurrentHashSet;
 import io.aether.utils.ToString;
@@ -112,8 +113,14 @@ public class MessageNode implements ToString {
             AFunction<FastApiContextLocal<LT>, LT> localApi) {
         FastApiContextLocal<LT> ctx = new FastApiContextLocal<>(localApi) {
             @Override
-            public void flush(AFuture sendFuture) {
-                send(remoteDataToArray()).to(sendFuture);
+            public void flush(FlushReport report) {
+                send(remoteDataToArray()).addListener(f->{
+                    if(f.isError()||f.isCanceled()){
+                        report.abort();
+                    }else{
+                        report.done();
+                    }
+                });
             }
         };
         toApi(ctx, metaLt, ctx.localApi);
@@ -134,12 +141,18 @@ public class MessageNode implements ToString {
     public <LT> FastApiContextLocal<LT> toApi(FastMetaApi<LT, ? extends LT> metaLt, LT localApi) {
         FastApiContextLocal<LT> ctx = new FastApiContextLocal<>(localApi) {
             @Override
-            public void flush(AFuture sendFuture) {
+            public void flush(FlushReport report) {
                 var d = remoteDataToArray();
                 if (d.length > 0) {
-                    send(d).to(sendFuture);
+                    send(d).addListener(f->{
+                        if(f.isError()||f.isCanceled()){
+                            report.abort();
+                        }else{
+                            report.done();
+                        }
+                    });
                 } else {
-                    sendFuture.done();
+                    report.done();
                 }
             }
         };

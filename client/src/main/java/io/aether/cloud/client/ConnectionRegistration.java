@@ -10,6 +10,7 @@ import io.aether.crypto.CryptoEngine;
 import io.aether.crypto.CryptoProviderFactory;
 import io.aether.logger.Log;
 import io.aether.net.fastMeta.FastApiContext;
+import io.aether.net.fastMeta.FlushReport;
 import io.aether.utils.WorkProofUtil;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
@@ -23,7 +24,7 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
     private final CryptoEngine tempKeyCp = tempKey.toCryptoEngine();
     private final FastApiContext ctxSafe = new FastApiContext() {
         @Override
-        public void flush(AFuture sendFuture) {
+        public void flush(FlushReport report) {
             Log.debug("test");
         }
     };
@@ -109,17 +110,17 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
                                                             });
                                                 }));
                                     }));
-                            api.flush().addListener((f) -> {
-                                if (!f.isDone()) {
-                                    Log.error("flush task canceled 2! $f", "f", f);
+                            api.flush(r->{
+                                if(!r){
+                                    Log.error("flush task canceled 2!");
                                 }
                             });
                         }, 6, () -> Log.warn("RegConn: timeout requestWorkProofData"));
 
             }));
-            api.flush().addListener((f) -> {
-                if (!f.isDone()) {
-                    Log.error("flush task canceled 3! $f", "f", f);
+            api.flush(r->{
+                if(!r){
+                    Log.error("flush task canceled 3!");
                 }
             });
         });

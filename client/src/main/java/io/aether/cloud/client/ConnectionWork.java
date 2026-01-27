@@ -5,6 +5,7 @@ import io.aether.api.common.*;
 import io.aether.crypto.CryptoEngine;
 import io.aether.logger.Log;
 import io.aether.net.fastMeta.FastApiContext;
+import io.aether.net.fastMeta.FlushReport;
 import io.aether.utils.RU;
 import io.aether.utils.flow.Flow;
 import io.aether.utils.futures.AFuture;
@@ -74,12 +75,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         stateListeners.fire(isWritable);
     }
 
-    /**
-     * This method is added as a permanent task to 'remoteApiFuture' and is called
-     * during the 'apiSafeCtx.flush()' process. It collects all pending batched
-     * requests and sends them to the server.
-     */
-    private void flushBackgroundRequests(AuthorizedApi a, AFuture sendFuture) {
+    private FlushReport flushBackgroundRequests(AuthorizedApi a) {
         UUID[] requestCloud = client.clouds.getRequestsFor(UUID.class, this);
         if (requestCloud.length > 0) {
             a.resolverClouds(requestCloud);
@@ -138,39 +134,33 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         while ((task = client.clientTasks.poll()) != null) {
             a.client(task.uid, new ClientApiStream(apiSafeCtx, task.task::accept));
         }
-        List<Message> messageForSend = null;
+        List<Message> messagesForSend = null;
+        List<Tuple2<byte[], AFuture>> messagesForSend2 = new ArrayList<>();
+        List<Runnable> tasksForCancelMessages = new ArrayList<>();
         for (var m : client.messageNodeMap.values()) {
             if (m.connectionsOut.contains(this)) {
-                List<Tuple2<byte[], AFuture>> mm = new ArrayList<>();
                 int currentBatchSize = 0;
                 final int MAX_BATCH_BYTES = 512 * 1024; // 512 KB для Java
                 while (true) {
                     var entry = m.bufferOut.peekFirst();
                     if (entry == null || (currentBatchSize + entry.val1().length > MAX_BATCH_BYTES)) break;
-                    mm.add(m.bufferOut.pollFirst());
-                    currentBatchSize += mm.get(mm.size()-1).val1().length;
+                    messagesForSend2.add(m.bufferOut.pollFirst());
+                    currentBatchSize += messagesForSend2.get(messagesForSend2.size()-1).val1().length;
                 }
-                if (!mm.isEmpty()) {
+                if (!messagesForSend2.isEmpty()) {
                     Log.debug("message send client to server: $uidFrom -> $uidTo", "uidFrom", client.getUid(), "uidTo", m.consumer);
-                    if (messageForSend == null) {
-                        messageForSend = new ObjectArrayList<>();
+                    if (messagesForSend == null) {
+                        messagesForSend = new ObjectArrayList<>();
                     }
-                    Flow.flow(mm).map(v -> new Message(m.consumer, v.val1())).toCollection(messageForSend);
-                    sendFuture.to(() -> {
-                        // Adaptive Cloud: Promote connection on successful send
-                        client.priorityManager.promote(client.getUid(), (short) serverDescriptor.getId());
-                        for (var v : mm) {
-                            v.val2().done();
-                        }
-                    });
-                    sendFuture.onCancel(() -> {
-                        m.bufferOut.addAll(mm);
+                    Flow.flow(messagesForSend2).map(v -> new Message(m.consumer, v.val1())).toCollection(messagesForSend);
+                    tasksForCancelMessages.add(() -> {
+                        m.bufferOut.addAll(messagesForSend2);
                     });
                 }
             }
         }
-        if (messageForSend != null && !messageForSend.isEmpty()) {
-            a.sendMessages(messageForSend.toArray(new Message[0]));
+        if (messagesForSend != null && !messagesForSend.isEmpty()) {
+            a.sendMessages(messagesForSend.toArray(new Message[0]));
         }
         if (!firstAuth) {
             firstAuth = true;
@@ -181,6 +171,18 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                 firstAuth = false;
             });
         }
+        return r->{
+          if(r){
+              client.priorityManager.promote(client.getUid(), serverDescriptor.getId());
+              for (var v : messagesForSend2) {
+                  v.val2().done();
+              }
+          }else{
+              for (var v : tasksForCancelMessages) {
+                  v.run();
+              }
+          }
+        };
     }
 
     @Override
@@ -216,11 +218,13 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             return;
         lastWorkTime = t;
         var f = AFuture.make();
-        f.addListener(v -> inProcess.set(false));
         f.timeout(2, () -> {
             Log.warn("connection work flush 1 timeout");
         });
-        apiSafeCtx.flush(f);
+        apiSafeCtx.flush(r->{
+            inProcess.set(false);
+            f.done();
+        });
     }
 
     public void flush() {
@@ -230,11 +234,13 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             return;
         lastWorkTime = RU.time();
         var f = AFuture.make();
-        f.addListener(v -> inProcess.set(false));
         f.timeout(2, () -> {
             Log.warn("connection work flush 2 timeout");
         });
-        apiSafeCtx.flush(f);
+        apiSafeCtx.flush(r->{
+            inProcess.set(false);
+            f.done();
+        });
     }
 
     /**
@@ -403,8 +409,10 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         }
 
         @Override
-        public void newChild(UUID uid) {
-            client.onNewChild.fire(uid);
+        public void newChildren(UUID[] uid) {
+            for(var u:uid){
+                client.onNewChild.fire(u);
+            }
         }
     }
 
@@ -417,41 +425,36 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         }
 
         @Override
-        public void flush(AFuture sendFuture) {
+        public void flush(FlushReport report) {
             if (fastMetaClient == null || !fastMetaClient.isWritable()) {
-                sendFuture.cancel();
+                report.abort();
                 return;
             }
             boolean hasWork = true;
             if (!hasWork) {
-                sendFuture.done();
+                report.done();
                 return;
             }
             getRootApiFuture().to(api -> {
-                ConnectionWork.this.flushBackgroundRequests(makeRemote(AuthorizedApi.META), sendFuture);
+                FlushReport r2=ConnectionWork.this.flushBackgroundRequests(makeRemote(AuthorizedApi.META));
                 var d = remoteDataToArray();
                 if (d.length == 0) {
-                    sendFuture.done();
+                    report.done();
                     return;
                 }
 
-
-                    Log.info("NETWORK_DEBUG: Preparing LoginStream", 
-                        "data_len", d.length, 
-                        "sid", serverDescriptor.getId(),
-                        "pending_clouds", client.clouds.getPendingRequests(),
-                        "pending_servers", client.servers.getPendingRequests()
-                    );
-
-
                 if (d.length > 500000) {
                     Log.error("NETWORK_DEBUG: LoginStream packet is too large, dropping!", "size", d.length);
+                    report.abort();
                     return;
                 }
                 var loginStream = new LoginStream(cryptoEngine::encrypt, d);
                 api.loginByAlias(client.getAlias(), loginStream);
-                rootApi.flush(sendFuture);
-            }, sendFuture::error).onCancel(sendFuture::cancel);
+                rootApi.flush(r->{
+                    r2.report(r);
+                    report.report(r);
+                });
+            }).onError(e->report.abort()).onCancel(report::abort);
         }
     }
 }

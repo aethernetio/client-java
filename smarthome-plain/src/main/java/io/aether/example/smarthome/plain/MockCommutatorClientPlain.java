@@ -88,7 +88,7 @@ public class MockCommutatorClientPlain {
 
                     SimpleClientApiRemote gui = SimpleClientApi.META.makeRemote(ctx);
                     gui.receiveStatus(records);
-                    ctx.flush(AFuture.make());
+                    ctx.flush();
                 }
             });
         });
