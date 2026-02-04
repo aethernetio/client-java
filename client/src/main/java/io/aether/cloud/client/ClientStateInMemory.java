@@ -2,7 +2,10 @@ package io.aether.cloud.client;
 
 import io.aether.api.CryptoUtils;
 import io.aether.api.clienttypes.ClientStateForSave;
-import io.aether.api.common.*;
+import io.aether.api.common.CryptoLib;
+import io.aether.api.common.Key;
+import io.aether.api.common.KeySignPublic;
+import io.aether.api.common.ServerDescriptor;
 import io.aether.crypto.SignChecker;
 import io.aether.logger.Log;
 import io.aether.net.fastMeta.FastFutureContext;
@@ -13,6 +16,7 @@ import io.aether.utils.ToString;
 import io.aether.utils.dataio.DataInOut;
 import io.aether.utils.dataio.DataInOutStatic;
 import io.aether.utils.slots.AMFuture;
+
 import java.io.File;
 import java.io.IOException;
 import java.net.URI;
@@ -21,6 +25,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+
 import static io.aether.utils.flow.Flow.flow;
 
 public class ClientStateInMemory implements ClientState, ToString {
@@ -95,7 +100,7 @@ public class ClientStateInMemory implements ClientState, ToString {
         sb.add("master key: ").add(masterKey).add("\n");
         sb.add("crypto lib: ").add(cryptoLib).add("\n");
         sb.add("cloud: ").add(getCloud(uid)).add("\n");
-                for (var c : getCloud(uid).toCloud().getData()) {
+        for (var c : getCloud(uid).toCloud().getData()) {
             var sd = getServerDescriptor(c);
             if (sd == null)
                 continue;
@@ -202,19 +207,13 @@ public class ClientStateInMemory implements ClientState, ToString {
         return ds.descriptor;
     }
 
-        public void saveCloud(UUID uid, ClientCloud cloud) {
-        getUidInfo(uid).cloud = cloud;
+    public void saveCloud(ClientCloud cloud) {
+        getUidInfo(cloud.getUid()).cloud = cloud;
     }
 
     public ClientInfoMutable getUidInfo(UUID uid) {
         assert uid != null;
         return clients.computeIfAbsent(uid, ClientInfoMutable::new);
-    }
-
-        public void setCloud(UUID uid, ClientCloud cloud) {
-        var u = getUidInfo(uid);
-        u.cloud = cloud;
-        saveCloud(uid, cloud);
     }
 
     public ClientCloud getCloud(UUID uid) {
@@ -306,7 +305,7 @@ public class ClientStateInMemory implements ClientState, ToString {
 
         public volatile ClientCloud cloud;
 
-                public ClientInfoMutable(io.aether.api.clienttypes.ClientInfo c) {
+        public ClientInfoMutable(io.aether.api.clienttypes.ClientInfo c) {
             this(c.getUid(), new ClientCloud(c.getUid(), c.getCloud()));
             if (c.getWeights() != null) {
                 for (var w : c.getWeights()) {
@@ -315,7 +314,7 @@ public class ClientStateInMemory implements ClientState, ToString {
             }
         }
 
-                public ClientInfoMutable(UUID uid, ClientCloud cloud) {
+        public ClientInfoMutable(UUID uid, ClientCloud cloud) {
             this.uid = uid;
             this.cloud = cloud;
         }
@@ -329,7 +328,7 @@ public class ClientStateInMemory implements ClientState, ToString {
             return uid;
         }
 
-                @Override
+        @Override
         public ClientCloud getCloud() {
             return cloud;
         }

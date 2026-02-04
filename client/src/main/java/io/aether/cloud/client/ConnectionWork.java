@@ -76,11 +76,11 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
     }
 
     private FlushReport flushBackgroundRequests(AuthorizedApi a) {
-        UUID[] requestCloud = client.clouds.getRequestsFor(UUID.class, this);
+        UUID[] requestCloud = client.clouds.pollAllRequests().toArray(new UUID[0]);;
         if (requestCloud.length > 0) {
-            a.resolverClouds(requestCloud);
+            a.resolveClouds(requestCloud);
         }
-        Integer[] requestServers = client.servers.getRequestsFor(Integer.class, this);
+        Integer[] requestServers = client.servers.pollAllRequests().toArray(new Integer[0]);
         if (requestServers.length > 0) {
             short[] serverIds = new short[requestServers.length];
             for (int i = 0; i < requestServers.length; i++) {
@@ -88,11 +88,11 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             }
             a.resolverServers(serverIds);
         }
-        UUID[] requestClientGroups = client.clientGroups.getRequestsFor(UUID.class, this);
+        UUID[] requestClientGroups = client.clientGroups.pollAllRequests().toArray(new UUID[0]);
         if (requestClientGroups.length > 0) {
             a.requestAccessGroupsForClients(requestClientGroups);
         }
-        Long[] requestAccessGroups = client.accessGroups.getRequestsFor(Long.class, this);
+        Long[] requestAccessGroups = client.accessGroups.pollAllRequests().toArray(new Long[0]);
         if (requestAccessGroups.length > 0) {
             long[] groupIds = new long[requestAccessGroups.length];
             for (int i = 0; i < requestAccessGroups.length; i++) {
@@ -100,11 +100,11 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             }
             a.requestAccessGroupsItems(groupIds);
         }
-        UUID[] requestAllAccessed = client.allAccessedClients.getRequestsFor(UUID.class, this);
+        UUID[] requestAllAccessed = client.allAccessedClients.pollAllRequests().toArray(new UUID[0]);
         if (requestAllAccessed.length > 0) {
             a.requestAllAccessedClients(requestAllAccessed);
         }
-        AccessCheckPair[] requestAccessCheck = client.accessCheckCache.getRequestsFor(AccessCheckPair.class, this);
+        AccessCheckPair[] requestAccessCheck = client.accessCheckCache.pollAllRequests().toArray(new AccessCheckPair[0]);
         if (requestAccessCheck.length > 0) {
             a.requestAccessCheck(requestAccessCheck);
         }
@@ -274,7 +274,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             Log.debug("Received $count AccessGroups", "count", groups.length);
             for (AccessGroup group : groups) {
                 if (group != null) {
-                    client.accessGroups.putResolved(group.getId(), group);
+                    client.accessGroups.put(group.getId(), group);
                 }
             }
         }
@@ -282,7 +282,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         @Override
         public void sendAccessGroupForClient(UUID uid, long[] groups) {
             Log.debug("Received AccessGroups for client $uid", "uid", uid);
-            client.clientGroups.putResolved(uid, LongSet.of(groups));
+            client.clientGroups.put(uid, LongSet.of(groups));
         }
 
         @Override
@@ -305,7 +305,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                     List<UUID> newUuids = new ArrayList<>(List.of(group.getData()));
                     newUuids.addAll(List.of(groups));
                     AccessGroup newGroup = new AccessGroup(group.getOwner(), group.getId(), newUuids.stream().distinct().toArray(UUID[]::new));
-                    client.accessGroups.putResolved(id, newGroup);
+                    client.accessGroups.put(id, newGroup);
                 }
             });
         }
@@ -330,7 +330,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                     List<UUID> newUuids = new ArrayList<>(List.of(group.getData()));
                     newUuids.removeAll(List.of(groups));
                     AccessGroup newGroup = new AccessGroup(group.getOwner(), group.getId(), newUuids.toArray(new UUID[0]));
-                    client.accessGroups.putResolved(id, newGroup);
+                    client.accessGroups.put(id, newGroup);
                 }
             });
         }
@@ -358,7 +358,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         @Override
         public void sendAllAccessedClients(UUID uid, UUID[] accessedClients) {
             Log.debug("Received $count AccessedClients for $uid", "count", accessedClients.length, "uid", uid);
-            client.allAccessedClients.putResolved(uid, ObjectSet.of(accessedClients));
+            client.allAccessedClients.put(uid, ObjectSet.of(accessedClients));
         }
 
         @Override
@@ -366,7 +366,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             Log.debug("Received $count AccessCheckResults", "count", results.length);
             for (AccessCheckResult result : results) {
                 if (result != null) {
-                    client.accessCheckCache.putResolved(new AccessCheckPair(result.getSourceUid(), result.getTargetUid()), result.isHasAccess());
+                    client.accessCheckCache.put(new AccessCheckPair(result.getSourceUid(), result.getTargetUid()), result.isHasAccess());
                 }
             }
         }
@@ -454,7 +454,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                     r2.report(r);
                     report.report(r);
                 });
-            }).onError(e->report.abort()).onCancel(report::abort);
+            }).onError(e->report.abort());
         }
     }
 }

@@ -189,7 +189,7 @@ The `BMap<K, V>` (Batching Map) is the client's reactive and network-aware cache
 
 1.  **Requesting**: Calling `bmap.getFuture(key)` places the `key` into the batch queue (`allRequests`).
 2.  **Batching**: The client's background scheduler (or an explicit **`client.flush()`**) checks the queues of all `BMap` instances.
-3.  **Flushing**: It extracts all pending keys from the queues via `bmap.getRequestsFor(sender)` and sends a single RPC request (e.g., `resolverClouds(keys)` or `resolverServers(keys)`) to the work server.
+3.  **Flushing**: It extracts all pending keys from the queues via `bmap.getRequestsFor(sender)` and sends a single RPC request (e.g., `resolveClouds(keys)` or `resolverServers(keys)`) to the work server.
 
 ### Access Control Operations
 

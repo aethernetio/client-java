@@ -15316,9 +15316,9 @@ class AuthorizedApiMetaImpl {
                     }
                     const argsNames_975 = ["uids"];
                     const argsValues_976 = [uids_972];
-                    ctx.invokeLocalMethodBefore("resolverClouds", argsNames_975, argsValues_976);
-                    localApi.resolverClouds(uids_972);
-                    ctx.invokeLocalMethodAfter("resolverClouds", null, argsNames_975, argsValues_976);
+                    ctx.invokeLocalMethodBefore("resolveClouds", argsNames_975, argsValues_976);
+                    localApi.resolveClouds(uids_972);
+                    ctx.invokeLocalMethodAfter("resolveClouds", null, argsNames_975, argsValues_976);
                     break;
                 }
                 case 14: {
@@ -15823,12 +15823,12 @@ class AuthorizedApiMetaImpl {
                 }
                 sCtx_1108.sendToRemote(dataOut_1157.toArray());
             },
-            resolverClouds: (uids) => {
+            resolveClouds: (uids) => {
                 const dataOut_1163 = new aether_client_1.DataInOut();
                 dataOut_1163.writeByte(13);
                 const argsNames_1165 = ["uids"];
                 const argsValues_1166 = [uids];
-                sCtx_1108.invokeRemoteMethodAfter("resolverClouds", null, argsNames_1165, argsValues_1166);
+                sCtx_1108.invokeRemoteMethodAfter("resolveClouds", null, argsNames_1165, argsValues_1166);
                 aether_client_1.SerializerPackNumber.INSTANCE.put(dataOut_1163, uids.length);
                 for (const el_1167 of uids) {
                     aether_client_1.FastMeta.META_UUID.serialize(sCtx_1108, el_1167, dataOut_1163);
@@ -20403,7 +20403,7 @@ class ConnectionWork extends aether_client_connection_base_1.Connection {
                 count: requestCloud.length,
                 uids: requestCloud
             });
-            a.resolverClouds(requestCloud);
+            a.resolveClouds(requestCloud);
         }
     }
     /**

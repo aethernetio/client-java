@@ -8,6 +8,10 @@ public class ClientCloud {
 
     private final UUID uid;
 
+    public UUID getUid() {
+        return uid;
+    }
+
     private short[] sids;
 
     private final Map<Short, Long> weights = new ConcurrentHashMap<>();

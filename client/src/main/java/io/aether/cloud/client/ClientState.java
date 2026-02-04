@@ -31,7 +31,7 @@ public interface ClientState {
 
     ClientInfo getClientInfo(UUID uid);
 
-    void setCloud(UUID uid, ClientCloud cloud);
+    void saveCloud(ClientCloud cloud);
 
     ClientCloud getCloud(UUID uid);
 

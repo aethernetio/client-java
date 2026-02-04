@@ -115,7 +115,7 @@ public class MessageNode implements ToString {
             @Override
             public void flush(FlushReport report) {
                 send(remoteDataToArray()).addListener(f->{
-                    if(f.isError()||f.isCanceled()){
+                    if(f.isError()){
                         report.abort();
                     }else{
                         report.done();
@@ -145,7 +145,7 @@ public class MessageNode implements ToString {
                 var d = remoteDataToArray();
                 if (d.length > 0) {
                     send(d).addListener(f->{
-                        if(f.isError()||f.isCanceled()){
+                        if(f.isError()){
                             report.abort();
                         }else{
                             report.done();

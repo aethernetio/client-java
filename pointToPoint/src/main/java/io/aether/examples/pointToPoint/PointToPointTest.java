@@ -40,12 +40,9 @@ public class PointToPointTest {
         AetherCloudClient client2 = new AetherCloudClient(clientConfig2, "client2");
 
         AFuture testDoneFuture = AFuture.make();
-        client1.startFuture.to(() -> Log.info("client is registered uid2: $uid1", "uid1", client1.getUid()));
+        client1.startFuture.to(() -> Log.info("client is registered uid1: $uid1", "uid1", client1.getUid()));
         client2.startFuture.to(() -> Log.info("client is registered uid2: $uid2", "uid2", client2.getUid()));
         client1.startFuture.onError(Log::error);
-        client2.startFuture.onError(Log::error);
-        client1.startFuture.onCancel(() -> Log.error("cancel"));
-        client2.startFuture.onCancel(() -> Log.error("cancel"));
         client2.startFuture.onError(Log::error);
         AFuture.all(client1.startFuture, client2.startFuture).to(() -> {
             Log.info("clients is registered uid1: $uid1 uid2: $uid2", "uid1", client1.getUid(), "uid2", client2.getUid());
@@ -101,7 +98,7 @@ public class PointToPointTest {
 
             while (receiveCounter.get() < total) {
                 boolean[] abortFlag = new boolean[1];
-                ch1.send(data).onCancel(() -> {
+                ch1.send(data).onError((e) -> {
                     abortFlag[0] = true;
                 });
                 if (!abortFlag[0]) {
@@ -123,7 +120,7 @@ public class PointToPointTest {
         return testDoneFuture;
     }
 
-    public AFuture p2pAndBack() { // ИСПРАВЛЕНО: удален дженерик
+    public AFuture p2pAndBack() {
         var parent = UUID.fromString("B0600A31-1ACC-BB39-35C9-F1476C1F40E2");
         if (clientConfig1 == null)
             clientConfig1 = new ClientStateInMemory(parent, registrationUri, null, CryptoLib.HYDROGEN);

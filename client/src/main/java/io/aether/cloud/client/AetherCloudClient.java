@@ -19,22 +19,22 @@ import io.aether.utils.RU;
 import io.aether.utils.flow.Flow;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
-import io.aether.utils.interfaces.ABiConsumer;
-import io.aether.utils.interfaces.AConsumer;
-import io.aether.utils.interfaces.AFunction;
-import io.aether.utils.interfaces.Destroyable;
+import io.aether.utils.interfaces.*;
 import io.aether.utils.rcollections.BMap;
 import io.aether.utils.rcollections.RCol;
 import io.aether.utils.slots.EventBiConsumer;
 import io.aether.utils.slots.EventConsumer;
 import io.aether.utils.slots.EventConsumerWithQueue;
 import org.jetbrains.annotations.NotNull;
+
 import java.net.URI;
 import java.util.*;
-import java.util.concurrent.*;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
-import static io.aether.utils.flow.Flow.flow;
 
 public final class AetherCloudClient implements Destroyable {
 
@@ -45,50 +45,29 @@ public final class AetherCloudClient implements Destroyable {
     public final EventConsumer<MessageNode> onClientStream = new EventConsumerWithQueue<>();
 
     public final Destroyer destroyer = new Destroyer(getClass().getSimpleName());
-
-    final LNode logClientContext;
-
-    final Map<Integer, ConnectionWork> connections = new ConcurrentHashMap<>();
-
-    final BMap<UUID, Cloud> clouds = RCol.bMap(2000, "CloudCache");
-
-    final AtomicReference<RegStatus> regStatus = new AtomicReference<>(RegStatus.NO);
-
-    final BMap<Integer, ServerDescriptor> servers = RCol.bMap(2000, "ServerCache");
-
-    final BMap<UUID, Set<Long>> clientGroups = RCol.bMap(1000, "ClientGroupsCache");
-
-    final BMap<Long, AccessGroup> accessGroups = RCol.bMap(1000, "AccessGroupsCache");
-
-    final BMap<UUID, Set<UUID>> allAccessedClients = RCol.bMap(1000, "AllAccessedClientsCache");
-
-    final BMap<AccessCheckPair, Boolean> accessCheckCache = RCol.bMap(2000, "AccessCheckCache");
-
-    final long lastSecond;
-
-    final Map<UUID, MessageNode> messageNodeMap = new ConcurrentHashMap<>();
-
-    final EventConsumer<UUID> onNewChild = new EventConsumer<>();
-
-    final EventBiConsumer<UUID, ServerApiByUid> onNewChildApi = new EventBiConsumer<>();
-
-    final Map<Long, Map<UUID, ARFuture<Boolean>>> accessOperationsAdd = new ConcurrentHashMap<>();
-
-    final Map<Long, Map<UUID, ARFuture<Boolean>>> accessOperationsRemove = new ConcurrentHashMap<>();
-
-    final Queue<ClientTask> clientTasks = new ConcurrentLinkedQueue<>();
-
     public final AtomicBoolean isRecoveryInProgress = new AtomicBoolean(false);
-
     public final AFuture recoveryFuture = AFuture.make();
-
+    final LNode logClientContext;
+    final Map<Integer, ConnectionWork> connections = new ConcurrentHashMap<>();
+    final BMap<UUID, Cloud> clouds = RCol.bMap("CloudCache");
+    final AtomicReference<RegStatus> regStatus = new AtomicReference<>(RegStatus.NO);
+    final BMap<Integer, ServerDescriptor> servers = RCol.bMap("ServerCache");
+    final BMap<UUID, Set<Long>> clientGroups = RCol.bMap("ClientGroupsCache");
+    final BMap<Long, AccessGroup> accessGroups = RCol.bMap("AccessGroupsCache");
+    final BMap<UUID, Set<UUID>> allAccessedClients = RCol.bMap("AllAccessedClientsCache");
+    final BMap<AccessCheckPair, Boolean> accessCheckCache = RCol.bMap("AccessCheckCache");
+    final long lastSecond;
+    final Map<UUID, MessageNode> messageNodeMap = new ConcurrentHashMap<>();
+    final EventConsumer<UUID> onNewChild = new EventConsumer<>();
+    final EventBiConsumer<UUID, ServerApiByUid> onNewChildApi = new EventBiConsumer<>();
+    final Map<Long, Map<UUID, ARFuture<Boolean>>> accessOperationsAdd = new ConcurrentHashMap<>();
+    final Map<Long, Map<UUID, ARFuture<Boolean>>> accessOperationsRemove = new ConcurrentHashMap<>();
+    final Queue<ClientTask> clientTasks = new ConcurrentLinkedQueue<>();
     final Queue<AConsumer<AuthorizedApi>> authTasks = new ConcurrentLinkedQueue<>();
 
     final CloudPriorityManager priorityManager = new CloudPriorityManager();
 
     private final ClientState clientState;
-
-    private final AtomicBoolean startConnection = new AtomicBoolean();
 
     private final int timeout1 = 6;
 
@@ -123,11 +102,6 @@ public final class AetherCloudClient implements Destroyable {
         try (var ln = logClientContext.context()) {
             destroyer.add(this::closeConnections);
             populateCachesFromState();
-            clouds.forValueUpdate().add(uu -> store.setCloud(uu.key, new ClientCloud(uu.key, uu.newValue)));
-            servers.forValueUpdate().add(s -> {
-                var ss = store.getServerInfo(s.key);
-                ss.setDescriptor(s.newValue);
-            });
             onNewChild.add(u -> {
                 if (onNewChildApi.hasListener()) {
                     getClientApi(u, api -> {
@@ -150,12 +124,13 @@ public final class AetherCloudClient implements Destroyable {
         for (var c : clientState.getClientInfoAll()) {
             if (c.getCloud() != null) {
                 priorityManager.updateCloudFromWork(c.getUid(), c.getCloud().toCloud());
-                clouds.putResolved(c.getUid(), c.getCloud().toCloud());
+                clouds.put(c.getUid(), c.getCloud().toCloud());
+                clientState.saveCloud(c.getCloud());
             }
         }
         for (var s : clientState.getServerInfoAll()) {
             if (s.getDescriptor() != null)
-                servers.putResolved(s.getServerId(), s.getDescriptor());
+                putServerDescriptor( s.getDescriptor());
         }
     }
 
@@ -260,15 +235,16 @@ public final class AetherCloudClient implements Destroyable {
         if (connectionRegistrations.isEmpty()) {
             List<java.net.URI> uris = clientState.getRegistrationUri();
             uris.stream()
-                .limit(3)
-                .map(uri -> new ConnectionRegistration(this, uri))
-                .forEach(connectionRegistrations::add);
+                    .limit(3)
+                    .map(uri -> new ConnectionRegistration(this, uri))
+                    .forEach(connectionRegistrations::add);
         }
         return Flow.flow(connectionRegistrations);
     }
+
     private void connect(int step) {
         if (destroyer.isDestroyed()) {
-            startFuture.cancel();
+            startFuture.error(new CancellationException("is destroyed"));
             return;
         }
         if (step == 0) {
@@ -284,7 +260,7 @@ public final class AetherCloudClient implements Destroyable {
                 var timeoutForConnect = clientState.getTimeoutForConnectToRegistrationServer();
                 try {
                     var anyFuture = AFuture.any(regs.map(ConnectionRegistration::registration));
-                    anyFuture.to(this::startScheduledTask).onError(startFuture::error).onCancel(startFuture::cancel);
+                    anyFuture.to(this::startScheduledTask).onError(startFuture::error);
                     anyFuture.timeoutMs(timeoutForConnect, () -> {
                         Log.warn("Failed to connect to registration server: $uris", "uris", clientState.getRegistrationUri());
                         RU.schedule(5000, () -> connect(step));
@@ -345,7 +321,7 @@ public final class AetherCloudClient implements Destroyable {
                 resultFuture.error(new IllegalStateException("Fetched cloud was null for UID: " + uid));
                 return;
             }
-            clientState.setCloud(uid, new ClientCloud(uid, cloud));
+            clientState.saveCloud(new ClientCloud(uid, cloud));
             List<ARFuture<ServerDescriptor>> serverFutures = new ArrayList<>();
             for (var sid : cloud.getData()) {
                 serverFutures.add(getServer(sid));
@@ -489,10 +465,19 @@ public final class AetherCloudClient implements Destroyable {
         var r = clientState.getCloud(uid);
         if (r != null)
             return ARFuture.of(r.toCloud());
-        var res = clouds.getFuture(uid);
-        res.timeout(4, () -> {
-            Log.error("timeout get cloud: $uid", "uid", uid);
-            res.error(new ClientTimeoutException("Timeout getting cloud for: " + uid));
+        var res=ARFuture.<Cloud>make();
+        var rr = clouds.get(uid);
+        rr.listen(10, new Future<>() {
+            @Override
+            public void onResolved(Cloud value) {
+                res.done(value);
+            }
+
+            @Override
+            public void onError(int time, Exception error) {
+                Log.error("timeout get cloud: $uid", "uid", uid);
+                res.error(new ClientTimeoutException("Timeout getting cloud for: " + uid));
+            }
         });
         return res;
     }
@@ -510,13 +495,13 @@ public final class AetherCloudClient implements Destroyable {
             Log.info("Already registration");
             return;
         }
-        clouds.putResolved(regResp.getUid(), regResp.getCloud());
+        clouds.put(regResp.getUid(), regResp.getCloud());
         clientState.setUid(regResp.getUid());
         clientState.setAlias(regResp.getAlias());
         var cloud = regResp.getCloud();
         if (cloud != null && cloud.getData().length > 0) {
             for (var serverId : cloud.getData()) {
-                getServer((int) serverId).to(this::getConnection);
+                getServer(serverId).to(this::getConnection);
             }
         }
         startFuture.done();
@@ -646,11 +631,11 @@ public final class AetherCloudClient implements Destroyable {
     }
 
     public void setCloud(UUID uid, Cloud cloud) {
-        clouds.putResolved(uid, cloud);
+        clouds.put(uid, cloud);
     }
 
     public void putServerDescriptor(ServerDescriptor s) {
-        servers.putResolved((int) s.getId(), s);
+        servers.put((int) s.getId(), s);
         clientState.getServerInfo(s.getId()).setDescriptor(s);
     }
 

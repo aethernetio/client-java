@@ -12,6 +12,7 @@ import io.aether.utils.interfaces.AFunction;
 import io.aether.utils.interfaces.Destroyable;
 import io.aether.utils.slots.EventConsumer;
 import java.net.URI;
+import java.util.concurrent.CancellationException;
 
 /**
  * Abstract base class for handling connections in the Aether Cloud client.
@@ -40,7 +41,7 @@ public abstract class Connection<LT, RT extends RemoteApi> implements Destroyabl
         this.uri = uri;
         this.client = client;
         if (client.destroyer.isDestroyed()) {
-            connectFuture.cancel();
+            connectFuture.error(new CancellationException());
             rootApi = null;
             this.fastMetaClient = null;
             return;
