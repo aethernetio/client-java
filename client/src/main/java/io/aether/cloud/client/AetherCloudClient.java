@@ -201,20 +201,17 @@ public final class AetherCloudClient implements Destroyable {
         if (serverDescriptor == null) {
             throw new ClientApiException("Cannot get connection for null ServerDescriptor.");
         }
-        int sid = (int) serverDescriptor.getId();
+        int sid = serverDescriptor.getId();
         putServerDescriptor(serverDescriptor);
         return connections.computeIfAbsent(sid, s -> {
             try (var ln = logClientContext.context()) {
                 ConnectionWork conn = new ConnectionWork(this, serverDescriptor);
-                // Adaptive Cloud: Listen for connection state changes to handle failures.
                 conn.stateListeners.add(isWritable -> {
                     if (!isWritable) {
                         UUID uid = getUid();
                         if (uid != null) {
                             Log.info("Connection to server failed or lost. Demoting SID and attempting failover.", "sid", sid);
-                            // Lower the priority of the failed server using the verified demote method.
                             priorityManager.demote(uid, (short) sid);
-                            // Re-initiate connection process to find and connect to the next best SID.
                             makeFirstConnection();
                         }
                     }
