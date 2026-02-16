@@ -151,12 +151,12 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
                             Log.debug("Putting server descriptor: " + s);
                             client.putServerDescriptor(s);
                         }
-                        result.done();
+                        result.tryDone();
                         Log.info("RegConn: Server descriptors resolved.");
                     })
                     .onError(e -> {
                         Log.error("Failed to resolve servers", e);
-                        result.error(e);
+                        result.tryError(e);
                     });
         }));
         rootApi.flush();

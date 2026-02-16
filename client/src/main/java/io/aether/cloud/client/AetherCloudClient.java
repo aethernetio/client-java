@@ -336,6 +336,7 @@ public final class AetherCloudClient implements Destroyable {
         return resultFuture;
     }
 
+
     public AFuture triggerRecovery() {
         if (isRecoveryInProgress.get()) {
             return recoveryFuture;
@@ -344,7 +345,28 @@ public final class AetherCloudClient implements Destroyable {
         var regs = makeConnectionReg();
         var cloudData = clientState.getCloud(getUid());
         var cloud = (cloudData != null) ? cloudData.toCloud() : null;
-        AFuture recoveryFutureLocal = AFuture.any(regs.map(c -> c.resolveCloud(cloud)));
+        
+        AFuture recoveryFutureLocal;
+        if (cloud != null) {
+            // Есть облако в кэше - пытаемся разрешить сервера
+            recoveryFutureLocal = AFuture.any(regs.map(c -> c.resolveCloud(cloud)));
+
+
+
+        } else {
+            // Нет облака - выполняем полную регистрацию заново
+            Log.info("Cloud missing from cache, performing full re-registration.");
+            Log.info("TriggerRecovery: cloud is null, uid=$uid, performing full re-registration.", "uid", getUid());
+            // Reset registration status to allow confirmRegistration to succeed
+            regStatus.set(RegStatus.BEGIN);
+            AFuture regDone = AFuture.any(regs.map(ConnectionRegistration::registration));
+            recoveryFutureLocal = regDone.to(clouds.getFuture(getUid()).toFuture());
+            Log.info("TriggerRecovery: re-registration done, new uid=$uid, waiting for cloud in cache.", "uid", getUid());
+        }
+
+
+
+        
         recoveryFutureLocal.to(() -> {
             Log.info("Recovery successful.");
             isRecoveryInProgress.set(false);
@@ -355,6 +377,7 @@ public final class AetherCloudClient implements Destroyable {
         });
         return recoveryFutureLocal;
     }
+
 
     private void startScheduledTask() {
         if (startScheduledTaskFlag.compareAndSet(false, true)) {
@@ -463,8 +486,7 @@ public final class AetherCloudClient implements Destroyable {
         if (r != null)
             return ARFuture.of(r.toCloud());
         var res=ARFuture.<Cloud>make();
-        var rr = clouds.get(uid);
-        rr.listen(10, new Future<>() {
+        clouds.get(uid,10, new Future<>() {
             @Override
             public void onResolved(Cloud value) {
                 res.done(value);
@@ -487,12 +509,15 @@ public final class AetherCloudClient implements Destroyable {
         return clientState.getUid() != null;
     }
 
+
     public void confirmRegistration(FinishResult regResp) {
         if (!regStatus.compareAndSet(RegStatus.BEGIN, RegStatus.CONFIRM)) {
             Log.info("Already registration");
             return;
         }
         clouds.put(regResp.getUid(), regResp.getCloud());
+        // Сохраняем облако в персистентное состояние клиента
+        clientState.saveCloud(new ClientCloud(regResp.getUid(),regResp.getCloud()));
         clientState.setUid(regResp.getUid());
         clientState.setAlias(regResp.getAlias());
         var cloud = regResp.getCloud();
@@ -503,6 +528,7 @@ public final class AetherCloudClient implements Destroyable {
         }
         startFuture.done();
     }
+
 
     public MessageNode getMessageNode(@NotNull UUID uid) {
         return getMessageNode(uid, MessageEventListener.DEFAULT);
