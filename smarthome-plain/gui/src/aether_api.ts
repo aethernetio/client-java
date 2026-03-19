@@ -1,5 +1,5 @@
 import  {
-    AFuture, ARFuture, DataIn, DataOut, DataInOut, DataInOutStatic, FastMetaType, FastFutureContext, RemoteApi, FastMeta, SerializerPackNumber, DeserializerPackNumber, FastApiContextLocal, FastMetaApi, BytesConverter, RemoteApiFuture, UUID, URI, AConsumer, ToString, AString
+    AFuture, ARFuture, DataIn, DataOut, DataInOut, DataInOutStatic, FastMetaType, FastFutureContext, RemoteApi, FastMeta, SerializerPackNumber, DeserializerPackNumber, FastApiContextLocal, FastMetaApi, BytesConverter, UUID, URI, AConsumer, ToString, AString, FlushReport
 }
 from 'aether-client';
 import * as Impl from './aether_api_impl';
@@ -66,7 +66,7 @@ export class Record implements ToString  {
         return Record.staticEquals(this, other);
         
     }
-    public toString(result: AString): AString  {
+    public toAString(result: AString): AString  {
         Record.META.metaToString(this, result);
         return result;
         

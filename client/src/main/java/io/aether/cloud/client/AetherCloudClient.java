@@ -130,7 +130,7 @@ public final class AetherCloudClient implements Destroyable {
         }
         for (var s : clientState.getServerInfoAll()) {
             if (s.getDescriptor() != null)
-                putServerDescriptor( s.getDescriptor());
+                putServerDescriptor(s.getDescriptor());
         }
     }
 
@@ -345,12 +345,11 @@ public final class AetherCloudClient implements Destroyable {
         var regs = makeConnectionReg();
         var cloudData = clientState.getCloud(getUid());
         var cloud = (cloudData != null) ? cloudData.toCloud() : null;
-        
+
         AFuture recoveryFutureLocal;
         if (cloud != null) {
             // Есть облако в кэше - пытаемся разрешить сервера
             recoveryFutureLocal = AFuture.any(regs.map(c -> c.resolveCloud(cloud)));
-
 
 
         } else {
@@ -365,8 +364,6 @@ public final class AetherCloudClient implements Destroyable {
         }
 
 
-
-        
         recoveryFutureLocal.to(() -> {
             Log.info("Recovery successful.");
             isRecoveryInProgress.set(false);
@@ -485,8 +482,8 @@ public final class AetherCloudClient implements Destroyable {
         var r = clientState.getCloud(uid);
         if (r != null)
             return ARFuture.of(r.toCloud());
-        var res=ARFuture.<Cloud>make();
-        clouds.get(uid,10, new Future<>() {
+        var res = ARFuture.<Cloud>make();
+        clouds.get(uid, 10, new Future<>() {
             @Override
             public void onResolved(Cloud value) {
                 res.done(value);
@@ -515,9 +512,10 @@ public final class AetherCloudClient implements Destroyable {
             Log.info("Already registration");
             return;
         }
+        Log.info("confirm registration: $uid", "uid", regResp.getUid());
         clouds.put(regResp.getUid(), regResp.getCloud());
         // Сохраняем облако в персистентное состояние клиента
-        clientState.saveCloud(new ClientCloud(regResp.getUid(),regResp.getCloud()));
+        clientState.saveCloud(new ClientCloud(regResp.getUid(), regResp.getCloud()));
         clientState.setUid(regResp.getUid());
         clientState.setAlias(regResp.getAlias());
         var cloud = regResp.getCloud();

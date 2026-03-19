@@ -88,6 +88,21 @@ types:
     stream:
       api: "SmartHomeClientApi"
       crypto: true
+  Command:
+    doc: Команда для устройства, сохраненная в очереди.
+    fields:
+      id: uuid
+      targetDeviceUid: uuid
+      targetLocalId: int
+      command: VariantData
+      timestamp: Date
+      status: CommandStatus
+  CommandStatus:
+    enum:
+      - PENDING
+      - SENT
+      - DELIVERED
+      - FAILED
 
 # ===================================================================
 # API Interface Definitions
@@ -140,3 +155,66 @@ api:
         params:
           localDeviceId: int # Коммутатор знает только локальный ID
           state: DeviceStateData
+
+  # -----------------------------------------------------------------
+  # NEW: API Implemented by the SERVICE HUB
+  # Устройства подключаются к сервису и отправляют данные
+  # -----------------------------------------------------------------
+  SmartHomeDeviceToServiceApi:
+    doc: API for devices to send data to the central service.
+    methods:
+
+      reportState:
+        doc: Устройство отправляет новое состояние (push).
+        id: 21
+        params:
+          localDeviceId: int
+          state: DeviceStateData
+          deviceUid: uuid
+        returns: bool
+      
+      getPendingCommands:
+        doc: Устройство запрашивает команды, которые были отправлены, пока оно было офлайн.
+        id: 22
+        params:
+          deviceUid: uuid
+        returns: Command[]
+  
+  # -----------------------------------------------------------------
+  # API Implemented by the SERVICE HUB for CLIENTS
+  # Клиенты получают данные от сервиса
+  # -----------------------------------------------------------------
+  SmartHomeClientGuiApi:
+    doc: API for clients to get data from the central service.
+    methods:
+      getAllDevices:
+        doc: Получить список всех зарегистрированных устройств.
+        id: 30
+        returns: HardwareDevice[]
+      
+      getDeviceHistory:
+        doc: Получить историю состояний устройства.
+        id: 31
+        params:
+          deviceUid: uuid
+          localDeviceId: int
+          fromTime: Date?
+          toTime: Date?
+        returns: DeviceStateData[]
+      
+      subscribeToDevice:
+        doc: Подписаться на обновления устройства.
+        id: 32
+        params:
+          deviceUid: uuid
+          localDeviceId: int
+        returns: bool
+      
+      sendCommand:
+        doc: Отправить команду устройству (через сервис).
+        id: 33
+        params:
+          deviceUid: uuid
+          localActorId: int
+          command: VariantData
+        returns: void  # будущий результат, когда устройство ответит

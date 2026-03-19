@@ -9,10 +9,10 @@ import {
     Log,
     LogFilter,
     applySodium,
-    EventConsumer
+    EventConsumer,
+    FlushReport,
 } from 'aether-client';
 
-// ВАЖНО: Импортируем Record из сгенерированного API
 import {
     SimpleDeviceApiRemote,
     SimpleClientApi,
@@ -80,24 +80,22 @@ export class SmartHomeController {
                 pendingResolver: null
             };
 
-            const localApiImpl = new (class extends SimpleClientApiLocal<any> {
-                constructor() { super(null as any); }
+            const context = node.toApiR(SimpleClientApi.META, ctx=>new (class extends SimpleClientApiLocal<any> {
+                                                                                   constructor( remoteApi:SimpleDeviceApiRemote) { super(remoteApi); }
 
-                // Метод ID 3: receiveStatus(value: Record[])
-                receiveStatus(value: Record[]): void {
-                    if (session.pendingResolver) {
-                        const resolve = session.pendingResolver;
-                        session.pendingResolver = null;
-                        resolve(value);
-                    }
-                }
-            })();
-
-            const context = node.toApi(SimpleClientApi.META, localApiImpl);
-            const api = SimpleDeviceApi.META.makeRemote(context);
+                                                                                   // Метод ID 3: receiveStatus(value: Record[])
+                                                                                   receiveStatus(value: Record[]): void {
+                                                                                       if (session.pendingResolver) {
+                                                                                           const resolve = session.pendingResolver;
+                                                                                           session.pendingResolver = null;
+                                                                                           resolve(value);
+                                                                                       }
+                                                                                   }
+            })(ctx.makeRemote(SimpleDeviceApi.META)));
+            const remoteApi = SimpleDeviceApi.META.makeRemote(context);
 
             session.context = context;
-            session.api = api;
+            session.api = remoteApi;
 
             this.sessions.set(targetUuidStr, session);
             this.onDeviceConnected.fire(targetUuidStr);
@@ -128,7 +126,7 @@ export class SmartHomeController {
                 // count типа short
                 const safeCount = Math.max(0, Math.min(32000, Math.floor(count)));
                 session.api.requestRecords(safeCount);
-                session.context.flush();
+                session.context.flush(FlushReport.STUB);
             } catch (e) {
                 session.pendingResolver = null;
                 reject(e);

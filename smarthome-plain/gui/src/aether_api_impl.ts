@@ -1,5 +1,5 @@
 import  {
-    AFuture, ARFuture, DataIn, DataOut, DataInOut, DataInOutStatic, FastMetaType, FastFutureContext, RemoteApi, FastMeta, SerializerPackNumber, DeserializerPackNumber, FastApiContextLocal, FastMetaApi, BytesConverter, RemoteApiFuture, FastFutureContextStub, UUID, URI, AConsumer, ToString, AString
+    AFuture, ARFuture, DataIn, DataOut, DataInOut, DataInOutStatic, FastMetaType, FastFutureContext, RemoteApi, FastMeta, SerializerPackNumber, DeserializerPackNumber, FastApiContextLocal, FastMetaApi, BytesConverter, RemoteApiFuture, FastFutureContextStub, UUID, URI, AConsumer, ToString, AString, FlushReport
 }
 from 'aether-client';
 import  {
@@ -119,10 +119,8 @@ export class SimpleDeviceApiMetaImpl implements FastMetaApi<SimpleDeviceApi, Sim
     }
     makeRemote(sCtx_10: FastFutureContext): SimpleDeviceApiRemote  {
         const remoteApiImpl =  {
-            flush: (sendFuture?: AFuture): AFuture =>  {
-                const futureToUse = sendFuture || AFuture.make();
-                sCtx_10.flush(futureToUse);
-                return futureToUse;
+            flush: (sendFuture: FlushReport): void =>  {
+                sCtx_10.flush(sendFuture);
                 
             }
             , getFastMetaContext: () => sCtx_10, requestRecords: (count: number): void =>  {
@@ -198,10 +196,8 @@ export class SimpleClientApiMetaImpl implements FastMetaApi<SimpleClientApi, Sim
     }
     makeRemote(sCtx_22: FastFutureContext): SimpleClientApiRemote  {
         const remoteApiImpl =  {
-            flush: (sendFuture?: AFuture): AFuture =>  {
-                const futureToUse = sendFuture || AFuture.make();
-                sCtx_22.flush(futureToUse);
-                return futureToUse;
+            flush: (sendFuture: FlushReport): void =>  {
+                sCtx_22.flush(sendFuture);
                 
             }
             , getFastMetaContext: () => sCtx_22, receiveStatus: (value: Record[]): void =>  {

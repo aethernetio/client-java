@@ -1,0 +1,40 @@
+types:
+  Record:
+    fields:
+      value: byte
+      time: byte
+api:
+
+  SmartHomeServiceApi:
+    methods:
+      registerDevice:
+        id: 10
+        params:
+          deviceUid: uuid
+        returns: bool
+      reportState:
+        id: 11
+        params:
+          deviceUid: uuid
+          value: Record[]
+        returns: bool
+      getDevices:
+        id: 12
+        returns: uuid[]
+      subscribeToDevice:
+        id: 13
+        params:
+          deviceUid: uuid
+        returns: bool
+  SimpleDeviceApi:
+    methods:
+      requestRecords:
+        id: 3
+        params:
+          count: short
+  SimpleClientApi:
+    methods:
+      receiveStatus:
+        id: 3
+        params:
+          value: Record[]

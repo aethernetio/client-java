@@ -1,0 +1,44 @@
+
+plugins {
+    id 'java'
+    id 'application'
+    id 'maven-publish'
+    id 'aether-protocol' version '1.0.0'
+}
+
+group = 'io.aether'
+version = '0.0.1'
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+repositories {
+    mavenCentral()
+    maven {
+        url "http://nexus.aethernet.io/maven/releases/"
+        allowInsecureProtocol = true
+    }
+}
+publishing {
+    publications {
+        mavenPublication(MavenPublication){
+            from components.java
+            groupId "io.aether"
+            artifactId "example-smart-hub"
+        }
+    }
+}
+
+dependencies {
+    implementation project(':client')
+    implementation 'com.h2database:h2:2.2.224'
+    implementation 'io.aether.crypto:hydrogen-fast:+'
+    implementation 'io.aether.crypto:sodium:+'
+    implementation 'io.aether:net-netty:+'
+
+}
+
+application {
+    mainClass = 'io.aether.smarthub.SmartHubService'
+}
