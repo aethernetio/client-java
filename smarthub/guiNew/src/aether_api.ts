@@ -5,15 +5,15 @@ from 'aether-client';
 import * as Impl from './aether_api_impl';
 // This is always relative
 /**
- * Represents the DeviceRecord structure.
+ * Represents the SensorRecord structure.
  */
-export class DeviceRecord implements ToString  {
+export class SensorRecord implements ToString  {
     public readonly value: number;
     public readonly time: number;
-    public static readonly META_BODY: FastMetaType<DeviceRecord> = new Impl.DeviceRecordMetaBodyImpl();
-    public static readonly META: FastMetaType<DeviceRecord> = DeviceRecord.META_BODY;
+    public static readonly META_BODY: FastMetaType<SensorRecord> = new Impl.SensorRecordMetaBodyImpl();
+    public static readonly META: FastMetaType<SensorRecord> = SensorRecord.META_BODY;
     /**
-     * Creates an instance of DeviceRecord.
+     * Creates an instance of SensorRecord.
      * @param value - number
      * @param time - number
      */
@@ -31,22 +31,22 @@ export class DeviceRecord implements ToString  {
         
     }
     /**
-     * Calculates a hash code for a static instance of DeviceRecord.
-     * @param {DeviceRecord | null | undefined} obj - The object to hash.
+     * Calculates a hash code for a static instance of SensorRecord.
+     * @param {SensorRecord | null | undefined} obj - The object to hash.
      * @returns {number} The hash code.
      */
-    public static staticHashCode(obj: DeviceRecord | null | undefined): number  {
-        return DeviceRecord.META.metaHashCode(obj);
+    public static staticHashCode(obj: SensorRecord | null | undefined): number  {
+        return SensorRecord.META.metaHashCode(obj);
         
     }
     /**
-     * Compares a static instance of DeviceRecord with another object.
-     * @param {DeviceRecord | null | undefined} v1 - The first object.
+     * Compares a static instance of SensorRecord with another object.
+     * @param {SensorRecord | null | undefined} v1 - The first object.
      * @param {any | null | undefined} v2 - The second object.
      * @returns {boolean} True if the objects are equal.
      */
-    public static staticEquals(v1: DeviceRecord | null | undefined, v2: any | null | undefined): boolean  {
-        return DeviceRecord.META.metaEquals(v1, v2);
+    public static staticEquals(v1: SensorRecord | null | undefined, v2: any | null | undefined): boolean  {
+        return SensorRecord.META.metaEquals(v1, v2);
         
     }
     /**
@@ -54,7 +54,7 @@ export class DeviceRecord implements ToString  {
      * @returns {number} The hash code.
      */
     public hashCode(): number  {
-        return DeviceRecord.staticHashCode(this);
+        return SensorRecord.staticHashCode(this);
         
     }
     /**
@@ -63,11 +63,11 @@ export class DeviceRecord implements ToString  {
      * @returns {boolean} True if the objects are equal, false otherwise.
      */
     public equals(other: any): boolean  {
-        return DeviceRecord.staticEquals(this, other);
+        return SensorRecord.staticEquals(this, other);
         
     }
     public toAString(result: AString): AString  {
-        DeviceRecord.META.metaToString(this, result);
+        SensorRecord.META.metaToString(this, result);
         return result;
         
     }
@@ -182,12 +182,12 @@ export abstract class SmartHomeHubRegistryApiLocal<RT extends RemoteApi> impleme
 export interface SmartHomeDeviceApi  {
     /**
      * @param deviceUid - UUID
-     * @param value - DeviceRecord[]
+     * @param value - SensorRecord[]
      * @returns ARFuture<boolean>
      *
      * @aetherMethodId 10
      */
-    reportState(deviceUid: UUID, value: DeviceRecord[]): ARFuture<boolean>;
+    reportState(deviceUid: UUID, value: SensorRecord[]): ARFuture<boolean>;
     
 }
 export namespace SmartHomeDeviceApi  {
@@ -209,43 +209,43 @@ export abstract class SmartHomeDeviceApiLocal<RT extends RemoteApi> implements S
     }
     /**
      * @param deviceUid - UUID
-     * @param value - DeviceRecord[]
+     * @param value - SensorRecord[]
      * @returns ARFuture<boolean>
      *
      * @aetherMethodId 10
      */
-    public abstract reportState(deviceUid: UUID, value: DeviceRecord[]): ARFuture<boolean>;
+    public abstract reportState(deviceUid: UUID, value: SensorRecord[]): ARFuture<boolean>;
     
 }
 export interface SmartHomeGuiApi  {
     /**
      * @returns ARFuture<UUID[]>
      *
-     * @aetherMethodId 34
+     * @aetherMethodId 12
      */
     getDevices(): ARFuture<UUID[]>;
     /**
      * @param deviceUid - UUID
      * @returns ARFuture<boolean>
      *
-     * @aetherMethodId 32
+     * @aetherMethodId 13
      */
     subscribeToDevice(deviceUid: UUID): ARFuture<boolean>;
     /**
      * @param deviceUid - UUID
      * @returns ARFuture<boolean>
      *
-     * @aetherMethodId 33
+     * @aetherMethodId 14
      */
     unsubscribeFromDevice(deviceUid: UUID): ARFuture<boolean>;
     /**
      * @param deviceUid - UUID
      * @param count - bigint
-     * @returns ARFuture<DeviceRecord[]>
+     * @returns ARFuture<SensorRecord[]>
      *
-     * @aetherMethodId 31
+     * @aetherMethodId 15
      */
-    requestDeviceHistory(deviceUid: UUID, count: bigint): ARFuture<DeviceRecord[]>;
+    requestDeviceHistory(deviceUid: UUID, count: bigint): ARFuture<SensorRecord[]>;
     
 }
 export namespace SmartHomeGuiApi  {
@@ -268,41 +268,41 @@ export abstract class SmartHomeGuiApiLocal<RT extends RemoteApi> implements Smar
     /**
      * @returns ARFuture<UUID[]>
      *
-     * @aetherMethodId 34
+     * @aetherMethodId 12
      */
     public abstract getDevices(): ARFuture<UUID[]>;
     /**
      * @param deviceUid - UUID
      * @returns ARFuture<boolean>
      *
-     * @aetherMethodId 32
+     * @aetherMethodId 13
      */
     public abstract subscribeToDevice(deviceUid: UUID): ARFuture<boolean>;
     /**
      * @param deviceUid - UUID
      * @returns ARFuture<boolean>
      *
-     * @aetherMethodId 33
+     * @aetherMethodId 14
      */
     public abstract unsubscribeFromDevice(deviceUid: UUID): ARFuture<boolean>;
     /**
      * @param deviceUid - UUID
      * @param count - bigint
-     * @returns ARFuture<DeviceRecord[]>
+     * @returns ARFuture<SensorRecord[]>
      *
-     * @aetherMethodId 31
+     * @aetherMethodId 15
      */
-    public abstract requestDeviceHistory(deviceUid: UUID, count: bigint): ARFuture<DeviceRecord[]>;
+    public abstract requestDeviceHistory(deviceUid: UUID, count: bigint): ARFuture<SensorRecord[]>;
     
 }
 export interface SmartHomeClientGuiApi  {
     /**
      * @param deviceUid - UUID
-     * @param records - DeviceRecord[]
+     * @param records - SensorRecord[]
      *
      * @aetherMethodId 20
      */
-    deviceStateUpdated(deviceUid: UUID, records: DeviceRecord[]): void;
+    deviceStateUpdated(deviceUid: UUID, records: SensorRecord[]): void;
     
 }
 export namespace SmartHomeClientGuiApi  {
@@ -324,10 +324,35 @@ export abstract class SmartHomeClientGuiApiLocal<RT extends RemoteApi> implement
     }
     /**
      * @param deviceUid - UUID
-     * @param records - DeviceRecord[]
+     * @param records - SensorRecord[]
      *
      * @aetherMethodId 20
      */
-    public abstract deviceStateUpdated(deviceUid: UUID, records: DeviceRecord[]): void;
+    public abstract deviceStateUpdated(deviceUid: UUID, records: SensorRecord[]): void;
+    
+}
+export interface SmartHomeClientDeviceApi  {
+    
+}
+export namespace SmartHomeClientDeviceApi  {
+    export const EMPTY: SmartHomeClientDeviceApi =  {
+        
+    };
+    export const META: FastMetaApi<SmartHomeClientDeviceApi, SmartHomeClientDeviceApiRemote> = new Impl.SmartHomeClientDeviceApiMetaImpl();
+    
+}
+export interface SmartHomeClientDeviceApiRemote extends SmartHomeClientDeviceApi, RemoteApi  {
+    
+}
+export abstract class SmartHomeClientDeviceApiLocal<RT extends RemoteApi> implements SmartHomeClientDeviceApi  {
+    protected readonly remoteApi: RT;
+    public getRemoteApi(): RT  {
+        return this.remoteApi;
+        
+    }
+    protected constructor(remoteApi: RT)  {
+        this.remoteApi = remoteApi;
+        
+    }
     
 }

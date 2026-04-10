@@ -5,6 +5,7 @@ import io.aether.cloud.client.ClientStateInMemory;
 import io.aether.logger.LNode;
 import io.aether.logger.Log;
 import io.aether.logger.LogFilter;
+import io.aether.utils.ConcurrentHashSet;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
 import org.h2.jdbcx.JdbcConnectionPool;
@@ -114,101 +115,120 @@ public class SmartHubService {
     private void registerApis() {
         Log.info("SmartHub: Registry API starting...");
         client.onClientStream(node -> {
-            // Создаем реализацию API отдельно
-            SmartHomeHubRegistryApi registryImpl = new SmartHomeHubRegistryApi() {
+            node.toApiR(SmartHomeHubRegistryApi.META, rootCtx -> new SmartHomeHubRegistryApi() {
+                SmartHomeClientDeviceApi api2DeviceRemote;
+                SmartHomeClientGuiApiRemote api2GuiRemote;
+                SmartHomeDeviceApi api2DeviceLocal;
+                SmartHomeGuiApi api2GuiLocal;
+
                 @Override
                 public void device(DeviceStream stream) {
                     UUID devUid = node.getConsumerUUID();
-                    Log.info("SmartHub: Device stream connected", "uid", devUid);
-                    // Получаем контекст из текущего узла для этого стрима
-                    stream.accept(node.toApi(SmartHomeHubRegistryApi.META, this), new SmartHomeDeviceApi() {
-                        @Override
-                        public ARFuture<Boolean> reportState(UUID deviceUid, DeviceRecord[] value) {
+                    if (api2DeviceRemote == null) {
+                        api2DeviceRemote = rootCtx.makeRemote(SmartHomeClientDeviceApi.META);
+
+                        api2DeviceLocal = (deviceUid, value) -> {
+                            Log.info("api2DeviceLocal called", "deviceUid", deviceUid, "valueLength", value.length);
                             ensureDeviceExists(deviceUid);
                             try (Connection conn = connectionPool.getConnection();
                                  PreparedStatement stmt = conn.prepareStatement("INSERT INTO device_states (DEVICE_UID, STATE_VALUE, STATE_TIME, STATE_TIMESTAMP) VALUES (?, ?, ?, ?)")) {
-                                for (DeviceRecord record : value) {
+                                for (SensorRecord record : value) {
                                     stmt.setObject(1, deviceUid);
                                     stmt.setShort(2, record.getValue());
                                     stmt.setShort(3, record.getTime());
-                                    stmt.setTimestamp(4, new java.sql.Timestamp(System.currentTimeMillis()));
+                                    stmt.setTimestamp(4, new Timestamp(System.currentTimeMillis()));
                                     stmt.addBatch();
                                 }
                                 stmt.executeBatch();
+                                Log.info("Inserted device states", "deviceUid", deviceUid, "count", value.length);
                                 Optional.ofNullable(deviceSubscriptions.get(deviceUid)).ifPresent(subs -> subs.forEach(guiUid -> {
                                     var remote = guiContexts.get(guiUid);
                                     if (remote != null) remote.deviceStateUpdated(deviceUid, value);
                                 }));
-                                return ARFuture.TRUE;
                             } catch (Exception e) {
                                 Log.error("SmartHub: SQL Error", e);
-                                return ARFuture.FALSE;
                             }
-                        }
-                    });
+                        };
+
+                    }
+                    Log.info("SmartHub: Device stream connected", "uid", devUid);
+                    stream.accept(rootCtx, api2DeviceLocal);
+                    Log.info("SmartHub: stream.accept finished successfully");
                 }
 
                 @Override
                 public void gui(GuiStream stream) {
                     UUID guiUid = node.getConsumerUUID();
-                    Log.info("SmartHub: GUI stream connected", "uid", guiUid);
-                    var regCtx = node.toApi(SmartHomeHubRegistryApi.META, this);
-                    stream.accept(regCtx, new SmartHomeGuiApi() {
-                        @Override
-                        public ARFuture<UUID[]> getDevices() {
-                            List<UUID> list = new ArrayList<>();
-                            try (Connection conn = connectionPool.getConnection();
-                                 Statement s = conn.createStatement();
-                                 ResultSet rs = s.executeQuery("SELECT UID FROM devices ORDER BY last_seen DESC")) {
-                                while (rs.next()) {
-                                    Object uid = rs.getObject("UID");
-                                    if (uid instanceof UUID) list.add((UUID) uid);
-                                    else if (uid instanceof String) list.add(UUID.fromString((String) uid));
+                    if (api2GuiLocal == null) {
+                        api2GuiRemote = rootCtx.makeRemote(SmartHomeClientGuiApi.META);
+                        api2GuiLocal = new SmartHomeGuiApi() {
+                            @Override
+                            public ARFuture<UUID[]> getDevices() {
+                                List<UUID> list = new ArrayList<>();
+                                try (Connection conn = connectionPool.getConnection();
+                                     Statement s = conn.createStatement();
+                                     ResultSet rs = s.executeQuery("SELECT UID FROM devices ORDER BY last_seen DESC")) {
+                                    while (rs.next()) {
+                                        Object uid = rs.getObject("UID");
+                                        if (uid instanceof UUID) list.add((UUID) uid);
+                                        else if (uid instanceof String) list.add(UUID.fromString((String) uid));
+                                    }
+                                } catch (Exception e) {
+                                    Log.error(e);
                                 }
-                            } catch (Exception e) {
-                                Log.error(e);
+                                return ARFuture.of(list.toArray(new UUID[0]));
                             }
-                            return ARFuture.of(list.toArray(new UUID[0]));
-                        }
 
-                        @Override
-                        public ARFuture<Boolean> subscribeToDevice(UUID d) {
-                            deviceSubscriptions.computeIfAbsent(d, k -> java.util.concurrent.ConcurrentHashMap.newKeySet()).add(guiUid);
-                            return ARFuture.TRUE;
-                        }
+                            @Override
+                            public ARFuture<Boolean> subscribeToDevice(UUID d) {
+                                deviceSubscriptions.computeIfAbsent(d, k -> new ConcurrentHashSet<>()).add(guiUid);
+                                return ARFuture.TRUE;
+                            }
 
-                        @Override
-                        public ARFuture<Boolean> unsubscribeFromDevice(UUID d) {
-                            Optional.ofNullable(deviceSubscriptions.get(d)).ifPresent(s -> s.remove(guiUid));
-                            return ARFuture.TRUE;
-                        }
+                            @Override
+                            public ARFuture<Boolean> unsubscribeFromDevice(UUID d) {
+                                Optional.ofNullable(deviceSubscriptions.get(d)).ifPresent(s -> s.remove(guiUid));
+                                return ARFuture.TRUE;
+                            }
 
-                        @Override
-                        public ARFuture<DeviceRecord[]> requestDeviceHistory(UUID d, long c) {
-                            return ARFuture.of(new DeviceRecord[0]);
-                        }
-                    });
-                    guiContexts.put(guiUid, SmartHomeClientGuiApi.META.makeRemote(regCtx));
+                            @Override
+                            public ARFuture<SensorRecord[]> requestDeviceHistory(UUID d, long c) {
+                                return ARFuture.of(new SensorRecord[0]);
+                            }
+                        };
+                    }
+                    Log.info("SmartHub: GUI stream connected", "uid", guiUid);
+                    stream.accept(rootCtx, api2GuiLocal);
+                    guiContexts.put(guiUid, api2GuiRemote);
                 }
-            };
-            // Привязываем реализацию к узлу
-            node.toApi(SmartHomeHubRegistryApi.META, registryImpl);
+            });
         });
     }
 
+
+
+
     private void ensureDeviceExists(UUID deviceUid) {
+        Log.info("ensureDeviceExists called", "deviceUid", deviceUid);
+        if (connectionPool == null) {
+            Log.error("connectionPool is null");
+            return;
+        }
         try (Connection conn = connectionPool.getConnection();
              PreparedStatement stmt = conn.prepareStatement(
-                     "INSERT INTO devices (UID, last_seen) VALUES (?, ?) ON CONFLICT (UID) DO UPDATE SET last_seen = ?")) {
+                     "MERGE INTO devices (UID, last_seen) KEY(UID) VALUES (?, ?)")) {
             java.sql.Timestamp now = new java.sql.Timestamp(System.currentTimeMillis());
             stmt.setObject(1, deviceUid);
             stmt.setTimestamp(2, now);
-            stmt.setTimestamp(3, now);
-            stmt.executeUpdate();
-        } catch (SQLException e) {
-            Log.error("SmartHub: DB Error", e);
+            int updated = stmt.executeUpdate();
+            Log.info("Device upsert result", "deviceUid", deviceUid, "updated", updated);
+        } catch (Exception e) {
+            Log.error("SmartHub: DB Error in ensureDeviceExists", e);
         }
     }
+
+
+
 
     public void stop() {
         guiContexts.clear();
@@ -223,14 +243,14 @@ public class SmartHubService {
             service.start();
             Thread.currentThread().join();
         } catch (Exception e) {
-            Log.error("Failed to start service", Log.EXCEPTION_STR, e);
+            Log.error("Failed to start service", e);
             System.exit(1);
         }
     }
 
     private static class DeviceSession {
         final UUID deviceUid;
-        DeviceRecord[] lastState;
+        SensorRecord[] lastState;
         long lastSeen;
 
         DeviceSession(UUID deviceUid) {

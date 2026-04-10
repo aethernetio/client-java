@@ -90,13 +90,13 @@ public final class AetherCloudClient implements Destroyable {
         this(new ClientStateInMemory(StandardUUIDs.ANONYMOUS_UID, List.of(URI.create("tcp://registration.aethernet.io:9010"))));
     }
 
-    public AetherCloudClient(ClientState store) {
-        this(store, null);
+    public AetherCloudClient(ClientState state) {
+        this(state, null);
     }
 
-    public AetherCloudClient(ClientState store, String name) {
-        Objects.requireNonNull(store);
-        this.clientState = store;
+    public AetherCloudClient(ClientState state, String name) {
+        Objects.requireNonNull(state);
+        this.clientState = state;
         this.name = name;
         logClientContext = Log.of("SystemComponent", "Client", "ClientName", name);
         try (var ln = logClientContext.context()) {
@@ -111,6 +111,9 @@ public final class AetherCloudClient implements Destroyable {
             });
             connect();
         }
+        startFuture.to(() -> {
+            forceUpdateStateFromCache().to(state::saveState);
+        });
     }
 
     private void closeConnections() {
@@ -294,7 +297,7 @@ public final class AetherCloudClient implements Destroyable {
                     return;
                 }
                 makeFirstConnection();
-                startFuture.done();
+                startFuture.tryDone();
             } catch (Exception e) {
                 Log.error("Fatal error during connection to own cloud.", e);
                 if (!startFuture.isFinalStatus()) {

@@ -3,68 +3,68 @@ import  {
 }
 from 'aether-client';
 import  {
-    DeviceRecord, DeviceStream, GuiStream, SmartHomeHubRegistryApi, SmartHomeDeviceApi, SmartHomeGuiApi, SmartHomeClientGuiApi, SmartHomeHubRegistryApiRemote, SmartHomeDeviceApiRemote, SmartHomeGuiApiRemote, SmartHomeClientGuiApiRemote
+    SensorRecord, DeviceStream, GuiStream, SmartHomeHubRegistryApi, SmartHomeDeviceApi, SmartHomeGuiApi, SmartHomeClientGuiApi, SmartHomeClientDeviceApi, SmartHomeHubRegistryApiRemote, SmartHomeDeviceApiRemote, SmartHomeGuiApiRemote, SmartHomeClientGuiApiRemote, SmartHomeClientDeviceApiRemote
 }
 from './aether_api';
 // This is always relative
-export class DeviceRecordMetaBodyImpl implements FastMetaType<DeviceRecord>  {
-    serialize(sCtx_0: FastFutureContext, obj_1: DeviceRecord, _out_2: DataOut): void  {
-        _out_2.writeShort(obj_1.value);
-        _out_2.writeShort(obj_1.time);
+export class SensorRecordMetaBodyImpl implements FastMetaType<SensorRecord>  {
+    serialize(sCtx_0: FastFutureContext, obj_1: SensorRecord, _out_2: DataOut): void  {
+        _out_2.writeByte(obj_1.value);
+        _out_2.writeByte(obj_1.time);
         
     }
-    deserialize(sCtx_0: FastFutureContext, in__3: DataIn): DeviceRecord  {
+    deserialize(sCtx_0: FastFutureContext, in__3: DataIn): SensorRecord  {
         let value_4: number;
         let time_5: number;
-        value_4 = in__3.readShort();
-        time_5 = in__3.readShort();
-        return new DeviceRecord(value_4, time_5);
+        value_4 = in__3.readByte();
+        time_5 = in__3.readByte();
+        return new SensorRecord(value_4, time_5);
         
     }
-    metaHashCode(obj: DeviceRecord | null | undefined): number  {
+    metaHashCode(obj: SensorRecord | null | undefined): number  {
         if (obj === null || obj === undefined) return 0;
         let hash = 17;
-        hash = 37 * hash + FastMeta.META_SHORT.metaHashCode(obj.value);
-        hash = 37 * hash + FastMeta.META_SHORT.metaHashCode(obj.time);
+        hash = 37 * hash + FastMeta.META_BYTE.metaHashCode(obj.value);
+        hash = 37 * hash + FastMeta.META_BYTE.metaHashCode(obj.time);
         return hash | 0;
         
     }
-    metaEquals(v1: DeviceRecord | null | undefined, v2: any | null | undefined): boolean  {
+    metaEquals(v1: SensorRecord | null | undefined, v2: any | null | undefined): boolean  {
         if (v1 === v2) return true;
         if (v1 === null || v1 === undefined) return (v2 === null || v2 === undefined);
-        if (v2 === null || v2 === undefined || !(v2 instanceof DeviceRecord)) return false;
-        if (!FastMeta.META_SHORT.metaEquals(v1.value, v2.value)) return false;
-        if (!FastMeta.META_SHORT.metaEquals(v1.time, v2.time)) return false;
+        if (v2 === null || v2 === undefined || !(v2 instanceof SensorRecord)) return false;
+        if (!FastMeta.META_BYTE.metaEquals(v1.value, v2.value)) return false;
+        if (!FastMeta.META_BYTE.metaEquals(v1.time, v2.time)) return false;
         return true;
         
     }
-    metaToString(obj: DeviceRecord | null | undefined, res: AString): void  {
+    metaToString(obj: SensorRecord | null | undefined, res: AString): void  {
         if (obj === null || obj === undefined)  {
             res.add('null');
             return;
             
         }
-        res.add('DeviceRecord(');
+        res.add('SensorRecord(');
         res.add('value:').add(obj.value);
         res.add(', ');
         res.add('time:').add(obj.time);
         res.add(')');
         
     }
-    public serializeToBytes(obj: DeviceRecord): Uint8Array  {
+    public serializeToBytes(obj: SensorRecord): Uint8Array  {
         const d = new DataInOut();
         // FastFutureContextStub is imported in aether_api_impl.ts
         this.serialize(FastFutureContextStub, obj, d);
         return d.toArray();
         
     }
-    public deserializeFromBytes(data: Uint8Array): DeviceRecord  {
+    public deserializeFromBytes(data: Uint8Array): SensorRecord  {
         const d = new DataInOutStatic(data);
         // FastFutureContextStub is imported in aether_api_impl.ts
         return this.deserialize(FastFutureContextStub, d);
         
     }
-    public loadFromFile(file: string): DeviceRecord  {
+    public loadFromFile(file: string): SensorRecord  {
         throw new Error("UnsupportedOperationException: loadFromFile requires Node.js/Filesystem access.");
         
     }
@@ -273,14 +273,14 @@ export class SmartHomeDeviceApiMetaImpl implements FastMetaApi<SmartHomeDeviceAp
                 case 10:  {
                     const reqId_25 = dataIn.readInt();
                     let deviceUid_26: UUID;
-                    let value_27: DeviceRecord[];
+                    let value_27: SensorRecord[];
                     deviceUid_26 = FastMeta.META_UUID.deserialize(ctx, dataIn);
                     const len_29 = Number(DeserializerPackNumber.INSTANCE.put(dataIn));
-                    value_27 = new Array<DeviceRecord>(len_29);
+                    value_27 = new Array<SensorRecord>(len_29);
                     for (let idx_28 = 0;
                     idx_28 < len_29;
                     idx_28++)  {
-                        value_27[idx_28] = DeviceRecord.META.deserialize(ctx, dataIn);
+                        value_27[idx_28] = SensorRecord.META.deserialize(ctx, dataIn);
                         
                     }
                     const argsNames_30: string[] = ["deviceUid", "value"];
@@ -322,7 +322,7 @@ export class SmartHomeDeviceApiMetaImpl implements FastMetaApi<SmartHomeDeviceAp
                 sCtx_34.flush(sendFuture);
                 
             }
-            , getFastMetaContext: () => sCtx_34, reportState: (deviceUid: UUID, value: DeviceRecord[]): ARFuture<boolean> =>  {
+            , getFastMetaContext: () => sCtx_34, reportState: (deviceUid: UUID, value: SensorRecord[]): ARFuture<boolean> =>  {
                 const dataOut_36 = new DataInOut();
                 dataOut_36.writeByte(10);
                 const argsNames_38: string[] = ["deviceUid", "value"];
@@ -345,7 +345,7 @@ export class SmartHomeDeviceApiMetaImpl implements FastMetaApi<SmartHomeDeviceAp
                 FastMeta.META_UUID.serialize(sCtx_34, deviceUid, dataOut_36);
                 SerializerPackNumber.INSTANCE.put(dataOut_36, value.length);
                 for (const el_40 of value)  {
-                    DeviceRecord.META.serialize(sCtx_34, el_40, dataOut_36);
+                    SensorRecord.META.serialize(sCtx_34, el_40, dataOut_36);
                     
                 }
                 sCtx_34.sendToRemote(dataOut_36.toArray());
@@ -378,7 +378,7 @@ export class SmartHomeGuiApiMetaImpl implements FastMetaApi<SmartHomeGuiApi, Sma
                     break;
                     
                 }
-                case 34:  {
+                case 12:  {
                     const reqId_41 = dataIn.readInt();
                     const argsNames_42: string[] = [];
                     const argsValues_43: any[] = [];
@@ -400,7 +400,7 @@ export class SmartHomeGuiApiMetaImpl implements FastMetaApi<SmartHomeGuiApi, Sma
                     break;
                     
                 }
-                case 32:  {
+                case 13:  {
                     const reqId_47 = dataIn.readInt();
                     let deviceUid_48: UUID;
                     deviceUid_48 = FastMeta.META_UUID.deserialize(ctx, dataIn);
@@ -420,7 +420,7 @@ export class SmartHomeGuiApiMetaImpl implements FastMetaApi<SmartHomeGuiApi, Sma
                     break;
                     
                 }
-                case 33:  {
+                case 14:  {
                     const reqId_53 = dataIn.readInt();
                     let deviceUid_54: UUID;
                     deviceUid_54 = FastMeta.META_UUID.deserialize(ctx, dataIn);
@@ -440,7 +440,7 @@ export class SmartHomeGuiApiMetaImpl implements FastMetaApi<SmartHomeGuiApi, Sma
                     break;
                     
                 }
-                case 31:  {
+                case 15:  {
                     const reqId_59 = dataIn.readInt();
                     let deviceUid_60: UUID;
                     let count_61: bigint;
@@ -452,11 +452,11 @@ export class SmartHomeGuiApiMetaImpl implements FastMetaApi<SmartHomeGuiApi, Sma
                     ctx.regLocalFuture();
                     const resultFuture = localApi.requestDeviceHistory(deviceUid_60, count_61);
                     ctx.invokeLocalMethodAfter("requestDeviceHistory", resultFuture, argsNames_62, argsValues_63);
-                    resultFuture.to((v_65: DeviceRecord[]) =>  {
+                    resultFuture.to((v_65: SensorRecord[]) =>  {
                         const data_64 = new DataInOut();
                         SerializerPackNumber.INSTANCE.put(data_64, v_65.length);
                         for (const el_66 of v_65)  {
-                            DeviceRecord.META.serialize(ctx, el_66, data_64);
+                            SensorRecord.META.serialize(ctx, el_66, data_64);
                             
                         }
                         ctx.sendResultToRemote(reqId_59, data_64.toArray());
@@ -491,7 +491,7 @@ export class SmartHomeGuiApiMetaImpl implements FastMetaApi<SmartHomeGuiApi, Sma
             }
             , getFastMetaContext: () => sCtx_67, getDevices: (): ARFuture<UUID[]> =>  {
                 const dataOut_69 = new DataInOut();
-                dataOut_69.writeByte(34);
+                dataOut_69.writeByte(12);
                 const argsNames_71: string[] = [];
                 const argsValues_72: any[] = [];
                 const result_70 = ARFuture.of<UUID[]>();
@@ -515,7 +515,7 @@ export class SmartHomeGuiApiMetaImpl implements FastMetaApi<SmartHomeGuiApi, Sma
             }
             , subscribeToDevice: (deviceUid: UUID): ARFuture<boolean> =>  {
                 const dataOut_74 = new DataInOut();
-                dataOut_74.writeByte(32);
+                dataOut_74.writeByte(13);
                 const argsNames_76: string[] = ["deviceUid"];
                 const argsValues_77: any[] = [deviceUid];
                 const result_75 = ARFuture.of<boolean>();
@@ -540,7 +540,7 @@ export class SmartHomeGuiApiMetaImpl implements FastMetaApi<SmartHomeGuiApi, Sma
             }
             , unsubscribeFromDevice: (deviceUid: UUID): ARFuture<boolean> =>  {
                 const dataOut_79 = new DataInOut();
-                dataOut_79.writeByte(33);
+                dataOut_79.writeByte(14);
                 const argsNames_81: string[] = ["deviceUid"];
                 const argsValues_82: any[] = [deviceUid];
                 const result_80 = ARFuture.of<boolean>();
@@ -563,16 +563,16 @@ export class SmartHomeGuiApiMetaImpl implements FastMetaApi<SmartHomeGuiApi, Sma
                 return result_80;
                 
             }
-            , requestDeviceHistory: (deviceUid: UUID, count: bigint): ARFuture<DeviceRecord[]> =>  {
+            , requestDeviceHistory: (deviceUid: UUID, count: bigint): ARFuture<SensorRecord[]> =>  {
                 const dataOut_84 = new DataInOut();
-                dataOut_84.writeByte(31);
+                dataOut_84.writeByte(15);
                 const argsNames_86: string[] = ["deviceUid", "count"];
                 const argsValues_87: any[] = [deviceUid, count];
-                const result_85 = ARFuture.of<DeviceRecord[]>();
+                const result_85 = ARFuture.of<SensorRecord[]>();
                 sCtx_67.invokeRemoteMethodAfter("requestDeviceHistory", result_85, argsNames_86, argsValues_87);
                 const reqId_83 = sCtx_67.regFuture( {
                     onDone: (in_: DataIn) =>  {
-                        (result_85 as ARFuture<DeviceRecord[]>).tryDone(FastMeta.getMetaArray(DeviceRecord.META).deserialize(sCtx_67, in_));
+                        (result_85 as ARFuture<SensorRecord[]>).tryDone(FastMeta.getMetaArray(SensorRecord.META).deserialize(sCtx_67, in_));
                         
                     }
                     , onError: (_in_: DataIn) =>  {
@@ -617,14 +617,14 @@ export class SmartHomeClientGuiApiMetaImpl implements FastMetaApi<SmartHomeClien
                 }
                 case 20:  {
                     let deviceUid_89: UUID;
-                    let records_90: DeviceRecord[];
+                    let records_90: SensorRecord[];
                     deviceUid_89 = FastMeta.META_UUID.deserialize(ctx, dataIn);
                     const len_92 = Number(DeserializerPackNumber.INSTANCE.put(dataIn));
-                    records_90 = new Array<DeviceRecord>(len_92);
+                    records_90 = new Array<SensorRecord>(len_92);
                     for (let idx_91 = 0;
                     idx_91 < len_92;
                     idx_91++)  {
-                        records_90[idx_91] = DeviceRecord.META.deserialize(ctx, dataIn);
+                        records_90[idx_91] = SensorRecord.META.deserialize(ctx, dataIn);
                         
                     }
                     const argsNames_93: string[] = ["deviceUid", "records"];
@@ -658,7 +658,7 @@ export class SmartHomeClientGuiApiMetaImpl implements FastMetaApi<SmartHomeClien
                 sCtx_95.flush(sendFuture);
                 
             }
-            , getFastMetaContext: () => sCtx_95, deviceStateUpdated: (deviceUid: UUID, records: DeviceRecord[]): void =>  {
+            , getFastMetaContext: () => sCtx_95, deviceStateUpdated: (deviceUid: UUID, records: SensorRecord[]): void =>  {
                 const dataOut_97 = new DataInOut();
                 dataOut_97.writeByte(20);
                 const argsNames_99: string[] = ["deviceUid", "records"];
@@ -667,7 +667,7 @@ export class SmartHomeClientGuiApiMetaImpl implements FastMetaApi<SmartHomeClien
                 FastMeta.META_UUID.serialize(sCtx_95, deviceUid, dataOut_97);
                 SerializerPackNumber.INSTANCE.put(dataOut_97, records.length);
                 for (const el_101 of records)  {
-                    DeviceRecord.META.serialize(sCtx_95, el_101, dataOut_97);
+                    SensorRecord.META.serialize(sCtx_95, el_101, dataOut_97);
                     
                 }
                 sCtx_95.sendToRemote(dataOut_97.toArray());
@@ -676,6 +676,55 @@ export class SmartHomeClientGuiApiMetaImpl implements FastMetaApi<SmartHomeClien
             , 
         };
         return remoteApiImpl as SmartHomeClientGuiApiRemote;
+        
+    }
+    
+}
+export class SmartHomeClientDeviceApiMetaImpl implements FastMetaApi<SmartHomeClientDeviceApi, SmartHomeClientDeviceApiRemote>  {
+    makeLocal_fromDataIn(ctx: FastFutureContext, dataIn: DataIn, _localApi: SmartHomeClientDeviceApi): void  {
+        while(dataIn.isReadable())  {
+            const commandId = dataIn.readUByte();
+            switch(commandId)  {
+                case 0:  {
+                    const reqId = FastMeta.META_REQUEST_ID.deserialize(ctx, dataIn);
+                    const futureRec = ctx.getFuture(reqId);
+                    if (futureRec) futureRec.onDone(dataIn);
+                    break;
+                    
+                }
+                case 1:  {
+                    const reqId = FastMeta.META_REQUEST_ID.deserialize(ctx, dataIn);
+                    const futureRec = ctx.getFuture(reqId);
+                    if (futureRec) futureRec.onError(dataIn);
+                    break;
+                    
+                }
+                default: throw new Error(`Unknown command ID: $ {
+                    commandId
+                }
+                `);
+                
+            }
+        }
+        
+    }
+    makeLocal_fromBytes_ctxLocal(ctx: FastApiContextLocal<SmartHomeClientDeviceApi>, data: Uint8Array): void  {
+        this.makeLocal_fromDataIn(ctx, new DataInOutStatic(data), ctx.localApi);
+        
+    }
+    makeLocal_fromBytes_ctx(ctx: FastFutureContext, data: Uint8Array, localApi: SmartHomeClientDeviceApi): void  {
+        this.makeLocal_fromDataIn(ctx, new DataInOutStatic(data), localApi);
+        
+    }
+    makeRemote(sCtx_102: FastFutureContext): SmartHomeClientDeviceApiRemote  {
+        const remoteApiImpl =  {
+            flush: (sendFuture: FlushReport): void =>  {
+                sCtx_102.flush(sendFuture);
+                
+            }
+            , getFastMetaContext: () => sCtx_102, 
+        };
+        return remoteApiImpl as SmartHomeClientDeviceApiRemote;
         
     }
     

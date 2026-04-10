@@ -1,4 +1,4 @@
-if (gradle.parent != null) {
+//if (gradle.parent != null) {
     tasks.register("updateVersion") {
         doLast {
             var fVersion = new File(projectDir, "version");
@@ -18,7 +18,7 @@ if (gradle.parent != null) {
         dependsOn(":cli:publish")
         dependsOn(":chat:publish")
     }
-}
+//}
 
 group 'io.aether'
 version '0.0.' + (new File(projectDir, "version").getText('UTF-8'))

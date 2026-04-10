@@ -4,13 +4,16 @@ plugins {
     id 'maven-publish'
 }
 
+
 application {
     mainClass = 'io.aether.cli.CLI'
     applicationDefaultJvmArgs = [
-            '--add-opens=java.base/jdk.internal.misc=ALL-UNNAMED',
-            '--add-opens=java.base/sun.nio.ch=ALL-UNNAMED'
+        '--add-opens=java.base/jdk.internal.misc=ALL-UNNAMED',
+        '--add-opens=java.base/sun.nio.ch=ALL-UNNAMED'
     ]
+    applicationName = 'aether-cli'
 }
+
 
 shadowJar {
     archiveFileName.set('aether-cli.jar')
@@ -26,6 +29,7 @@ dependencies {
     implementation 'com.google.code.gson:gson:2.10.1'
     implementation 'io.aether.crypto:hydrogen-fast:+'
     implementation 'io.aether.crypto:sodium:+'
+    implementation 'io.aether:net-netty:+'
 }
 
 java {
@@ -34,24 +38,6 @@ java {
     }
 }
 
-tasks.register('dist') {
-    dependsOn('shadowJar')
-    doLast {
-        var jar = new FileInputStream("$project.buildDir/libs/aether-cli.jar");
-        var outputDir = new File("$project.buildDir/bin")
-        if (!outputDir.exists()) {
-            outputDir.mkdirs()
-        }
-        var outputFile = new File(outputDir, "aether-cli")
-        var out = new FileOutputStream(outputFile)
-        // Добавляем JVM аргументы в shell-скрипт
-        out.write("#!/bin/sh\nexec java --add-opens=java.base/jdk.internal.misc=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED -jar \$0 \"\$@\"\nexit 0\n".getBytes())
-        jar.transferTo(out)
-        out.close()
-        jar.close()
-        outputFile.setExecutable(true)
-    }
-}
 
 tasks.register('updateVersion') {
     doLast {
@@ -77,3 +63,47 @@ publishing {
         }
     }
 }
+
+
+// Настройка дистрибутива для использования shadowJar
+distributions {
+    main {
+        contents {
+            from shadowJar
+            into('lib') {
+                rename { 'aether-cli.jar' }
+            }
+        }
+    }
+}
+
+
+
+// Создаём установочные скрипты в папке дистрибутива
+tasks.register('createSetupScripts') {
+    dependsOn installDist
+    doLast {
+        def installDir = file("$buildDir/install/cli")
+        
+        // Linux/macOS скрипт для добавления в PATH
+        def setupSh = file("$installDir/setup.sh")
+        setupSh.text = '#!/bin/bash\n# Adds bin to PATH\nSCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)\nexport PATH="$SCRIPT_DIR/bin:$PATH"\necho "export PATH=\"$SCRIPT_DIR/bin:\\$PATH\"" >> ~/.bashrc\necho "Added $SCRIPT_DIR/bin to PATH. Restart terminal or source ~/.bashrc"\n'
+        setupSh.setExecutable(true)
+        
+        // Windows скрипт для добавления в PATH
+        def setupBat = file("$installDir/setup.bat")
+        setupBat.text = '@echo off\r\nsetx PATH "%~dp0bin;%PATH%"\r\necho Added %~dp0bin to PATH. Restart command prompt.\r\n'
+    }
+}
+
+
+// Переопределяем distZip, чтобы включить установочные скрипты
+distZip {
+    dependsOn createSetupScripts
+    from(installDist.destinationDir) {
+        include 'setup.sh', 'setup.bat'
+    }
+}
+
+
+installDist.finalizedBy createSetupScripts

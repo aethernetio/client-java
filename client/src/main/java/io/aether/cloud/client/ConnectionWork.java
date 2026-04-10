@@ -448,7 +448,13 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                     report.abort();
                     return;
                 }
-                var loginStream = new LoginStream(cryptoEngine::encrypt, d);
+                var loginStream = new LoginStream(data -> {
+                    if(data==null||data.length==0){
+                        return new byte[0];
+                    }else{
+                        return cryptoEngine.encrypt(data);
+                    }
+                }, d);
                 api.loginByAlias(client.getAlias(), loginStream);
                 rootApi.flush(r->{
                     r2.report(r);

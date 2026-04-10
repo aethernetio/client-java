@@ -1,7 +1,7 @@
 // FILE: simple_hub.ts
 import { SmartHubController, DeviceUpdate } from './SmartHubController';
 import { UUID } from 'aether-client/build/aether_client';
-import { DeviceRecord } from './aether_api';
+import { SensorRecord } from './aether_api';
 import Chart from 'chart.js/auto';
 
 // Элементы UI
@@ -132,7 +132,7 @@ async function loadDeviceData(uuid: string) {
     }
 }
 
-function updateDeviceDisplay(uuid: string, records: DeviceRecord[]) {
+function updateDeviceDisplay(uuid: string, records: SensorRecord[]) {
     if (uuid !== selectedDeviceUuid) return;
     
     if (records.length > 0) {
@@ -149,7 +149,7 @@ function updateDeviceDisplay(uuid: string, records: DeviceRecord[]) {
     renderDeviceList(controller.getCachedDevices());
 }
 
-function updateChart(records: DeviceRecord[]) {
+function updateChart(records: SensorRecord[]) {
     if (!tempChart) {
         const ctx = (document.getElementById('temp-chart') as HTMLCanvasElement).getContext('2d');
         if (!ctx) return;

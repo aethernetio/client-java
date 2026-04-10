@@ -25,6 +25,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedDeque;
 
 public class MessageNode implements ToString {
+    private static final int MAX_BUFFER_SIZE = 1000;
     public final EventConsumerWithQueue<byte[]> bufferIn = new EventConsumerWithQueue<>();
     final UUID consumer;
     final ARFuture<Cloud> consumerCloud;
@@ -33,7 +34,6 @@ public class MessageNode implements ToString {
     private final AetherCloudClient client;
     private volatile MessageEventListener strategy;
 
-    private static final int MAX_BUFFER_SIZE = 1000;
     public MessageNode(AetherCloudClient client, UUID consumer, MessageEventListener strategy) {
         Log.trace("open message node ($client) from $uidFrom to $uidTo", "client", client.getName(), "uidTo", consumer, "uidFrom", client.getUid());
         this.client = client;
@@ -69,7 +69,7 @@ public class MessageNode implements ToString {
             Tuple2<byte[], AFuture> oldest = bufferOut.pollFirst();
             if (oldest != null) {
                 Log.warn("MessageNode buffer pressure, dropping oldest message", "uidTo", consumer);
-                    oldest.val2().error(new RuntimeException("Outgoing message queue overflow"));
+                oldest.val2().error(new RuntimeException("Outgoing message queue overflow"));
             }
         }
         AFuture f = AFuture.make();
@@ -101,10 +101,15 @@ public class MessageNode implements ToString {
 
     public void sendMessageFromServerToClient(byte[] data) {
         Log.trace("sendMessageFromServerToClient");
-        bufferIn.fire(data);
+        try {
+            bufferIn.fire(data);
+        } catch (Exception e) {
+            Log.warn("Read message exception");
+        }
     }
 
     public void toConsumer(AConsumer<byte[]> o) {
+        if (bufferIn.hasListener()) throw new RuntimeException("Already add listener");
         bufferIn.add(o::accept);
     }
 
@@ -114,10 +119,10 @@ public class MessageNode implements ToString {
         FastApiContextLocal<LT> ctx = new FastApiContextLocal<>(localApi) {
             @Override
             public void flush(FlushReport report) {
-                send(remoteDataToArray()).addListener(f->{
-                    if(f.isError()){
+                send(remoteDataToArray()).addListener(f -> {
+                    if (f.isError()) {
                         report.abort();
-                    }else{
+                    } else {
                         report.done();
                     }
                 });
@@ -129,7 +134,11 @@ public class MessageNode implements ToString {
 
     public <LT> void toApi(FastFutureContext ctx, FastMetaApi<LT, ? extends LT> metaLt, LT localApi) {
         toConsumer(v -> {
-            metaLt.makeLocal(ctx, new DataInOutStatic(v), localApi);
+            try {
+                metaLt.makeLocal(ctx, new DataInOutStatic(v), localApi);
+            } catch (Exception e) {
+                Log.error("Read message api exception", "data", v);
+            }
         });
     }
 
@@ -144,10 +153,10 @@ public class MessageNode implements ToString {
             public void flush(FlushReport report) {
                 var d = remoteDataToArray();
                 if (d.length > 0) {
-                    send(d).addListener(f->{
-                        if(f.isError()){
+                    send(d).addListener(f -> {
+                        if (f.isError()) {
                             report.abort();
-                        }else{
+                        } else {
                             report.done();
                         }
                     });

@@ -1,0 +1,45 @@
+
+plugins {
+    id 'java'
+    id 'application'
+    id 'maven-publish'
+}
+
+
+
+application {
+    mainClass = 'io.aether.echo.Echo'
+    applicationDefaultJvmArgs = [
+            '--add-opens=java.base/jdk.internal.misc=ALL-UNNAMED',
+            '--add-opens=java.base/sun.nio.ch=ALL-UNNAMED',
+            '--enable-native-access=ALL-UNNAMED'
+    ]
+}
+
+dependencies {
+    implementation project(':client')
+    implementation("org.slf4j:slf4j-nop:2.0.16")
+    implementation 'com.google.code.gson:gson:2.10.1'
+    implementation 'io.aether.crypto:hydrogen-fast:+'
+    implementation 'io.aether.crypto:sodium:+'
+    implementation 'io.aether:net-netty:+'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+
+
+
+publishing {
+    publications {
+        mavenPublication(MavenPublication) {
+            from components.java
+            groupId "io.aether"
+            artifactId "echo"
+        }
+    }
+}

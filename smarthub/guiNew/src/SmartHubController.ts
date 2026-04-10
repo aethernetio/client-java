@@ -1,6 +1,6 @@
 export interface DeviceUpdate {
     deviceUid: string;
-    records: DeviceRecord[];
+    records: SensorRecord[];
     timestamp: number;
 }
 
@@ -18,10 +18,10 @@ import {
     GuiStream,
     DeviceStream,
     SmartHomeClientGuiApi,
-    DeviceRecord
+    SensorRecord,
+    SmartHomeClientGuiApiLocal,
 } from './aether_api';
 
-const ANONYMOUS_UID_STR = "237e2dc0-21a4-4e83-8184-c43052f93b79";
 
 interface ServiceConnection {
     uuid: string;
@@ -33,22 +33,24 @@ export class SmartHubController {
     
     public onConnectionStateChange = new EventConsumer<'disconnected' | 'connecting' | 'connected' | 'error'>();
     public onDeviceListUpdate = new EventConsumer<UUID[]>();
-    public onDeviceDataUpdate = new EventConsumer<{deviceUid: string, records: DeviceRecord[], timestamp: number}>();
+    public onDeviceDataUpdate = new EventConsumer<{deviceUid: string, records: SensorRecord[], timestamp: number}>();
     public onError = new EventConsumer<string>();
     
     public client: AetherCloudClient | null = null;
     private serviceConnection: ServiceConnection | null = null;
-    private deviceDataCache = new Map<string, DeviceRecord[]>();
+    private deviceDataCache = new Map<string, SensorRecord[]>();
     private devices: UUID[] = [];
     
+
     async connect(serviceUuidStr: string, wsUri: string = "wss://dbservice.aethernet.io:9013"): Promise<void> {
         this.onConnectionStateChange.fire('connecting');
         Log.printConsolePlain(new LogFilter());
         await applySodium();
 
         try {
+            const serviceUuid = UUID.fromString(serviceUuidStr);
             const state = new ClientStateInMemory(
-                UUID.fromString("237e2dc0-21a4-4e83-8184-c43052f93b79"),
+                serviceUuid,
                 [wsUri as any],
                 null,
                 aetherApi.CryptoLib.SODIUM
@@ -57,7 +59,7 @@ export class SmartHubController {
             this.client = new AetherCloudClient(state, "SmartHubClient");
             await this.client.connect().toPromise(15000);
             
-            await this.connectToService(UUID.fromString(serviceUuidStr));
+            await this.connectToService(serviceUuid);
             
             this.onConnectionStateChange.fire('connected');
         } catch (e) {
@@ -66,24 +68,17 @@ export class SmartHubController {
             this.onConnectionStateChange.fire('error');
         }
     }
+
     
+
     private async connectToService(serviceUuid: UUID): Promise<void> {
         if (!this.client) throw new Error("Client not initialized");
 
         const node = this.client.getMessageNode(serviceUuid, MessageEventListenerDefault);
 
-        // 1. Создаем контекст регистратора (Registry API) через фабрику
-        const regCtx = node.toApiR(SmartHomeHubRegistryApi.META, (ctx: FastApiContextLocal<SmartHomeHubRegistryApi>) => ({
-            device: (s: DeviceStream) => { },
-            gui: (s: GuiStream) => { }
-        }));
-
-        // 2. Инициализируем GuiStream (ID - 16 байт)
-        const guiStream = new GuiStream(new Uint8Array(16));
-
-        // 3. Настраиваем Callback API для Push-уведомлений (Events)
-        node.toApiR(SmartHomeClientGuiApi.META, (ctx: FastApiContextLocal<SmartHomeClientGuiApi>) => ({
-            deviceStateUpdated: (deviceUid: UUID, records: DeviceRecord[]) => {
+        // Единственный вызов toApiR – регистрируем локальную реализацию SmartHomeClientGuiApi
+        const ctx = node.toApiR(SmartHomeClientGuiApi.META, (ctx: FastApiContextLocal<SmartHomeClientGuiApi>) => ({
+            deviceStateUpdated: (deviceUid: UUID, records: SensorRecord[]) => {
                 const deviceUidStr = deviceUid.toString();
                 this.deviceDataCache.set(deviceUidStr, records);
                 this.onDeviceDataUpdate.fire({
@@ -92,59 +87,83 @@ export class SmartHubController {
                     timestamp: Date.now()
                 });
             },
-            deviceListUpdated: (devices: UUID[]) => {
-                this.devices = devices;
-                this.onDeviceListUpdate.fire(devices);
-            }
-        }));
+            // deviceListUpdated removed because not in ADSL contract
+            // this.devices = devices;
+            // this.onDeviceListUpdate.fire(devices);
+        })
+    });
 
-        // 4. Инициализируем соединение. Используем toString() для получения примитива string.
+        // Из этого же контекста создаём удалённый прокси SmartHomeHubRegistryApi
+        // const hub = SmartHomeHubRegistryApi.META.makeRemote(ctx);
+        const hub = SmartHomeHubRegistryApi.META.makeRemote(ctx);
+
+
         this.serviceConnection = {
             uuid: serviceUuid.toString(),
-            context: regCtx,
-            hub: SmartHomeGuiApi.META.makeRemote(regCtx)
+            context: ctx,
+            hub: hub
         };
 
-        // 5. Регистрируемся в хабе и отправляем данные
-        SmartHomeHubRegistryApi.META.makeRemote(regCtx).gui(guiStream);
-        regCtx.flush(FlushReport.STUB);
+        // Регистрируемся в хабе
+        hub.gui(GuiStream.remoteApi(ctx, a => {}));
+        ctx.flush(FlushReport.STUB);
 
         this.onConnectionStateChange.fire('connected');
         this.refreshDeviceList();
     }
 
-    async requestDeviceData(deviceUidStr: string, count: number = 10): Promise<DeviceRecord[]> {
+
+
+    requestDeviceData(deviceUidStr: string, count: number = 10): ARFuture<SensorRecord[]> {
         if (!this.serviceConnection) throw new Error("Not connected to service");
         const deviceUid = UUID.fromString(deviceUidStr);
-        this.serviceConnection.hub.requestDeviceHistory(deviceUid, BigInt(count));
+        const future = this.serviceConnection.hub.requestDeviceHistory(deviceUid, BigInt(count));
         this.serviceConnection.context.flush(FlushReport.STUB);
-        return this.deviceDataCache.get(deviceUidStr) || [];
+        return future.toConsumer((records: SensorRecord[]) => {
+            this.deviceDataCache.set(deviceUidStr, records);
+            return records;
+        });
     }
 
-    async subscribeToDevice(deviceUidStr: string): Promise<boolean> {
+
+
+    subscribeToDevice(deviceUidStr: string): ARFuture<boolean> {
         if (!this.serviceConnection) throw new Error("Not connected to service");
         const deviceUid = UUID.fromString(deviceUidStr);
-        this.serviceConnection.hub.subscribeToDevice(deviceUid);
+        const future = this.serviceConnection.hub.subscribeToDevice(deviceUid);
         this.serviceConnection.context.flush(FlushReport.STUB);
-        return true;
+        return future.toConsumer((result: boolean) => {
+            return result;
+        });
     }
 
-    async unsubscribeFromDevice(deviceUidStr: string): Promise<boolean> {
+
+
+    unsubscribeFromDevice(deviceUidStr: string): ARFuture<boolean> {
         if (!this.serviceConnection) throw new Error("Not connected to service");
         const deviceUid = UUID.fromString(deviceUidStr);
-        this.serviceConnection.hub.unsubscribeFromDevice(deviceUid);
+        const future = this.serviceConnection.hub.unsubscribeFromDevice(deviceUid);
         this.serviceConnection.context.flush(FlushReport.STUB);
-        return true;
+        return future.toConsumer((result: boolean) => {
+            return result;
+        });
     }
 
-    async refreshDeviceList(): Promise<UUID[]> {
+
+
+    refreshDeviceList(): ARFuture<UUID[]> {
         if (!this.serviceConnection) throw new Error("Not connected to service");
-        this.serviceConnection.hub.getDevices();
+        const future = this.serviceConnection.hub.getDevices();
         this.serviceConnection.context.flush(FlushReport.STUB);
-        return this.devices;
+        return future.toConsumer((devices: UUID[]) => {
+            this.devices = devices;
+            this.onDeviceListUpdate.fire(devices);
+            return devices;
+        });
     }
 
-    getCachedDeviceData(deviceUidStr: string): DeviceRecord[] | null {
+
+    getCachedDeviceData(deviceUidStr: string): SensorRecord[] | null {
         return this.deviceDataCache.get(deviceUidStr) || null;
     }
 

@@ -38,7 +38,7 @@ public class ClientStateInMemory implements ClientState, ToString {
 
     private final Set<SignChecker> rootSigners = new ConcurrentHashSet<>();
 
-    private final CryptoLib cryptoLib;
+    private CryptoLib cryptoLib;
 
     private final AMFuture<Long> pingDuration = new AMFuture<>(1000L);
 
@@ -72,19 +72,8 @@ public class ClientStateInMemory implements ClientState, ToString {
         this(parentUid, registrationUri, null);
     }
 
-    private ClientStateInMemory(ClientStateForSave dto) {
-        this.uid = dto.getUid();
-        this.alias = dto.getAlias();
-        flow(dto.getClients()).map(ClientInfoMutable::new).toMapExtractKey(clients, ClientInfoMutable::getUid);
-        flow(dto.getServers()).map(ServerInfo::new).toMapExtractKey(servers, ServerInfo::getServerId);
-        this.parentUid = dto.getParentUid();
-        this.masterKey = dto.getMasterKey();
-        this.cryptoLib = dto.getCryptoLib();
-        this.rootSigners.addAll(flow(dto.getRootSigners()).map(v -> CryptoUtils.of(v).asSignPublic().toSignChecker()).toSet());
-        this.countServersForRegistration = dto.getCountServersForRegistration();
-        this.timeoutForConnectToRegistrationServer = dto.getTimeoutForConnectToRegistrationServer();
-        this.registrationUri.addAll(Arrays.asList(dto.getRegistrationUri()));
-        this.pingDuration.set(dto.getPingDuration());
+    public ClientStateInMemory(ClientStateForSave dto) {
+        loadState(dto);
     }
 
     @Override
@@ -132,6 +121,11 @@ public class ClientStateInMemory implements ClientState, ToString {
     @Override
     public ClientState.ClientInfo getClientInfo(UUID uid) {
         return clients.computeIfAbsent(uid, ClientInfoMutable::new);
+    }
+
+    @Override
+    public void saveState() {
+
     }
 
     @Override
@@ -248,6 +242,37 @@ public class ClientStateInMemory implements ClientState, ToString {
             var weightsArray = weightsMap.entrySet().stream().map(e -> new io.aether.api.clienttypes.CloudWeight(e.getKey(), e.getValue())).toArray(io.aether.api.clienttypes.CloudWeight[]::new);
             return new io.aether.api.clienttypes.ClientInfo(s.getUid(), cc.toCloud(), weightsArray);
         }).toArray(io.aether.api.clienttypes.ClientInfo.class), flow(rootSigners).map(io.aether.crypto.SignChecker::getPublicKey).map(io.aether.api.CryptoUtils::of).cast(KeySignPublic.class).toArray(KeySignPublic.class), cryptoLib, pingDuration.getNow(), parentUid, countServersForRegistration, timeoutForConnectToRegistrationServer, uid, alias, masterKey);
+    }
+
+    public void loadState(File data) {
+        try {
+            loadState(Files.readAllBytes(data.toPath()));
+        } catch (IOException e) {
+            Log.error("Cannot load state", e);
+            RU.error(e);
+        }
+    }
+    public void loadState(byte[] data) {
+        var dto = ClientStateForSave.META.deserialize(FastFutureContext.STUB, new DataInOutStatic(data));
+        loadState(dto);
+    }
+    public void loadState(ClientStateForSave dto) {
+        try {
+            this.uid = dto.getUid();
+            this.alias = dto.getAlias();
+            flow(dto.getClients()).map(ClientInfoMutable::new).toMapExtractKey(clients, ClientInfoMutable::getUid);
+            flow(dto.getServers()).map(ServerInfo::new).toMapExtractKey(servers, ServerInfo::getServerId);
+            this.parentUid = dto.getParentUid();
+            this.masterKey = dto.getMasterKey();
+            this.cryptoLib = dto.getCryptoLib();
+            this.rootSigners.addAll(flow(dto.getRootSigners()).map(v -> CryptoUtils.of(v).asSignPublic().toSignChecker()).toSet());
+            this.countServersForRegistration = dto.getCountServersForRegistration();
+            this.timeoutForConnectToRegistrationServer = dto.getTimeoutForConnectToRegistrationServer();
+            this.registrationUri.addAll(Arrays.asList(dto.getRegistrationUri()));
+            this.pingDuration.set(dto.getPingDuration());
+        } catch (Exception e) {
+            throw new IllegalStateException("Unparsable format state", e);
+        }
     }
 
     public static ClientStateInMemory load(File file) {

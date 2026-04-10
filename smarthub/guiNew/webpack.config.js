@@ -59,7 +59,7 @@ module.exports = {
       directory: path.join(__dirname, './dist'),
     },
     // ИЗМЕНЕНО: открываем новый файл по умолчанию
-    open: ['/temp_test_plain.html'],
+    open: ['/hub'],
     client: {
       logging: 'none',
       overlay: false,
@@ -68,8 +68,8 @@ module.exports = {
     historyApiFallback: {
       rewrites: [
         // ИЗМЕНЕНО: обновлены правила перезаписи путей для dev-сервера
-        { from: /^\/simple/, to: '/temp_test_plain.html' },
-        { from: /^\/complex/, to: '/temp_test.html' },
+        { from: /^\/simple/, to: '/simple_hub.html' },
+        { from: /^\/complex/, to: '/simple_hub.html' },
         { from: /^\/hub/, to: '/simple_hub.html' }
       ]
     }

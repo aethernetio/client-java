@@ -1,9 +1,9 @@
+
 types:
-  DeviceRecord:
+  SensorRecord:
     fields:
-      value: short
-      time: short
-  # Определяем типы стримов для каждой роли
+      value: byte
+      time: byte
   DeviceStream:
     stream:
       api: SmartHomeDeviceApi
@@ -12,7 +12,6 @@ types:
       api: SmartHomeGuiApi
 
 api:
-  # Уровень 1: Точка входа для определения роли
   SmartHomeHubRegistryApi:
     methods:
       device:
@@ -24,44 +23,44 @@ api:
         params:
           stream: GuiStream
 
-  # Уровень 2: API только для Устройств
   SmartHomeDeviceApi:
     methods:
       reportState:
         id: 10
         params:
           deviceUid: uuid
-          value: DeviceRecord[]
-        returns: boolean
+          value: SensorRecord[]
 
-  # Уровень 2: API только для GUI
   SmartHomeGuiApi:
     methods:
       getDevices:
-        id: 34
+        id: 12
         returns: uuid[]
       subscribeToDevice:
-        id: 32
+        id: 13
         params:
           deviceUid: uuid
-        returns: boolean
+        returns: bool
       unsubscribeFromDevice:
-        id: 33
+        id: 14
         params:
           deviceUid: uuid
-        returns: boolean
+        returns: bool
       requestDeviceHistory:
-        id: 31
+        id: 15
         params:
           deviceUid: uuid
           count: intpack
-        returns: DeviceRecord[]
+        returns: SensorRecord[]
 
-  # Callback API (для Push-уведомлений от сервиса к GUI)
+
   SmartHomeClientGuiApi:
     methods:
       deviceStateUpdated:
         id: 20
         params:
           deviceUid: uuid
-          records: DeviceRecord[]
+          records: SensorRecord[]
+
+  SmartHomeClientDeviceApi:
+    # Пустой интерфейс для устройства

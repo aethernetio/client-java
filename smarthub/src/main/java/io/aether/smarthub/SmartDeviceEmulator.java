@@ -1,7 +1,9 @@
 package io.aether.smarthub;
 
 import io.aether.api.smarthub.*;
+import io.aether.net.fastMeta.*;
 import io.aether.utils.futures.ARFuture;
+import io.aether.utils.futures.AFuture;
 import io.aether.cloud.client.AetherCloudClient;
 import io.aether.cloud.client.ClientStateInMemory;
 import io.aether.logger.Log;
@@ -14,56 +16,91 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
+
 public class SmartDeviceEmulator {
-    private final UUID deviceUid;
+    private final UUID serviceUid;
+    private UUID deviceUid;
     private final String statePath;
     private AetherCloudClient client;
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
 
-    public SmartDeviceEmulator(UUID deviceUid) {
-        this.deviceUid = deviceUid;
-        this.statePath = "smarthub-data/device-" + deviceUid + ".bin";
+    public SmartDeviceEmulator(UUID serviceUid) {
+        this.serviceUid = serviceUid;
+        this.statePath = "smarthub-data/device-" + serviceUid + ".bin";
     }
 
-    public void start(String regUri, UUID serviceUid) throws Exception {
+    public UUID getDeviceUid() {
+        return deviceUid;
+    }
+
+    private final AFuture ready = AFuture.make();
+
+    public AFuture getReady() {
+        return ready;
+    }
+
+
+
+
+    public void start(String regUri) throws Exception {
+        Log.info("SmartDeviceEmulator.start() called", "regUri", regUri, "serviceUid", serviceUid);
         File stateFile = new File(statePath);
         ClientStateInMemory state = stateFile.exists()
                 ? ClientStateInMemory.load(stateFile)
-                : new ClientStateInMemory(UUID.randomUUID(), List.of(URI.create(regUri)));
-
-        client = new AetherCloudClient(state, "Emulator-" + deviceUid);
-        client.connect().to(() -> {
-            try { state.save(stateFile); } catch (Exception e) { Log.error(e); }
-            Log.info("Device Emulator connected", "uid", state.getUid());
-        });
-
-        // getMessageNode синхронизируется внутри, вызываем смело
-        io.aether.cloud.client.MessageNode node = client.getMessageNode(serviceUid);
+                : new ClientStateInMemory(serviceUid, List.of(URI.create(regUri)));
+        Log.info("ClientStateInMemory created/loaded", "exists", stateFile.exists());
+        client = new AetherCloudClient(state, "Emulator-for-" + serviceUid);
+        Log.info("AetherCloudClient created");
+        client.connect()
+            .timeoutError(10, "Connect timeout")
+            .to(() -> {
+                Log.info("Connect callback started");
+                try { state.save(stateFile); Log.info("State saved", "path", statePath); } catch (Exception e) { Log.error(e); }
+                deviceUid = state.getUid();
+                Log.info("Device Emulator connected", "uid", deviceUid);
+                ready.done();
+            })
+            .onError(ready::error);
         
-        // 1. Создаем контекст регистратора
-        var regCtx = node.toApi(SmartHomeHubRegistryApi.META, new SmartHomeHubRegistryApi() {
-            @Override public void device(DeviceStream s) {}
-            @Override public void gui(GuiStream s) {}
+
+
+        ready.to(() -> {
+            Log.info("DeviceUid obtained, starting device reporting", "deviceUid", deviceUid);
+            try {
+                io.aether.cloud.client.MessageNode node = client.getMessageNode(serviceUid);
+
+                var ctx = node.toApi(SmartHomeClientDeviceApi.META, SmartHomeClientDeviceApi.EMPTY);
+                final SmartHomeHubRegistryApiRemote remoteHubApi = ctx.makeRemote(SmartHomeHubRegistryApi.META);
+                FastFutureContext ctx2=new FastApiContext(){
+                    @Override
+                    public int regFuture(FutureRec worker) {
+                        return ctx.regFuture(worker);
+                    }
+
+                    @Override
+                    public void flush() {
+                        var dataApi2=remoteDataToArray();
+                        remoteHubApi.device(new DeviceStream(dataApi2));
+                        remoteHubApi.flush();
+                    }
+                };
+                var remoteDeviceApi=ctx2.makeRemote(SmartHomeDeviceApi.META);
+                Log.info("Starting scheduled temperature reporting", "intervalSec", 5);
+                scheduler.scheduleAtFixedRate(() -> {
+                    byte temp = (byte) (20 + (byte)(Math.random() * 10));
+                    Log.info("Sending temperature", "temp", temp, "deviceUid", deviceUid);
+                    SensorRecord record = new SensorRecord(temp, (byte) (System.currentTimeMillis() / 1000));
+                    remoteDeviceApi.reportState(deviceUid, new SensorRecord[]{record});
+                    remoteDeviceApi.flush();
+                }, 0, 1, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                Log.error("Failed to start device reporting", e);
+            }
         });
 
-        // 2. Создаем свой стрим (роль устройства) и получаем Remote через Consumer
-        final SmartHomeDeviceApiRemote[] hubRemote = {null};
-        DeviceStream deviceStream = new DeviceStream(regCtx, r -> hubRemote[0] = r);
-
-        // 3. Регистрируемся на уровне Registry
-        SmartHomeHubRegistryApi.META.makeRemote(regCtx).device(deviceStream);
-        regCtx.flush();
-
-        scheduler.scheduleAtFixedRate(() -> {
-            if (hubRemote[0] == null) return;
-            short temp = (short) (20 + Math.random() * 10);
-            DeviceRecord record = new DeviceRecord(temp, (short) (System.currentTimeMillis() / 1000));
-            hubRemote[0].reportState(deviceUid, new DeviceRecord[]{record}).to(success -> {
-                if (success) Log.info("Temperature sent", "val", temp);
-            });
-            regCtx.flush();
-        }, 0, 5, java.util.concurrent.TimeUnit.SECONDS);
     }
+
+
 
     public void stop() {
         scheduler.shutdown();

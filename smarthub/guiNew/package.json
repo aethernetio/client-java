@@ -7,7 +7,7 @@
     "build": "npm run protocol && webpack --config webpack.config.js",
     "start": "webpack --config webpack.config.js && webpack serve --config webpack.config.js",
     "protocol": "aether-protocol-gen smarthub.adsl.yaml",
-    "test:smarthub": "jest --testTimeout=120000 test/smarthub.test.ts",
+    "test:smarthub": "jest --testTimeout=120000 --localstorage-file=./temp_storage_/localstorage test/smarthub.test.ts",
     "download:deps": "curl -o aether-client-1.0.1.tgz \"https://nexus.aethernet.io/npm-private/aether-client-1.0.1.tgz\" && curl -o aether-protocol-generator-1.0.0.tgz -u \"deploy:1930\" \"https://nexus.aethernet.io/npm-private/aether-protocol-generator-1.0.0.tgz\"",
     "install:deps": "npm install ./aether-client-1.0.1.tgz && npm install --save-dev ./aether-protocol-generator-1.0.0.tgz",
     "setup": "npm run download:deps && npm run install:deps && npm run protocol"
