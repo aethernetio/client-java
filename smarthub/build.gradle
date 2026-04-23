@@ -31,7 +31,7 @@ publishing {
 }
 
 dependencies {
-    implementation project(':client')
+    implementation 'io.aether:cloud-client:+'
     implementation 'com.h2database:h2:2.2.224'
     implementation 'io.aether.crypto:hydrogen-fast:+'
     implementation 'io.aether.crypto:sodium:+'
