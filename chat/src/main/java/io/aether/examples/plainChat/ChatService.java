@@ -24,27 +24,32 @@ public class ChatService {
     final Queue<MessageDescriptor> allMessages = new ConcurrentLinkedQueue<>();
     private final Map<UUID, UserDescriptor> users = new ConcurrentHashMap<>();
 
+    public AetherCloudClient getAether() {
+        return aether;
+    }
+
     public ChatService(List<URI> registrationUri) {
-        aether = new AetherCloudClient(new ClientStateInMemory(UUID.fromString("B30AD9CA-FF20-E851-B11F-AED62C584AD2"), registrationUri), "ChatService")
-                .waitStart(10);
-        uid.done(aether.getUid());
-        ARFuture<AccessGroupI> groupFuture = aether.createAccessGroup();
-        aether.onNewChildren((u) -> {
-            groupFuture.to(group -> {
-                group.add(u).toFuture().to(() -> {
-                    Log.info("NEW CHILD DONE: $uid", "uid", u);
-                });
-                Log.info("NEW CHILD: $uid", "uid", u);
-            });
-        });
-        aether.onClientStream((s) -> {
-            var api = s.toApiR(ServiceServerApi.META,
-                    c -> {
-                        var r = c.makeRemote(ServiceClientApi.META);
-                        clients.put(s.getConsumerUUID(), r);
-                        return new MyServiceServerApi(s.getConsumerUUID(), r);
+        aether = new AetherCloudClient(new ClientStateInMemory(UUID.fromString("B30AD9CA-FF20-E851-B11F-AED62C584AD2"), registrationUri), "ChatService");
+        aether.startFuture.to(()->{
+                    uid.done(getAether().getUid());
+                    ARFuture<AccessGroupI> groupFuture = getAether().createAccessGroup();
+                    getAether().onNewChildren((u) -> {
+                        groupFuture.to(group -> {
+                            group.add(u).toFuture().to(() -> {
+                                Log.info("NEW CHILD DONE: $uid", "uid", u);
+                            });
+                            Log.info("NEW CHILD: $uid", "uid", u);
+                        });
                     });
-        });
+                    getAether().onClientStream((s) -> {
+                        var api = s.toApiR(ServiceServerApi.META,
+                                c -> {
+                                    var r = c.makeRemote(ServiceClientApi.META);
+                                    clients.put(s.getConsumerUUID(), r);
+                                    return new MyServiceServerApi(s.getConsumerUUID(), r);
+                                });
+                    });
+                });
     }
 
     private class MyServiceServerApi extends ServiceServerApiLocal<ServiceClientApiRemote> {

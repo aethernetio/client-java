@@ -183,11 +183,10 @@ export interface SmartHomeDeviceApi  {
     /**
      * @param deviceUid - UUID
      * @param value - SensorRecord[]
-     * @returns ARFuture<boolean>
      *
      * @aetherMethodId 10
      */
-    reportState(deviceUid: UUID, value: SensorRecord[]): ARFuture<boolean>;
+    reportState(deviceUid: UUID, value: SensorRecord[]): void;
     
 }
 export namespace SmartHomeDeviceApi  {
@@ -210,42 +209,24 @@ export abstract class SmartHomeDeviceApiLocal<RT extends RemoteApi> implements S
     /**
      * @param deviceUid - UUID
      * @param value - SensorRecord[]
-     * @returns ARFuture<boolean>
      *
      * @aetherMethodId 10
      */
-    public abstract reportState(deviceUid: UUID, value: SensorRecord[]): ARFuture<boolean>;
+    public abstract reportState(deviceUid: UUID, value: SensorRecord[]): void;
     
 }
 export interface SmartHomeGuiApi  {
     /**
-     * @returns ARFuture<UUID[]>
-     *
      * @aetherMethodId 12
      */
-    getDevices(): ARFuture<UUID[]>;
-    /**
-     * @param deviceUid - UUID
-     * @returns ARFuture<boolean>
-     *
-     * @aetherMethodId 13
-     */
-    subscribeToDevice(deviceUid: UUID): ARFuture<boolean>;
-    /**
-     * @param deviceUid - UUID
-     * @returns ARFuture<boolean>
-     *
-     * @aetherMethodId 14
-     */
-    unsubscribeFromDevice(deviceUid: UUID): ARFuture<boolean>;
+    getDevices(): void;
     /**
      * @param deviceUid - UUID
      * @param count - bigint
-     * @returns ARFuture<SensorRecord[]>
      *
      * @aetherMethodId 15
      */
-    requestDeviceHistory(deviceUid: UUID, count: bigint): ARFuture<SensorRecord[]>;
+    requestDeviceHistory(deviceUid: UUID, count: bigint): void;
     
 }
 export namespace SmartHomeGuiApi  {
@@ -266,33 +247,16 @@ export abstract class SmartHomeGuiApiLocal<RT extends RemoteApi> implements Smar
         
     }
     /**
-     * @returns ARFuture<UUID[]>
-     *
      * @aetherMethodId 12
      */
-    public abstract getDevices(): ARFuture<UUID[]>;
-    /**
-     * @param deviceUid - UUID
-     * @returns ARFuture<boolean>
-     *
-     * @aetherMethodId 13
-     */
-    public abstract subscribeToDevice(deviceUid: UUID): ARFuture<boolean>;
-    /**
-     * @param deviceUid - UUID
-     * @returns ARFuture<boolean>
-     *
-     * @aetherMethodId 14
-     */
-    public abstract unsubscribeFromDevice(deviceUid: UUID): ARFuture<boolean>;
+    public abstract getDevices(): void;
     /**
      * @param deviceUid - UUID
      * @param count - bigint
-     * @returns ARFuture<SensorRecord[]>
      *
      * @aetherMethodId 15
      */
-    public abstract requestDeviceHistory(deviceUid: UUID, count: bigint): ARFuture<SensorRecord[]>;
+    public abstract requestDeviceHistory(deviceUid: UUID, count: bigint): void;
     
 }
 export interface SmartHomeClientGuiApi  {
@@ -303,6 +267,19 @@ export interface SmartHomeClientGuiApi  {
      * @aetherMethodId 20
      */
     deviceStateUpdated(deviceUid: UUID, records: SensorRecord[]): void;
+    /**
+     * @param devices - UUID[]
+     *
+     * @aetherMethodId 21
+     */
+    onGetDevicesResult(devices: UUID[]): void;
+    /**
+     * @param deviceUid - UUID
+     * @param records - SensorRecord[]
+     *
+     * @aetherMethodId 24
+     */
+    onRequestHistoryResult(deviceUid: UUID, records: SensorRecord[]): void;
     
 }
 export namespace SmartHomeClientGuiApi  {
@@ -329,30 +306,18 @@ export abstract class SmartHomeClientGuiApiLocal<RT extends RemoteApi> implement
      * @aetherMethodId 20
      */
     public abstract deviceStateUpdated(deviceUid: UUID, records: SensorRecord[]): void;
-    
-}
-export interface SmartHomeClientDeviceApi  {
-    
-}
-export namespace SmartHomeClientDeviceApi  {
-    export const EMPTY: SmartHomeClientDeviceApi =  {
-        
-    };
-    export const META: FastMetaApi<SmartHomeClientDeviceApi, SmartHomeClientDeviceApiRemote> = new Impl.SmartHomeClientDeviceApiMetaImpl();
-    
-}
-export interface SmartHomeClientDeviceApiRemote extends SmartHomeClientDeviceApi, RemoteApi  {
-    
-}
-export abstract class SmartHomeClientDeviceApiLocal<RT extends RemoteApi> implements SmartHomeClientDeviceApi  {
-    protected readonly remoteApi: RT;
-    public getRemoteApi(): RT  {
-        return this.remoteApi;
-        
-    }
-    protected constructor(remoteApi: RT)  {
-        this.remoteApi = remoteApi;
-        
-    }
+    /**
+     * @param devices - UUID[]
+     *
+     * @aetherMethodId 21
+     */
+    public abstract onGetDevicesResult(devices: UUID[]): void;
+    /**
+     * @param deviceUid - UUID
+     * @param records - SensorRecord[]
+     *
+     * @aetherMethodId 24
+     */
+    public abstract onRequestHistoryResult(deviceUid: UUID, records: SensorRecord[]): void;
     
 }

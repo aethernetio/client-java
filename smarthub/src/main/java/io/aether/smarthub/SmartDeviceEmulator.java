@@ -78,18 +78,20 @@ public class SmartDeviceEmulator {
                     }
 
                     @Override
-                    public void flush() {
+                    public void flush(FlushReport report) {
                         var dataApi2=remoteDataToArray();
                         remoteHubApi.device(new DeviceStream(dataApi2));
-                        remoteHubApi.flush();
+                        remoteHubApi.flush(report);
                     }
                 };
                 var remoteDeviceApi=ctx2.makeRemote(SmartHomeDeviceApi.META);
                 Log.info("Starting scheduled temperature reporting", "intervalSec", 5);
                 scheduler.scheduleAtFixedRate(() -> {
-                    byte temp = (byte) (20 + (byte)(Math.random() * 10));
-                    Log.info("Sending temperature", "temp", temp, "deviceUid", deviceUid);
-                    SensorRecord record = new SensorRecord(temp, (byte) (System.currentTimeMillis() / 1000));
+                    int tempCelsius = 22 + (int)(Math.random() * 5);
+                    // Формат: 0 = -30C, шаг 1/3 градуса. 25C -> (25+30)*3 = 165
+                    byte rawTemp = (byte)((tempCelsius + 30) * 3);
+                    Log.info("Sending temperature", "celsius", tempCelsius, "raw", (rawTemp & 0xFF), "deviceUid", deviceUid);
+                    SensorRecord record = new SensorRecord(rawTemp, (byte) (System.currentTimeMillis() / 1000));
                     remoteDeviceApi.reportState(deviceUid, new SensorRecord[]{record});
                     remoteDeviceApi.flush();
                 }, 0, 1, TimeUnit.SECONDS);

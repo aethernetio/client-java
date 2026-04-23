@@ -25,12 +25,16 @@ public class ClientStateInFile extends ClientStateInMemory implements ToString, 
         this(parent, registrationUris, new File("state.bin"));
     }
 
+
     public ClientStateInFile(UUID parent, List<URI> registrationUris, File fileState) {
         super(parent, registrationUris);
         this.fileState = fileState;
-        loadState(fileState);
+        if (fileState.exists()) {
+            loadState(fileState);
+        }
         destroyer.add(RU.scheduleAtFixedRate(10, this::saveState));
     }
+
 
     @Override
     public AFuture destroy(boolean force) {

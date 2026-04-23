@@ -571,15 +571,6 @@ public final class AetherCloudClient implements Destroyable {
         return res;
     }
 
-    public AetherCloudClient waitStart(int timeout) {
-        try {
-            startFuture.toCompletableFuture().get(timeout, TimeUnit.SECONDS);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-        return this;
-    }
-
     public CryptoLib getCryptLib() {
         return clientState.getCryptoLib();
     }
@@ -644,10 +635,21 @@ public final class AetherCloudClient implements Destroyable {
         return getMessageNode(uid, MessageEventListener.DEFAULT).send(message);
     }
 
-    public CryptoEngine getCryptoEngineForServer(short serverId) {
+public CryptoEngine getCryptoEngineForServer(short serverId) {
         var k = getMasterKey();
+        if (k == null) {
+            Log.error("Cannot create crypto engine for server " + serverId + ": master key is null");
+            return null;
+        }
+        Log.debug("Creating crypto engine for server", "sid", serverId, "masterKeyProvider", k.getCryptoProvider().getCryptoLibName());
         var kk = k.getCryptoProvider().createKeyForServer(k, serverId);
-        return CryptoEngine.of(kk.getClientToServer().toCryptoEngine(), kk.getServerToClient().toCryptoEngine());
+        if (kk == null || kk.getClientToServer() == null || kk.getServerToClient() == null) {
+            Log.error("Derived keys are null for server", "sid", serverId, "pair", kk);
+            return null;
+        }
+        var engine = CryptoEngine.of(kk.getClientToServer().toCryptoEngine(), kk.getServerToClient().toCryptoEngine());
+        Log.debug("Crypto engine created successfully", "sid", serverId);
+        return engine;
     }
 
     public long getNextPing() {

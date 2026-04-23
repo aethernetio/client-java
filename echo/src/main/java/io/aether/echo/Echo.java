@@ -34,8 +34,11 @@ public class Echo {
         });
 
         client.onMessage((u,msg) -> {
+            Log.info("Echo received message", "from", u, "size", msg.length, "content", new String(msg));
             client.sendMessage(u, msg).to(() -> {
-                Log.debug("Echoed message", "from", u, "size", msg.length);
+                Log.debug("Echoed message successfully", "to", u);
+            }).onError(e -> {
+                Log.error("Failed to echo message", e, "to", u);
             });
         });
     }

@@ -39,6 +39,11 @@ dependencies {
 
 }
 
+
 application {
     mainClass = 'io.aether.smarthub.SmartHubService'
+}
+
+tasks.named('compileJava') {
+    dependsOn(':client:aetherProtocol')
 }

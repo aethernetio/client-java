@@ -31,27 +31,18 @@ api:
           deviceUid: uuid
           value: SensorRecord[]
 
+
   SmartHomeGuiApi:
     methods:
       getDevices:
         id: 12
-        returns: uuid[]
-      subscribeToDevice:
-        id: 13
-        params:
-          deviceUid: uuid
-        returns: bool
-      unsubscribeFromDevice:
-        id: 14
-        params:
-          deviceUid: uuid
-        returns: bool
       requestDeviceHistory:
         id: 15
         params:
           deviceUid: uuid
           count: intpack
-        returns: SensorRecord[]
+
+
 
 
   SmartHomeClientGuiApi:
@@ -61,6 +52,14 @@ api:
         params:
           deviceUid: uuid
           records: SensorRecord[]
+      onGetDevicesResult:
+        id: 21
+        params:
+          devices: uuid[]
+      onRequestHistoryResult:
+        id: 24
+        params:
+          deviceUid: uuid
+          records: SensorRecord[]
 
-  SmartHomeClientDeviceApi:
     # Пустой интерфейс для устройства

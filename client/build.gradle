@@ -2,6 +2,14 @@ plugins {
     id 'java-library'
     id 'maven-publish'
     id 'aether-protocol' version '1.0.0'
+
+}
+sourceSets {
+    main {
+        java {
+            srcDir 'build/generated/aether'
+        }
+    }
 }
 
 def coreVersion = '0.0.98'

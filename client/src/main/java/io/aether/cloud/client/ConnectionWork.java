@@ -52,6 +52,10 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         this.apiSafe = new MyClientApiSafe(client, this);
         apiSafeCtx = new MyFastApiContext(client);
         cryptoEngine = client.getCryptoEngineForServer(s.getId());
+
+        if (cryptoEngine == null) {
+            Log.error("ConnectionWork: cryptoEngine is null for server " + s.getId() + ". Authentication will fail.");
+        }
         serverDescriptor = s;
         this.basicStatus = false;
     }
@@ -63,7 +67,12 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
      * @param isWritable True if the connection is active and writable, false otherwise.
      */
     @Override
-    protected void onConnectionStateChanged(boolean isWritable) {
+protected void onConnectionStateChanged(boolean isWritable) {
+        if (cryptoEngine == null) {
+            Log.warn("onConnectionStateChanged called before cryptoEngine initialized, deferring flush");
+            stateListeners.fire(isWritable);
+            return;
+        }
         if (isWritable) {
             Log.info("Network restored. Resetting auth state and forcing flush.", "uri", uri);
             this.firstAuth = false;
@@ -71,7 +80,6 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         } else {
             this.firstAuth = false;
         }
-        // Trigger listeners in the base class to notify AetherCloudClient
         stateListeners.fire(isWritable);
     }
 
@@ -448,6 +456,12 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                     report.abort();
                     return;
                 }
+        if (cryptoEngine == null) {
+            Log.error("MyFastApiContext.flush: cryptoEngine is null, aborting flush");
+            report.abort();
+            return;
+        }
+
                 var loginStream = new LoginStream(data -> {
                     if(data==null||data.length==0){
                         return new byte[0];

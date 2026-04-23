@@ -6,6 +6,7 @@ export interface DeviceUpdate {
 
 
 
+
 import { AFuture, ARFuture, AetherCloudClient, ClientStateInMemory, MessageEventListenerDefault, UUID, MessageNode, FastApiContext, FastApiContextLocal, Log, LogFilter, applySodium, EventConsumer, FlushReport, aetherApi } from 'aether-client';
 import { Base64 } from 'js-base64';
 
@@ -56,13 +57,20 @@ export class SmartHubController {
                 aetherApi.CryptoLib.SODIUM
             );
 
+
             this.client = new AetherCloudClient(state, "SmartHubClient");
-            await this.client.connect().toPromise(15000);
+            this.client.onMessage.add((uid, data) => {
+                console.log('[SmartHub] Raw message from', uid.toAString().toString(), 'length', data.length);
+            });
+
+
+            await this.client.connect().toPromise(30000);
+
             
             await this.connectToService(serviceUuid);
             
             this.onConnectionStateChange.fire('connected');
-        } catch (e) {
+        } catch (e: any) {
             console.error(e);
             this.onError.fire("Failed to connect to Aether Core");
             this.onConnectionStateChange.fire('error');
@@ -71,96 +79,128 @@ export class SmartHubController {
 
     
 
+
+
+
+
+
+
+
     private async connectToService(serviceUuid: UUID): Promise<void> {
         if (!this.client) throw new Error("Client not initialized");
 
         const node = this.client.getMessageNode(serviceUuid, MessageEventListenerDefault);
+        console.log('[SmartHub] MessageNode created for service', serviceUuid.toAString().toString());
 
-        // Единственный вызов toApiR – регистрируем локальную реализацию SmartHomeClientGuiApi
-        const ctx = node.toApiR(SmartHomeClientGuiApi.META, (ctx: FastApiContextLocal<SmartHomeClientGuiApi>) => ({
-            deviceStateUpdated: (deviceUid: UUID, records: SensorRecord[]) => {
-                const deviceUidStr = deviceUid.toString();
-                this.deviceDataCache.set(deviceUidStr, records);
-                this.onDeviceDataUpdate.fire({
-                    deviceUid: deviceUidStr,
-                    records: records,
-                    timestamp: Date.now()
-                });
-            },
-            // deviceListUpdated removed because not in ADSL contract
-            // this.devices = devices;
-            // this.onDeviceListUpdate.fire(devices);
-        })
-    });
+        // Локальная реализация для приёма результатов от сервера
+        const rootCtx = node.toApiR(SmartHomeClientGuiApi.META, (ctx: FastApiContextLocal<SmartHomeClientGuiApi>) => {
+            console.log('[SmartHub] rootCtx localApi factory called');
+            return {
+                deviceStateUpdated: (deviceUid: UUID, records: SensorRecord[]) => {
+                    console.log('[SmartHub] deviceStateUpdated', deviceUid.toAString().toString(), records);
+                    const deviceUidStr = deviceUid.toAString().toString();
+                    let history = this.deviceDataCache.get(deviceUidStr) || [];
+                    // Накапливаем данные и оставляем последние 50 для графика
+                    history = [...history, ...records].slice(-50);
+                    this.deviceDataCache.set(deviceUidStr, history);
 
-        // Из этого же контекста создаём удалённый прокси SmartHomeHubRegistryApi
-        // const hub = SmartHomeHubRegistryApi.META.makeRemote(ctx);
-        const hub = SmartHomeHubRegistryApi.META.makeRemote(ctx);
+                    this.onDeviceDataUpdate.fire({
+                        deviceUid: deviceUidStr,
+                        records: history, // Теперь передаем всю накопленную историю
+                        timestamp: Date.now()
+                    });
+                },
+                onGetDevicesResult: (devices: UUID[]) => {
+                    console.log('[SmartHub] onGetDevicesResult received:', devices.map(d => d.toAString().toString()));
+                    this.devices = devices;
+                    this.onDeviceListUpdate.fire(devices);
+                },
+                onRequestHistoryResult: (deviceUid: UUID, records: SensorRecord[]) => {
+                    console.log('[SmartHub] onRequestHistoryResult', deviceUid.toAString().toString(), records);
+                    const deviceUidStr = deviceUid.toAString().toString();
+                    const history = records.slice(-50);
+                    this.deviceDataCache.set(deviceUidStr, history);
+                    this.onDeviceDataUpdate.fire({
+                        deviceUid: deviceUidStr,
+                        records: history,
+                        timestamp: Date.now()
+                    });
+                }
+            };
+        });
+
+        const hubRegistry = SmartHomeHubRegistryApi.META.makeRemote(rootCtx);
+
+        // В TS конструктор принимает только factory/impl, META не требуется
+        const guiCtx = new FastApiContextLocal(() => ({} as any));
 
 
-        this.serviceConnection = {
-            uuid: serviceUuid.toString(),
-            context: ctx,
-            hub: hub
+        guiCtx.flush = (report: FlushReport) => {
+            try {
+                // Извлекаем накопленные байты вызовов SmartHomeGuiApi
+                const data = guiCtx.remoteDataToArrayAsArray();
+                if (data && data.length > 0) {
+                    console.log('[SmartHub] Sending GuiStream, length:', data.length);
+                    // Упаковываем во вложенный стрим и отправляем через корневой реестр
+                    hubRegistry.gui(new GuiStream(data));
+                    // Реальная отправка пакета в сокет идет через flush основного контекста
+                    hubRegistry.flush(report); 
+                } else {
+                    report.done();
+                }
+            } catch (e) {
+                console.error("[SmartHub] guiCtx.flush error:", e);
+                report.done();
+            }
         };
 
-        // Регистрируемся в хабе
-        hub.gui(GuiStream.remoteApi(ctx, a => {}));
-        ctx.flush(FlushReport.STUB);
 
+
+
+        const guiApi = SmartHomeGuiApi.META.makeRemote(guiCtx);
+
+        this.serviceConnection = {
+            uuid: serviceUuid.toAString().toString(),
+            context: guiCtx,
+            hub: guiApi
+        };
+
+        console.log('[SmartHub] Service connection established, flushing rootCtx');
+        rootCtx.flush(FlushReport.STUB);
         this.onConnectionStateChange.fire('connected');
+        // Запрашиваем список устройств
         this.refreshDeviceList();
     }
 
 
 
-    requestDeviceData(deviceUidStr: string, count: number = 10): ARFuture<SensorRecord[]> {
+
+
+
+
+
+
+
+
+
+
+    requestDeviceData(deviceUidStr: string, count: number = 10): void {
         if (!this.serviceConnection) throw new Error("Not connected to service");
         const deviceUid = UUID.fromString(deviceUidStr);
-        const future = this.serviceConnection.hub.requestDeviceHistory(deviceUid, BigInt(count));
+        this.serviceConnection.hub.requestDeviceHistory(deviceUid, BigInt(count));
         this.serviceConnection.context.flush(FlushReport.STUB);
-        return future.toConsumer((records: SensorRecord[]) => {
-            this.deviceDataCache.set(deviceUidStr, records);
-            return records;
-        });
     }
 
 
 
-    subscribeToDevice(deviceUidStr: string): ARFuture<boolean> {
+    refreshDeviceList(): void {
         if (!this.serviceConnection) throw new Error("Not connected to service");
-        const deviceUid = UUID.fromString(deviceUidStr);
-        const future = this.serviceConnection.hub.subscribeToDevice(deviceUid);
+        console.log('[SmartHubController] Calling getDevices');
+        this.serviceConnection.hub.getDevices();
         this.serviceConnection.context.flush(FlushReport.STUB);
-        return future.toConsumer((result: boolean) => {
-            return result;
-        });
     }
 
 
-
-    unsubscribeFromDevice(deviceUidStr: string): ARFuture<boolean> {
-        if (!this.serviceConnection) throw new Error("Not connected to service");
-        const deviceUid = UUID.fromString(deviceUidStr);
-        const future = this.serviceConnection.hub.unsubscribeFromDevice(deviceUid);
-        this.serviceConnection.context.flush(FlushReport.STUB);
-        return future.toConsumer((result: boolean) => {
-            return result;
-        });
-    }
-
-
-
-    refreshDeviceList(): ARFuture<UUID[]> {
-        if (!this.serviceConnection) throw new Error("Not connected to service");
-        const future = this.serviceConnection.hub.getDevices();
-        this.serviceConnection.context.flush(FlushReport.STUB);
-        return future.toConsumer((devices: UUID[]) => {
-            this.devices = devices;
-            this.onDeviceListUpdate.fire(devices);
-            return devices;
-        });
-    }
 
 
     getCachedDeviceData(deviceUidStr: string): SensorRecord[] | null {
@@ -174,7 +214,6 @@ export class SmartHubController {
     async disconnect(): Promise<void> {
         this.serviceConnection = null;
         this.deviceDataCache.clear();
-        this.devices = [];
         if (this.client) {
             await this.client.destroy(true).toPromise(5000);
             this.client = null;
@@ -188,7 +227,7 @@ export class SmartHubController {
         try {
             const stateBytes = this.client.state.save();
             localStorage.setItem('smarthub_session_v1', Base64.fromUint8Array(stateBytes));
-        } catch (e) {
+        } catch (e: any) {
             Log.error("Failed to save session", e);
         }
     }
@@ -205,7 +244,7 @@ export class SmartHubController {
             const state = new ClientStateInMemory(bytes);
             this.client = new AetherCloudClient(state, "SmartHubGUI");
             return true;
-        } catch (e) {
+        } catch (e: any) {
             Log.error("Session restore failed", e);
             localStorage.removeItem('smarthub_session_v1');
             return false;
