@@ -28,8 +28,7 @@ api:
       reportState:
         id: 10
         params:
-          deviceUid: uuid
-          value: SensorRecord[]
+          value: short
 
 
   SmartHomeGuiApi:
@@ -61,5 +60,5 @@ api:
         params:
           deviceUid: uuid
           records: SensorRecord[]
-
+  SmartHomeClientDeviceApi:
     # Пустой интерфейс для устройства

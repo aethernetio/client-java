@@ -34,7 +34,7 @@ subprojects {
         }
     }
     afterEvaluate {
-        if (gradle.parent != null) {
+        if (true) {
             if (it.plugins.hasPlugin('maven-publish')) {
                 publishing {
                     repositories {
@@ -49,8 +49,8 @@ subprojects {
                             allowInsecureProtocol = true
 
                             credentials {
-                                username gradle.parent.rootProject.properties["aetherRepoUser"] as String
-                                password gradle.parent.rootProject.properties["aetherRepoPassword"] as String
+                                username project.findProperty('aetherRepoUser') ?: ''
+                                password project.findProperty('aetherRepoPassword') ?: ''
                             }
                         }
                     }

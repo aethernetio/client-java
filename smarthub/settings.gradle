@@ -11,12 +11,4 @@ pluginManagement {
 plugins {
     id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
 }
-rootProject.name = 'cloud-client'
-include ':client'
-include ':cli'
-include ':chat'
-include ':pointToPoint'
-include ':smarthome'
-include ':smarthome-plain'
-includeBuild 'smarthub'
-include ':echo'
+rootProject.name = 'smarthub'

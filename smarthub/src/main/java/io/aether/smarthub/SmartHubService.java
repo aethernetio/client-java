@@ -1,6 +1,6 @@
-
 package io.aether.smarthub;
 
+import io.aether.StandardUUIDs;
 import io.aether.api.smarthub.*;
 import io.aether.cloud.client.ClientStateInFile;
 import io.aether.cloud.client.ClientStateInMemory;
@@ -8,9 +8,7 @@ import io.aether.logger.LNode;
 import io.aether.logger.Log;
 import io.aether.logger.LogFilter;
 import io.aether.net.fastMeta.FlushReport;
-import io.aether.StandardUUIDs;
 import io.aether.utils.futures.AFuture;
-import io.aether.utils.futures.ARFuture;
 import org.h2.jdbcx.JdbcConnectionPool;
 
 import java.io.File;
@@ -119,13 +117,14 @@ public class SmartHubService {
     private void registerApis() {
         Log.info("SmartHub: Registry API starting...");
         client.onClientStream(node -> {
+            var deviceUid = node.getConsumerUUID();
             node.toApiR(SmartHomeHubRegistryApi.META, rootCtx -> new SmartHomeHubRegistryApi() {
 
 
-SmartHomeClientDeviceApi api2DeviceRemote;
-SmartHomeClientGuiApiRemote api2GuiRemote;
-SmartHomeDeviceApi api2DeviceLocal;
-SmartHomeGuiApi api2GuiLocal;
+                SmartHomeClientDeviceApi api2DeviceRemote;
+                SmartHomeClientGuiApiRemote api2GuiRemote;
+                SmartHomeDeviceApi api2DeviceLocal;
+                SmartHomeGuiApi api2GuiLocal;
 
                 @Override
                 public void device(DeviceStream stream) {
@@ -134,8 +133,8 @@ SmartHomeGuiApi api2GuiLocal;
                     if (api2DeviceRemote == null) {
 
 
-                        api2DeviceLocal = (deviceUid, value) -> {
-                            Log.info("api2DeviceLocal called", "deviceUid", deviceUid, "valueLength", value.length);
+                        api2DeviceLocal = (value) -> {
+                            Log.info("api2DeviceLocal called", "deviceUid", deviceUid, "value", value);
                             boolean isNew = knownDevices.add(deviceUid);
                             if (isNew) {
                                 Log.info("New device detected", "deviceUid", deviceUid);
@@ -156,15 +155,13 @@ SmartHomeGuiApi api2GuiLocal;
                             }
                             try (Connection conn = connectionPool.getConnection();
                                  PreparedStatement stmt = conn.prepareStatement("INSERT INTO device_states (DEVICE_UID, STATE_VALUE, STATE_TIME, STATE_TIMESTAMP) VALUES (?, ?, ?, ?)")) {
-                                for (SensorRecord record : value) {
-                                    stmt.setObject(1, deviceUid);
-                                    stmt.setShort(2, record.getValue());
-                                    stmt.setShort(3, record.getTime());
-                                    stmt.setTimestamp(4, new Timestamp(System.currentTimeMillis()));
-                                    stmt.addBatch();
-                                }
+                                stmt.setObject(1, deviceUid);
+                                stmt.setShort(2, value);
+                                stmt.setNull(3, 0);//TODO
+                                stmt.setTimestamp(4, new Timestamp(System.currentTimeMillis()));
+                                stmt.addBatch();
                                 stmt.executeBatch();
-                                Log.info("Inserted device states", "deviceUid", deviceUid, "count", value.length);
+                                Log.info("Inserted device states", "deviceUid", deviceUid, "value", value);
 
 
                             } catch (Exception e) {
@@ -201,8 +198,6 @@ SmartHomeGuiApi api2GuiLocal;
                         }
 
 
-
-
                         @Override
                         public void requestDeviceHistory(UUID d, long c) {
                             List<SensorRecord> records = new ArrayList<>();
@@ -230,15 +225,10 @@ SmartHomeGuiApi api2GuiLocal;
             });
         });
     }
+
     public AFuture getDeviceRegisteredFuture() {
         return deviceRegisteredFuture;
     }
-
-
-
-
-
-
 
 
     private void loadKnownDevicesFromDb() {
@@ -257,10 +247,6 @@ SmartHomeGuiApi api2GuiLocal;
     }
 
 
-
-
-
-
     public void stop() {
         if (client != null) client.destroy(true);
         if (connectionPool != null) connectionPool.dispose();
@@ -270,8 +256,8 @@ SmartHomeGuiApi api2GuiLocal;
     public static void main(String[] args) {
         Log.printPlainConsole(new LogFilter());
         // Используем ClientStateInFile, который автоматически сохраняет состояние
-        ClientStateInFile state = new ClientStateInFile(StandardUUIDs.TEST_UID, 
-                List.of(URI.create("tcp://registration.aethernet.io:9010")), 
+        ClientStateInFile state = new ClientStateInFile(StandardUUIDs.TEST_UID,
+                List.of(URI.create("tcp://registration.aethernet.io:9010")),
                 new File("state.bin"));
         SmartHubService service = new SmartHubService(state);
         try {
@@ -283,6 +269,15 @@ SmartHomeGuiApi api2GuiLocal;
         }
     }
 
+    public static void clearDatabaseFiles(String basePath) {
+        try {
+            java.nio.file.Files.deleteIfExists(java.nio.file.Paths.get(basePath + ".mv.db"));
+            java.nio.file.Files.deleteIfExists(java.nio.file.Paths.get(basePath + ".trace.db"));
+            Log.info("Cleared database files", "basePath", basePath);
+        } catch (Exception e) {
+            Log.warn("Failed to delete database files", "basePath", basePath, "error", e.getMessage());
+        }
+    }
 
     private static class DeviceSession {
         final UUID deviceUid;
@@ -292,17 +287,6 @@ SmartHomeGuiApi api2GuiLocal;
         DeviceSession(UUID deviceUid) {
             this.deviceUid = deviceUid;
             this.lastSeen = System.currentTimeMillis();
-        }
-    }
-
-
-    public static void clearDatabaseFiles(String basePath) {
-        try {
-            java.nio.file.Files.deleteIfExists(java.nio.file.Paths.get(basePath + ".mv.db"));
-            java.nio.file.Files.deleteIfExists(java.nio.file.Paths.get(basePath + ".trace.db"));
-            Log.info("Cleared database files", "basePath", basePath);
-        } catch (Exception e) {
-            Log.warn("Failed to delete database files", "basePath", basePath, "error", e.getMessage());
         }
     }
 

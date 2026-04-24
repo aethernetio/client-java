@@ -17,7 +17,6 @@ repositories {
     mavenCentral()
     maven {
         url "https://nexus.aethernet.io/maven/releases/"
-        allowInsecureProtocol = true
     }
 }
 publishing {
@@ -28,22 +27,31 @@ publishing {
             artifactId "example-smart-hub"
         }
     }
+    repositories {
+        maven {
+            url "https://nexus.aethernet.io/maven/releases/"
+            allowInsecureProtocol = true
+            credentials {
+                username project.findProperty('aetherRepoUser') ?: ''
+                password project.findProperty('aetherRepoPassword') ?: ''
+            }
+        }
+    }
 }
 
 dependencies {
-    implementation 'io.aether:cloud-client:+'
+    implementation 'io.aether:cloud-client:0.0.64'
     implementation 'com.h2database:h2:2.2.224'
     implementation 'io.aether.crypto:hydrogen-fast:+'
     implementation 'io.aether.crypto:sodium:+'
     implementation 'io.aether:net-netty:+'
-
+    implementation 'org.jetbrains:annotations:24.0.1'
+    implementation 'it.unimi.dsi:fastutil:8.5.12'
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.0'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine'
 }
 
 
 application {
     mainClass = 'io.aether.smarthub.SmartHubService'
-}
-
-tasks.named('compileJava') {
-    dependsOn(':client:aetherProtocol')
 }

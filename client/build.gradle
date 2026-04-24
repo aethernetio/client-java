@@ -4,15 +4,7 @@ plugins {
     id 'aether-protocol' version '1.0.0'
 
 }
-sourceSets {
-    main {
-        java {
-            srcDir 'build/generated/aether'
-        }
-    }
-}
 
-def coreVersion = '0.0.98'
 dependencies {
     api "io.aether:client-server-reg-api:+"
     api "io.aether:client-server-work-api:+"
@@ -24,6 +16,7 @@ dependencies {
 publishing {
     publications {
         mavenPublication(MavenPublication) {
+            from components.java
             groupId "io.aether"
             artifactId "cloud-client"
         }

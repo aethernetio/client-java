@@ -91,8 +91,7 @@ public class SmartDeviceEmulator {
                     // Формат: 0 = -30C, шаг 1/3 градуса. 25C -> (25+30)*3 = 165
                     byte rawTemp = (byte)((tempCelsius + 30) * 3);
                     Log.info("Sending temperature", "celsius", tempCelsius, "raw", (rawTemp & 0xFF), "deviceUid", deviceUid);
-                    SensorRecord record = new SensorRecord(rawTemp, (byte) (System.currentTimeMillis() / 1000));
-                    remoteDeviceApi.reportState(deviceUid, new SensorRecord[]{record});
+                    remoteDeviceApi.reportState(rawTemp);
                     remoteDeviceApi.flush();
                 }, 0, 1, TimeUnit.SECONDS);
             } catch (Exception e) {

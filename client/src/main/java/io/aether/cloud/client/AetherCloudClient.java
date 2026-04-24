@@ -80,9 +80,6 @@ public final class AetherCloudClient implements Destroyable {
 
     {
         lastSecond = System.currentTimeMillis() / 1000;
-    }
-
-    {
         startFuture.to(this::startScheduledTask);
     }
 
