@@ -107,4 +107,18 @@ public class SmartDeviceEmulator {
         scheduler.shutdown();
         if (client != null) client.destroy(true);
     }
+
+    public static void main(String[] args) throws Exception {
+        if (args.length < 1) {
+            System.err.println("Usage: SmartDeviceEmulator <serviceUid> [regUri]");
+            System.exit(1);
+        }
+        UUID serviceUid = UUID.fromString(args[0]);
+        String regUri = args.length > 1 ? args[1] : "tcp://registration.aethernet.io:9010";
+        SmartDeviceEmulator emulator = new SmartDeviceEmulator(serviceUid);
+        emulator.start(regUri);
+        Runtime.getRuntime().addShutdownHook(new Thread(emulator::stop));
+        emulator.getReady().waitSuccessful();
+    }
+
 }

@@ -55,3 +55,11 @@ dependencies {
 application {
     mainClass = 'io.aether.smarthub.SmartHubService'
 }
+
+
+task runEmulator(type: JavaExec) {
+    mainClass = 'io.aether.smarthub.SmartDeviceEmulator'
+    classpath = sourceSets.main.runtimeClasspath
+    args System.getProperty('serviceUid', '')
+    jvmArgs '--enable-native-access=ALL-UNNAMED'
+}
