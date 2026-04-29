@@ -118,6 +118,15 @@ public class SmartDeviceEmulator {
         SmartDeviceEmulator emulator = new SmartDeviceEmulator(serviceUid);
         emulator.start(regUri);
         Runtime.getRuntime().addShutdownHook(new Thread(emulator::stop));
+        // Wait until ready
+        while (!emulator.getReady().isDone() && !emulator.getReady().isError()) {
+            Thread.sleep(100);
+        }
+        if (emulator.getReady().isError()) {
+            throw new RuntimeException(emulator.getReady().getError());
+        }
+        // Block main thread indefinitely
+        Thread.currentThread().join();
     }
 
 }
