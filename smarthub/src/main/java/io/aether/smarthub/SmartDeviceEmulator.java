@@ -118,7 +118,6 @@ public class SmartDeviceEmulator {
         SmartDeviceEmulator emulator = new SmartDeviceEmulator(serviceUid);
         emulator.start(regUri);
         Runtime.getRuntime().addShutdownHook(new Thread(emulator::stop));
-        emulator.getReady().waitSuccessful();
     }
 
 }
