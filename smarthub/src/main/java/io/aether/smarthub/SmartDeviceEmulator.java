@@ -52,7 +52,7 @@ public class SmartDeviceEmulator {
         client = new AetherCloudClient(state, "Emulator-for-" + serviceUid);
         Log.info("AetherCloudClient created");
         client.connect()
-            .timeoutError(10, "Connect timeout")
+            .timeoutError(60, "Connect timeout")
             .to(() -> {
                 Log.info("Connect callback started");
                 try { state.save(stateFile); Log.info("State saved", "path", statePath); } catch (Exception e) { Log.error(e); }
@@ -114,6 +114,7 @@ public class SmartDeviceEmulator {
             System.exit(1);
         }
         UUID serviceUid = UUID.fromString(args[0]);
+        System.out.println("Emulator args: " + java.util.Arrays.toString(args));
         String regUri = args.length > 1 ? args[1] : "tcp://registration.aethernet.io:9010";
         SmartDeviceEmulator emulator = new SmartDeviceEmulator(serviceUid);
         emulator.start(regUri);

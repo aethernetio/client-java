@@ -1,0 +1,272 @@
+// Common SSE and API logic
+const commandsEl = document.getElementById('commands');
+const statusEl = document.getElementById('status');
+const uuidDisplay = document.getElementById('uuidDisplay');
+const sourceLinksEl = document.getElementById('sourceLinks');
+const cloneBtn = document.getElementById('cloneBtn');
+const buildBtn = document.getElementById('buildBtn');
+const runBtn = document.getElementById('runBtn');
+const stopBtn = document.getElementById('stopBtn');
+const emulatorBtn = document.getElementById('emulatorBtn');
+const stopEmulatorBtn = document.getElementById('stopEmulatorBtn');
+
+let cloned = false;
+let serviceRunning = false;
+let emulatorRunning = false;
+let serviceUuid = null;
+let jdkReady = false;
+let gradleReady = false;
+
+const commandBlocks = {};
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('[id^="tab-"]').forEach(d => d.style.display = 'none');
+  document.getElementById('tab-' + tab).style.display = 'block';
+  if (tab === 'env') {
+    document.querySelector('.tab:nth-child(1)').classList.add('active');
+  } else {
+    document.querySelector('.tab:nth-child(2)').classList.add('active');
+  }
+}
+
+function updateButtons() {
+  cloneBtn.textContent = cloned ? 'Reset Source' : 'Clone';
+  buildBtn.disabled = !cloned || serviceRunning;
+  runBtn.disabled = !cloned || serviceRunning;
+  stopBtn.disabled = !serviceRunning;
+  if (emulatorBtn) emulatorBtn.disabled = !(cloned && serviceUuid && serviceRunning);
+  stopEmulatorBtn.disabled = !emulatorRunning;
+  const project = document.getElementById('projectSelect').value;
+  sourceLinksEl.style.display = (cloned && project === 'smarthub') ? 'block' : 'none';
+}
+
+function setJdkProgress(msg) {
+  document.getElementById('jdkProgress').textContent = msg;
+}
+function setGradleProgress(msg) {
+  document.getElementById('gradleProgress').textContent = msg;
+}
+
+function setLed(stream, state) {
+  const block = commandBlocks[stream];
+  if (!block) return;
+  const led = block.querySelector('.led');
+  led.className = 'led ' + state;
+}
+
+function activateBlock(stream) {
+  Object.values(commandBlocks).forEach(b => {
+    b.querySelector('.cmd-body').classList.add('collapsed');
+  });
+  const block = commandBlocks[stream];
+  if (block) {
+    block.querySelector('.cmd-body').classList.remove('collapsed');
+  }
+}
+
+function toggleBlock(stream) {
+  const block = commandBlocks[stream];
+  if (!block) return;
+  const body = block.querySelector('.cmd-body');
+  const isCollapsed = body.classList.contains('collapsed');
+  Object.values(commandBlocks).forEach(b => b.querySelector('.cmd-body').classList.add('collapsed'));
+  if (isCollapsed) {
+    body.classList.remove('collapsed');
+  }
+}
+
+function createCommandBlock(stream, localCmd, dockerCmd) {
+  if (commandBlocks[stream]) return;
+  const block = document.createElement('div');
+  block.className = 'cmd-block';
+  block.innerHTML = 
+    '<div class="cmd-header" onclick="toggleBlock(\'' + stream + '\')">' +
+      '<span class="led running"></span>' +
+      '<span class="cmd-title">' + stream + '</span>' +
+    '</div>' +
+    '<div class="cmd-body">' +
+      '<div class="cmd-tabs">' +
+        '<button class="tab-local active" onclick="event.stopPropagation(); switchCmdTab(\'' + stream + '\', \'local\')">Local</button>' +
+        '<button class="tab-docker" onclick="event.stopPropagation(); switchCmdTab(\'' + stream + '\', \'docker\')">Docker</button>' +
+      '</div>' +
+      '<div class="cmd-code" id="cmd-text-' + stream + '">' + escapeHtml(localCmd) + '</div>' +
+      '<div class="cmd-log" id="cmd-log-' + stream + '"></div>' +
+    '</div>';
+  block._localCmd = localCmd;
+  block._dockerCmd = dockerCmd;
+  block._activeTab = 'local';
+  commandsEl.appendChild(block);
+  commandBlocks[stream] = block;
+  activateBlock(stream);
+}
+
+function switchCmdTab(stream, tab) {
+  const block = commandBlocks[stream];
+  if (!block) return;
+  const localBtn = block.querySelector('.tab-local');
+  const dockerBtn = block.querySelector('.tab-docker');
+  const codeEl = document.getElementById('cmd-text-' + stream);
+  if (tab === 'local') {
+    localBtn.classList.add('active');
+    dockerBtn.classList.remove('active');
+    codeEl.textContent = block._localCmd;
+    block._activeTab = 'local';
+  } else {
+    dockerBtn.classList.add('active');
+    localBtn.classList.remove('active');
+    codeEl.textContent = block._dockerCmd;
+    block._activeTab = 'docker';
+  }
+}
+
+function appendCommandLog(stream, line) {
+  const logEl = document.getElementById('cmd-log-' + stream);
+  if (logEl) {
+    logEl.innerHTML += '<div>' + line + '</div>';
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+}
+
+function escapeHtml(text) {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+const evtSource = new EventSource('/api/logs');
+evtSource.addEventListener('log', e => {
+  const d = JSON.parse(e.data);
+  appendCommandLog(d.stream, d.line);
+});
+evtSource.addEventListener('command_start', e => {
+  const d = JSON.parse(e.data);
+  createCommandBlock(d.stream, d.localCmd, d.dockerCmd);
+  setLed(d.stream, 'running');
+});
+evtSource.addEventListener('command_end', e => {
+  const d = JSON.parse(e.data);
+  setLed(d.stream, d.exitCode === 0 ? 'success' : 'error');
+});
+evtSource.addEventListener('status', e => { statusEl.textContent = e.data; });
+evtSource.addEventListener('error', e => { statusEl.textContent = 'Error: ' + e.data; });
+evtSource.addEventListener('uuid_found', e => {
+  const d = JSON.parse(e.data);
+  serviceUuid = d.uuid;
+  uuidDisplay.innerHTML = 'Service UUID: <b>' + serviceUuid + '</b> <button onclick="window.open(\'https://aethernet.io/smarthub.html?uuid=' + serviceUuid + '\')">Open GUI</button>';
+  updateButtons();
+});
+evtSource.addEventListener('uuid_clear', e => {
+  serviceUuid = null;
+  uuidDisplay.innerHTML = '';
+  updateButtons();
+});
+evtSource.addEventListener('clone_done', e => { cloned = true; updateButtons(); statusEl.textContent = 'Clone completed.'; });
+evtSource.addEventListener('service_started', e => { serviceRunning = true; updateButtons(); });
+evtSource.addEventListener('service_stopped', e => { serviceRunning = false; updateButtons(); });
+evtSource.addEventListener('emulator_started', e => { emulatorRunning = true; updateButtons(); });
+evtSource.addEventListener('emulator_stopped', e => { emulatorRunning = false; updateButtons(); });
+evtSource.addEventListener('progress', e => {
+  const d = JSON.parse(e.data);
+  if (d.tool === 'jdk') setJdkProgress(d.message);
+  else if (d.tool === 'gradle') setGradleProgress(d.message);
+});
+evtSource.addEventListener('jdk_ready', e => {
+  const d = JSON.parse(e.data);
+  if (d.path) { jdkReady = true; setJdkProgress('JDK 25 ready: ' + d.path); }
+  else setJdkProgress('Failed to obtain JDK 25.');
+});
+evtSource.addEventListener('gradle_ready', e => {
+  const d = JSON.parse(e.data);
+  if (d.path) { gradleReady = true; setGradleProgress('Gradle ready: ' + d.path); }
+  else setGradleProgress('Failed to obtain Gradle.');
+});
+
+async function api(action, param) {
+  if (['clone','reset','build','run','run-emulator'].includes(action)) {
+    if (!jdkReady) { statusEl.textContent = 'Waiting for JDK 25...'; return; }
+    setButtonsEnabled(false, action);
+    statusEl.textContent = 'Operation in progress...';
+  }
+  try {
+    const url = '/api/' + action;
+    const init = { method: 'POST' };
+    if (param) init.body = param;
+    const res = await fetch(url, init);
+    if (!res.ok) {
+      const err = await res.json();
+      statusEl.textContent = 'Error: ' + (err.error || res.statusText);
+    } else {
+      const data = await res.json();
+      if (action === 'clone') {
+        if (data.status === 'already_cloned') cloned = true;
+      } else if (action === 'reset') cloned = true;
+    }
+  } catch (e) {
+    statusEl.textContent = 'Connection error: ' + e.message;
+  }
+  setButtonsEnabled(true, action);
+  updateButtons();
+}
+function setButtonsEnabled(enabled) {
+  if (!enabled) {
+    cloneBtn.disabled = true;
+    buildBtn.disabled = true;
+    runBtn.disabled = true;
+  }
+}
+function toggleClone() {
+  if (cloned) api('reset');
+  else api('clone');
+}
+// workspace change resets clone state
+const originalApi = api;
+api = async function(action, param) {
+  if (action === 'set-workspace') {
+    cloned = false;
+    updateButtons();
+  }
+  return await originalApi(action, param);
+};
+// initial state
+(async function() {
+  try {
+    api('select', projectSelect.value);
+    fetch('/api/ensure-jdk').catch(e => {});
+    fetch('/api/ensure-gradle').catch(e => {});
+    const res = await fetch('/api/status');
+    if (res.ok) {
+      const s = await res.json();
+      cloned = s.cloned;
+      if (s.serviceUuid) serviceUuid = s.serviceUuid;
+      if (s.workspace) {
+        document.getElementById('workspaceInput').value = s.workspace;
+        {{sourcePathInit}}
+      }
+      serviceRunning = s.serviceRunning;
+      emulatorRunning = s.emulatorRunning;
+      if (s.serviceUuid) {
+        uuidDisplay.innerHTML = 'Service UUID: <b>' + serviceUuid + '</b> <button onclick="window.open(\'https://aethernet.io/smarthub.html?uuid=' + serviceUuid + '\')">Open GUI</button>';
+      }
+      if (s.cloned) {
+        const project = document.getElementById('projectSelect').value;
+        sourceLinksEl.style.display = (project === 'smarthub') ? 'block' : 'none';
+      }
+    }
+  } catch(e) {}
+  updateButtons();
+})();
+
+function updateToolOptions() {
+  // placeholder for future logic
+}
+
+function downloadTool(tool) {
+  statusEl.textContent = 'Downloading ' + tool + '...';
+  api('download-' + tool);
+}
+
+function openPath(id) {
+  const el = document.getElementById(id);
+  if (el && el.textContent) {
+    api('open-path', el.textContent);
+  }
+}

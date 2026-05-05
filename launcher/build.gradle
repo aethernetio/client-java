@@ -1,0 +1,27 @@
+plugins {
+    id 'application'
+    id 'maven-publish'
+}
+
+
+
+application {
+    mainClass = 'io.aether.launcher.Launcher'
+}
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+publishing {
+    publications {
+        mavenPublication(MavenPublication){
+            from components.java
+            groupId "io.aether"
+            artifactId "launcher"
+        }
+    }
+}
+dependencies {
+    implementation 'org.eclipse.jgit:org.eclipse.jgit:6.10.0.202406032230-r'
+}

@@ -1,0 +1,24 @@
+<div id="tab-project" style="display:none;">
+  <div id="controls">
+    <select id="projectSelect">
+      {{projectOptions}}
+    </select>
+    <button id="cloneBtn" onclick="toggleClone()">Clone</button>
+    <button id="buildBtn" onclick="api('build')" disabled>Build</button>
+    <button id="runBtn" onclick="api('run')" disabled>Run</button>
+
+
+    <button id="stopBtn" onclick="api('stop')" disabled>Stop</button>
+    {{emulatorButtons}}
+    <button id="stopEmulatorBtn" onclick="api('stop-emulator')" disabled>Stop Emulator</button>
+  </div>
+  <div class="status" id="status"></div>
+  <div id="uuidDisplay" class="uuid"></div>
+  <div id="sourceLinks" style="margin-top: 10px; display: none;">
+    <strong>Source code (local paths):</strong>
+    <ul style="list-style: none; padding: 0; margin: 5px 0;">
+      {{sourceLinks}}
+    </ul>
+  </div>
+  <div id="commands"></div>
+</div>

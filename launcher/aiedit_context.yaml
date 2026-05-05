@@ -1,0 +1,12 @@
+gradle:
+  roots:
+    client-java: {path: /home/angel/IdeaProjects/aether-client-java}
+model: {}
+lines:
+  allow: []
+  ignore: ['**/.git/**', '**/build/**', '**/target/**', '**/node_modules/**', '**/.idea/**',
+    '**/out/**', '**/.gradle/**', '**/*.{png,jpg,jpeg,gif,svg,ico,webp}', '**/*.{zip,jar,tar,gz,7z,rar}',
+    '**/*.{class,exe,dll,so,pyc,bin}']
+  roots:
+    LAUNCHER: {path: /home/angel/IdeaProjects/aether-client-java/launcher}
+projectId: cd68598f

@@ -1,0 +1,18 @@
+<div class="tab-container">
+  <div class="tab active" onclick="switchTab('env')">Tools</div>
+  <div class="tab" onclick="switchTab('project')">Project</div>
+</div>
+
+<div id="tab-env">
+  <h3>Toolchain</h3>
+  <div style="margin-top:10px; padding:8px; background:#f5f5f5; border-radius:4px;">
+    <span style="font-weight:bold;">JDK 25:</span> <span id="jdkProgress" style="color:#666;">{{jdkStatus}}</span>
+    <label style="margin-left:10px;"><input type="checkbox" id="jdkPortable" checked onchange="updateToolOptions()"> portable</label>
+    <button id="jdkDownloadBtn" onclick="downloadTool('jdk')" style="margin-left:5px;">Download</button>
+  </div>
+  <div style="margin-top:5px; padding:8px; background:#f5f5f5; border-radius:4px;">
+    <span style="font-weight:bold;">Gradle:</span> <span id="gradleProgress" style="color:#666;">{{gradleStatus}}</span>
+    <label style="margin-left:10px;"><input type="checkbox" id="gradlePortable" checked onchange="updateToolOptions()"> portable</label>
+    <button id="gradleDownloadBtn" onclick="downloadTool('gradle')" style="margin-left:5px;">Download</button>
+  </div>
+</div>
