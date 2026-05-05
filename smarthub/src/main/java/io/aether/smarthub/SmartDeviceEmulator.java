@@ -1,17 +1,19 @@
 package io.aether.smarthub;
 
 import io.aether.api.smarthub.*;
-import io.aether.net.fastMeta.*;
-import io.aether.utils.futures.ARFuture;
-import io.aether.utils.futures.AFuture;
 import io.aether.cloud.client.AetherCloudClient;
-import io.aether.cloud.client.ClientStateInMemory;
+import io.aether.cloud.client.ClientStateInFile;
 import io.aether.logger.Log;
+import io.aether.net.fastMeta.FastApiContext;
+import io.aether.net.fastMeta.FastFutureContext;
+import io.aether.net.fastMeta.FlushReport;
+import io.aether.net.fastMeta.FutureRec;
+import io.aether.utils.futures.AFuture;
 
 import java.io.File;
 import java.net.URI;
-import java.util.UUID;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -19,10 +21,11 @@ import java.util.concurrent.TimeUnit;
 
 public class SmartDeviceEmulator {
     private final UUID serviceUid;
-    private UUID deviceUid;
     private final String statePath;
-    private AetherCloudClient client;
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+    private final AFuture ready = AFuture.make();
+    private UUID deviceUid;
+    private AetherCloudClient client;
 
     public SmartDeviceEmulator(UUID serviceUid) {
         this.serviceUid = serviceUid;
@@ -33,35 +36,25 @@ public class SmartDeviceEmulator {
         return deviceUid;
     }
 
-    private final AFuture ready = AFuture.make();
-
     public AFuture getReady() {
         return ready;
     }
 
 
-
-
     public void start(String regUri) throws Exception {
         Log.info("SmartDeviceEmulator.start() called", "regUri", regUri, "serviceUid", serviceUid);
-        File stateFile = new File(statePath);
-        ClientStateInMemory state = stateFile.exists()
-                ? ClientStateInMemory.load(stateFile)
-                : new ClientStateInMemory(serviceUid, List.of(URI.create(regUri)));
-        Log.info("ClientStateInMemory created/loaded", "exists", stateFile.exists());
+        ClientStateInFile state = new ClientStateInFile(serviceUid, List.of(URI.create(regUri)), new File(statePath));
         client = new AetherCloudClient(state, "Emulator-for-" + serviceUid);
         Log.info("AetherCloudClient created");
         client.connect()
-            .timeoutError(60, "Connect timeout")
-            .to(() -> {
-                Log.info("Connect callback started");
-                try { state.save(stateFile); Log.info("State saved", "path", statePath); } catch (Exception e) { Log.error(e); }
-                deviceUid = state.getUid();
-                Log.info("Device Emulator connected", "uid", deviceUid);
-                ready.done();
-            })
-            .onError(ready::error);
-        
+                .timeoutError(60, "Connect timeout")
+                .to(() -> {
+                    Log.info("Connect callback started");
+                    deviceUid = state.getUid();
+                    Log.info("Device Emulator connected", "uid", deviceUid);
+                    ready.done();
+                })
+                .onError(ready::error);
 
 
         ready.to(() -> {
@@ -71,7 +64,7 @@ public class SmartDeviceEmulator {
 
                 var ctx = node.toApi(SmartHomeClientDeviceApi.META, SmartHomeClientDeviceApi.EMPTY);
                 final SmartHomeHubRegistryApiRemote remoteHubApi = ctx.makeRemote(SmartHomeHubRegistryApi.META);
-                FastFutureContext ctx2=new FastApiContext(){
+                FastFutureContext ctx2 = new FastApiContext() {
                     @Override
                     public int regFuture(FutureRec worker) {
                         return ctx.regFuture(worker);
@@ -79,17 +72,17 @@ public class SmartDeviceEmulator {
 
                     @Override
                     public void flush(FlushReport report) {
-                        var dataApi2=remoteDataToArray();
+                        var dataApi2 = remoteDataToArray();
                         remoteHubApi.device(new DeviceStream(dataApi2));
                         remoteHubApi.flush(report);
                     }
                 };
-                var remoteDeviceApi=ctx2.makeRemote(SmartHomeDeviceApi.META);
+                var remoteDeviceApi = ctx2.makeRemote(SmartHomeDeviceApi.META);
                 Log.info("Starting scheduled temperature reporting", "intervalSec", 5);
                 scheduler.scheduleAtFixedRate(() -> {
-                    int tempCelsius = 22 + (int)(Math.random() * 5);
+                    int tempCelsius = 22 + (int) (Math.random() * 5);
                     // Формат: 0 = -30C, шаг 1/3 градуса. 25C -> (25+30)*3 = 165
-                    byte rawTemp = (byte)((tempCelsius + 30) * 3);
+                    byte rawTemp = (byte) ((tempCelsius + 30) * 3);
                     Log.info("Sending temperature", "celsius", tempCelsius, "raw", (rawTemp & 0xFF), "deviceUid", deviceUid);
                     remoteDeviceApi.reportState(rawTemp);
                     remoteDeviceApi.flush();
@@ -100,7 +93,6 @@ public class SmartDeviceEmulator {
         });
 
     }
-
 
 
     public void stop() {

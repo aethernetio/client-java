@@ -7,11 +7,13 @@
   <h3>Toolchain</h3>
   <div style="margin-top:10px; padding:8px; background:#f5f5f5; border-radius:4px;">
     <span style="font-weight:bold;">JDK 25:</span> <span id="jdkProgress" style="color:#666;">{{jdkStatus}}</span>
+    <progress id="jdkProg" value="0" max="100" style="display:none; width:100px;"></progress>
     <label style="margin-left:10px;"><input type="checkbox" id="jdkPortable" checked onchange="updateToolOptions()"> portable</label>
     <button id="jdkDownloadBtn" onclick="downloadTool('jdk')" style="margin-left:5px;">Download</button>
   </div>
   <div style="margin-top:5px; padding:8px; background:#f5f5f5; border-radius:4px;">
     <span style="font-weight:bold;">Gradle:</span> <span id="gradleProgress" style="color:#666;">{{gradleStatus}}</span>
+    <progress id="gradleProg" value="0" max="100" style="display:none; width:100px;"></progress>
     <label style="margin-left:10px;"><input type="checkbox" id="gradlePortable" checked onchange="updateToolOptions()"> portable</label>
     <button id="gradleDownloadBtn" onclick="downloadTool('gradle')" style="margin-left:5px;">Download</button>
   </div>

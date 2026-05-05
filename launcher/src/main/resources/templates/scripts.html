@@ -16,7 +16,10 @@ let emulatorRunning = false;
 let serviceUuid = null;
 let jdkReady = false;
 let gradleReady = false;
+let pendingAction = null;
 
+
+const gradleDownloadBtn = document.getElementById('gradleDownloadBtn');
 const commandBlocks = {};
 
 function switchTab(tab) {
@@ -32,21 +35,40 @@ function switchTab(tab) {
 
 function updateButtons() {
   cloneBtn.textContent = cloned ? 'Reset Source' : 'Clone';
-  buildBtn.disabled = !cloned || serviceRunning;
-  runBtn.disabled = !cloned || serviceRunning;
+  buildBtn.disabled = !cloned || !jdkReady || !gradleReady || serviceRunning;
+  runBtn.disabled = !cloned || !jdkReady || !gradleReady || serviceRunning;
   stopBtn.disabled = !serviceRunning;
-  if (emulatorBtn) emulatorBtn.disabled = !(cloned && serviceUuid && serviceRunning);
+  if (emulatorBtn) emulatorBtn.disabled = !(cloned && serviceUuid && serviceRunning && jdkReady && gradleReady);
   stopEmulatorBtn.disabled = !emulatorRunning;
   const project = document.getElementById('projectSelect').value;
   sourceLinksEl.style.display = (cloned && project === 'smarthub') ? 'block' : 'none';
 }
 
+
 function setJdkProgress(msg) {
   document.getElementById('jdkProgress').textContent = msg;
 }
+
+
+const evtSource = new EventSource('/api/logs');
+
+evtSource.addEventListener('download_progress', e => {
+  const d = JSON.parse(e.data);
+  const prog = document.getElementById(d.tool === 'jdk' ? 'jdkProg' : 'gradleProg');
+  const status = document.getElementById(d.tool === 'jdk' ? 'jdkProgress' : 'gradleProgress');
+  const btn = document.getElementById(d.tool === 'jdk' ? 'jdkDownloadBtn' : 'gradleDownloadBtn');
+  if (prog) { prog.style.display = 'inline-block'; prog.value = d.percent; }
+  if (status) status.textContent = 'Downloading... ' + d.percent + '%';
+  if (btn) btn.disabled = true;
+});
+
+
+
+
 function setGradleProgress(msg) {
   document.getElementById('gradleProgress').textContent = msg;
 }
+
 
 function setLed(stream, state) {
   const block = commandBlocks[stream];
@@ -76,7 +98,7 @@ function toggleBlock(stream) {
   }
 }
 
-function createCommandBlock(stream, localCmd, dockerCmd) {
+function createCommandBlock(stream, localCmd) {
   if (commandBlocks[stream]) return;
   const block = document.createElement('div');
   block.className = 'cmd-block';
@@ -86,39 +108,15 @@ function createCommandBlock(stream, localCmd, dockerCmd) {
       '<span class="cmd-title">' + stream + '</span>' +
     '</div>' +
     '<div class="cmd-body">' +
-      '<div class="cmd-tabs">' +
-        '<button class="tab-local active" onclick="event.stopPropagation(); switchCmdTab(\'' + stream + '\', \'local\')">Local</button>' +
-        '<button class="tab-docker" onclick="event.stopPropagation(); switchCmdTab(\'' + stream + '\', \'docker\')">Docker</button>' +
-      '</div>' +
       '<div class="cmd-code" id="cmd-text-' + stream + '">' + escapeHtml(localCmd) + '</div>' +
       '<div class="cmd-log" id="cmd-log-' + stream + '"></div>' +
     '</div>';
-  block._localCmd = localCmd;
-  block._dockerCmd = dockerCmd;
-  block._activeTab = 'local';
   commandsEl.appendChild(block);
   commandBlocks[stream] = block;
   activateBlock(stream);
 }
 
-function switchCmdTab(stream, tab) {
-  const block = commandBlocks[stream];
-  if (!block) return;
-  const localBtn = block.querySelector('.tab-local');
-  const dockerBtn = block.querySelector('.tab-docker');
-  const codeEl = document.getElementById('cmd-text-' + stream);
-  if (tab === 'local') {
-    localBtn.classList.add('active');
-    dockerBtn.classList.remove('active');
-    codeEl.textContent = block._localCmd;
-    block._activeTab = 'local';
-  } else {
-    dockerBtn.classList.add('active');
-    localBtn.classList.remove('active');
-    codeEl.textContent = block._dockerCmd;
-    block._activeTab = 'docker';
-  }
-}
+
 
 function appendCommandLog(stream, line) {
   const logEl = document.getElementById('cmd-log-' + stream);
@@ -132,16 +130,17 @@ function escapeHtml(text) {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-const evtSource = new EventSource('/api/logs');
 evtSource.addEventListener('log', e => {
   const d = JSON.parse(e.data);
   appendCommandLog(d.stream, d.line);
 });
+
 evtSource.addEventListener('command_start', e => {
   const d = JSON.parse(e.data);
-  createCommandBlock(d.stream, d.localCmd, d.dockerCmd);
+  createCommandBlock(d.stream, d.localCmd, d.friendlyName);
   setLed(d.stream, 'running');
 });
+
 evtSource.addEventListener('command_end', e => {
   const d = JSON.parse(e.data);
   setLed(d.stream, d.exitCode === 0 ? 'success' : 'error');
@@ -161,9 +160,9 @@ evtSource.addEventListener('uuid_clear', e => {
 });
 evtSource.addEventListener('clone_done', e => { cloned = true; updateButtons(); statusEl.textContent = 'Clone completed.'; });
 evtSource.addEventListener('service_started', e => { serviceRunning = true; updateButtons(); });
-evtSource.addEventListener('service_stopped', e => { serviceRunning = false; updateButtons(); });
+evtSource.addEventListener('service_stopped', e => { serviceRunning = false; setLed('run', ''); updateButtons(); });
 evtSource.addEventListener('emulator_started', e => { emulatorRunning = true; updateButtons(); });
-evtSource.addEventListener('emulator_stopped', e => { emulatorRunning = false; updateButtons(); });
+evtSource.addEventListener('emulator_stopped', e => { emulatorRunning = false; setLed('emulator', ''); updateButtons(); });
 evtSource.addEventListener('progress', e => {
   const d = JSON.parse(e.data);
   if (d.tool === 'jdk') setJdkProgress(d.message);
@@ -171,20 +170,61 @@ evtSource.addEventListener('progress', e => {
 });
 evtSource.addEventListener('jdk_ready', e => {
   const d = JSON.parse(e.data);
-  if (d.path) { jdkReady = true; setJdkProgress('JDK 25 ready: ' + d.path); }
-  else setJdkProgress('Failed to obtain JDK 25.');
-});
-evtSource.addEventListener('gradle_ready', e => {
-  const d = JSON.parse(e.data);
-  if (d.path) { gradleReady = true; setGradleProgress('Gradle ready: ' + d.path); }
-  else setGradleProgress('Failed to obtain Gradle.');
+  const prog = document.getElementById('jdkProg');
+  const btn = document.getElementById('jdkDownloadBtn');
+  if (prog) prog.style.display = 'none';
+  if (d.path) {
+    jdkReady = true;
+    setJdkProgress('JDK 25 ready: ' + d.path);
+    if (btn) { btn.disabled = false; btn.textContent = 'Re-download'; }
+  } else {
+    setJdkProgress('Failed to obtain JDK 25.');
+    if (btn) btn.disabled = false;
+  }
+  updateButtons();
+  retryPending();
 });
 
+evtSource.addEventListener('gradle_ready', e => {
+  const d = JSON.parse(e.data);
+  const prog = document.getElementById('gradleProg');
+  const btn = document.getElementById('gradleDownloadBtn');
+  if (prog) prog.style.display = 'none';
+  if (d.path) {
+    gradleReady = true;
+    setGradleProgress('Gradle ready: ' + d.path);
+    if (btn) { btn.disabled = false; btn.textContent = 'Re-download'; }
+  } else {
+    setGradleProgress('Failed to obtain Gradle.');
+    if (btn) btn.disabled = false;
+  }
+  updateButtons();
+  retryPending();
+});
+
+
+
+function retryPending() {
+  if (pendingAction && jdkReady && gradleReady) {
+    const { action, param } = pendingAction;
+    pendingAction = null;
+    api(action, param);
+  }
+}
+
+
 async function api(action, param) {
+  const isDownload = action === 'download-jdk' || action === 'download-gradle';
   if (['clone','reset','build','run','run-emulator'].includes(action)) {
-    if (!jdkReady) { statusEl.textContent = 'Waiting for JDK 25...'; return; }
+    if (!jdkReady || !gradleReady) {
+      statusEl.textContent = 'Waiting for JDK/Gradle...';
+      pendingAction = { action, param };
+      return;
+    }
     setButtonsEnabled(false, action);
     statusEl.textContent = 'Operation in progress...';
+  } else if (isDownload) {
+    statusEl.textContent = 'Downloading...';
   }
   try {
     const url = '/api/' + action;
@@ -199,13 +239,32 @@ async function api(action, param) {
       if (action === 'clone') {
         if (data.status === 'already_cloned') cloned = true;
       } else if (action === 'reset') cloned = true;
+      else if (action === 'build' || action === 'run' || action === 'run-emulator') {
+        if (data.status === 'waiting_for_tools') {
+          pendingAction = { action, param };
+          statusEl.textContent = 'Installing tools, please wait...';
+        }
+      }
+
+function stopProcess(stream) {
+  api('stop-' + stream).catch(() => {});
+  setLed(stream, '');
+}
+
     }
   } catch (e) {
     statusEl.textContent = 'Connection error: ' + e.message;
   }
+  if (isDownload) {
+    const btn = document.getElementById(action === 'download-jdk' ? 'jdkDownloadBtn' : 'gradleDownloadBtn');
+    if (btn) btn.disabled = false;
+  }
   setButtonsEnabled(true, action);
   updateButtons();
 }
+
+
+
 function setButtonsEnabled(enabled) {
   if (!enabled) {
     cloneBtn.disabled = true;
@@ -233,6 +292,7 @@ api = async function(action, param) {
     fetch('/api/ensure-jdk').catch(e => {});
     fetch('/api/ensure-gradle').catch(e => {});
     const res = await fetch('/api/status');
+  retryPending();
     if (res.ok) {
       const s = await res.json();
       cloned = s.cloned;
@@ -260,9 +320,12 @@ function updateToolOptions() {
 }
 
 function downloadTool(tool) {
+  const btn = document.getElementById(tool === 'jdk' ? 'jdkDownloadBtn' : 'gradleDownloadBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Downloading...'; }
   statusEl.textContent = 'Downloading ' + tool + '...';
   api('download-' + tool);
 }
+
 
 function openPath(id) {
   const el = document.getElementById(id);

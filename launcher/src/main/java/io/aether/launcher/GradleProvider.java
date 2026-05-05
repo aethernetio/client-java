@@ -10,6 +10,25 @@ public class GradleProvider extends ToolProvider {
     @Override
     public Path find() {
         reportProgress("Searching for Gradle...");
+        // 0. Check workspace/tools first (portable installation)
+        Path toolsDir = Path.of(System.getProperty("user.home"), "aether_projects", "tools");
+        if (Files.exists(toolsDir)) {
+            try (var s = Files.list(toolsDir)) {
+                for (Path sub : s.toList()) {
+                    if (Files.isDirectory(sub) && sub.getFileName().toString().startsWith("gradle-")) {
+                        Path bin = sub.resolve("bin/gradle");
+                        if (Files.exists(bin)) {
+                            reportProgress("Found Gradle in workspace/tools: " + sub);
+                            return sub;
+                        }
+                    }
+                }
+            } catch (IOException e) {
+                System.err.println("[GradleProvider] Error listing tools directory: " + e.getMessage());
+            }
+
+        }
+
         String p = which("gradle");
         if (p != null) {
             Path bin = Path.of(p).getParent();
@@ -40,11 +59,11 @@ public class GradleProvider extends ToolProvider {
     public Path download(Path toolsDir) throws Exception {
         reportProgress("Downloading Gradle 9.1.0...");
         Files.createDirectories(toolsDir);
+
         String url = "https://services.gradle.org/distributions/gradle-9.1.0-bin.zip";
         Path archive = toolsDir.resolve("gradle.zip");
-        try (InputStream in = new URL(url).openStream()) {
-            Files.copy(in, archive, StandardCopyOption.REPLACE_EXISTING);
-        }
+        downloadWithProgress(url, archive, pct -> reportProgress("Downloading... " + pct + "%"));
+
         Path destDir = toolsDir.resolve("gradle-temp");
         try (java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(new FileInputStream(archive.toFile()))) {
             java.util.zip.ZipEntry entry;

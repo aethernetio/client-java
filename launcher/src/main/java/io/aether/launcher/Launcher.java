@@ -109,7 +109,16 @@ public class Launcher {
     // -- JDK Provider --
     static final JdkProvider jdkProvider = new JdkProvider();
     static {
-        jdkProvider.addProgressListener(msg -> broadcast("progress", "{\"tool\":\"jdk\",\"message\":\"" + escapeJson(msg) + "\"}"));
+
+        jdkProvider.addProgressListener(msg -> {
+            if (msg.startsWith("Downloading...")) {
+                String pct = msg.substring(msg.indexOf("...")+3).trim().replace("%","");
+                broadcast("download_progress", RunnerUtils.buildJsonObj("tool","jdk","percent", pct));
+            } else {
+                broadcast("progress", RunnerUtils.buildJsonObj("tool","jdk","message", msg));
+            }
+        });
+
     }
     static volatile String jdkHome;
 
@@ -309,6 +318,7 @@ public class Launcher {
         openBrowser("http://localhost:" + PORT);
 
 
+
     }
 
     static class ApiHandler implements HttpHandler {
@@ -388,6 +398,21 @@ public class Launcher {
         t.sendResponseHeaders(200, 0);
         SseConnection conn = new SseConnection(t);
         sseConnections.add(conn);
+        sendCurrentToolStatus(conn);
+        // send current service/emulator state
+        if (activeRunner instanceof SmartHubRunner r) {
+            if (r.serviceRunning()) {
+                conn.send("service_started", "{}");
+                String uuid = r.getServiceUuid();
+                if (uuid != null) {
+                    conn.send("uuid_found", "{\"uuid\":\"" + uuid + "\"}");
+                }
+            }
+            if (r.emulatorRunning()) {
+                conn.send("emulator_started", "{}");
+            }
+        }
+
         while (!conn.closed) {
             try {
                 conn.send("", "heartbeat");
@@ -396,6 +421,20 @@ public class Launcher {
         }
         sseConnections.remove(conn);
     }
+
+    static void sendCurrentToolStatus(SseConnection conn) {
+        if (jdkHome != null) {
+            conn.send("jdk_ready", "{\"path\":\"" + escapeJson(jdkHome) + "\"}");
+        } else {
+            conn.send("jdk_ready", "{\"path\":\"\"}");
+        }
+        if (gradleHome != null) {
+            conn.send("gradle_ready", "{\"path\":\"" + escapeJson(gradleHome) + "\"}");
+        } else {
+            conn.send("gradle_ready", "{\"path\":\"\"}");
+        }
+    }
+
 
     static void handleStatus(HttpExchange t) throws IOException {
         boolean cloned = Files.exists(workspace.resolve("client-java/.git"));

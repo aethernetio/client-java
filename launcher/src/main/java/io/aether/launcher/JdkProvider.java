@@ -22,6 +22,22 @@ public class JdkProvider extends ToolProvider {
         reportProgress("Searching for JDK " + REQUIRED_MAJOR + "...");
 
         // 1. Check JAVA_HOME
+        // 0. Check workspace/tools first (portable installation)
+        Path toolsDir = Launcher.workspace.resolve("tools");
+        if (Files.exists(toolsDir)) {
+            try (var s = Files.list(toolsDir)) {
+                for (Path sub : s.toList()) {
+                    if (Files.isDirectory(sub) && sub.getFileName().toString().startsWith("jdk-") && isValidJdk(sub)) {
+                        reportProgress("Found JDK in workspace/tools: " + sub);
+                        return sub;
+                    }
+                }
+            } catch (IOException e) {
+                System.err.println("[JdkProvider] Error listing tools directory: " + e.getMessage());
+            }
+
+        }
+
         String javaHome = System.getenv("JAVA_HOME");
         if (javaHome != null) {
             Path home = Path.of(javaHome);
@@ -63,7 +79,10 @@ public class JdkProvider extends ToolProvider {
                         return sub;
                     }
                 }
-            } catch (IOException ignored) {}
+            } catch (IOException e) {
+                System.err.println("[JdkProvider] Error listing standard directory: " + e.getMessage());
+            }
+
         }
 
         reportProgress("JDK " + REQUIRED_MAJOR + " not found locally.");
@@ -77,9 +96,7 @@ public class JdkProvider extends ToolProvider {
         String url = "https://api.adoptium.net/v3/binary/latest/" + REQUIRED_MAJOR +
                      "/ga/linux/x64/jdk/hotspot/normal/eclipse?project=jdk";
         Path archive = toolsDir.resolve("jdk.tar.gz");
-        try (InputStream in = new URL(url).openStream()) {
-            Files.copy(in, archive, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-        }
+        downloadWithProgress(url, archive, pct -> reportProgress("Downloading... " + pct + "%"));
         reportProgress("Extracting JDK...");
         ProcessBuilder pb = new ProcessBuilder("tar", "xzf", archive.toString(), "-C", toolsDir.toString());
         pb.inheritIO();
@@ -111,7 +128,10 @@ public class JdkProvider extends ToolProvider {
                 }
             }
             p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            System.err.println("[JdkProvider] Error checking javac version: " + e.getMessage());
+        }
+
         return false;
     }
 
@@ -125,7 +145,10 @@ public class JdkProvider extends ToolProvider {
                 p.waitFor(3, java.util.concurrent.TimeUnit.SECONDS);
                 if (p.exitValue() == 0 && line != null) return line.trim();
             }
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            System.err.println("[JdkProvider] Error running which: " + e.getMessage());
+        }
+
         return null;
     }
 }

@@ -4,7 +4,6 @@ import com.sun.net.httpserver.HttpExchange;
 import java.nio.file.*;
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.Map;
 
 
 /**
@@ -14,7 +13,7 @@ import java.util.Map;
 public class SmartHubRunner extends AbstractProjectRunner {
     private Process serviceProcess;
     private Process emulatorProcess;
-    private String detectedServiceUuid;
+    private java.util.concurrent.atomic.AtomicReference<String> detectedServiceUuid = new java.util.concurrent.atomic.AtomicReference<>();
 
     public SmartHubRunner(LauncherContext ctx) {
         super(ctx, "client-java");
@@ -22,7 +21,7 @@ public class SmartHubRunner extends AbstractProjectRunner {
 
     boolean serviceRunning() { return serviceProcess != null && serviceProcess.isAlive(); }
     boolean emulatorRunning() { return emulatorProcess != null && emulatorProcess.isAlive(); }
-    String getServiceUuid() { return detectedServiceUuid; }
+    String getServiceUuid() { return detectedServiceUuid.get(); }
 
 
 
@@ -62,13 +61,12 @@ public class SmartHubRunner extends AbstractProjectRunner {
             return;
         }
         stopAll();
-        detectedServiceUuid = null;
+        detectedServiceUuid.set(null);
         ctx.broadcast("uuid_clear", "{}");
         String localCmd = RunnerUtils.localCd(ws) + "git clone --progress " + getRepoUrl() + " client-java";
-        String dockerCmd = "docker run --rm -v ${HOME}:/host_home -w /host_home ghcr.io/aethernetio/aether-launcher:latest sh -c \"git clone --progress " + getRepoUrl() + " client-java\"";
         ProcessBuilder pb = new ProcessBuilder("git", "clone", "--progress", getRepoUrl(), "client-java");
         pb.directory(ws.toFile());
-        RunnerUtils.runCommand(pb, "clone", localCmd, dockerCmd, ctx);
+RunnerUtils.runCommand(pb, "clone", localCmd, ctx, null, "Clone Repository");
         Launcher.sendOk(t, "{\"status\":\"cloning\"}");
     }
 
@@ -79,11 +77,11 @@ public class SmartHubRunner extends AbstractProjectRunner {
         }
         stopAll();
         String safe = "git config --global --add safe.directory " + ctx.workspace().resolve("client-java").toAbsolutePath().toString() + " && git reset --hard HEAD && git clean -fdx";
+
         String localCmd = RunnerUtils.localCd(ctx.workspace().resolve("client-java")) + safe;
-        String dockerCmd = "docker run --rm -v ${HOME}:/host_home -w /host_home/client-java ghcr.io/aethernetio/aether-launcher:latest sh -c \"" + safe + "\"";
         ProcessBuilder pb = new ProcessBuilder("sh", "-c", safe);
         pb.directory(ctx.workspace().resolve("client-java").toFile());
-        RunnerUtils.runCommand(pb, "reset", localCmd, dockerCmd, ctx);
+RunnerUtils.runCommand(pb, "reset", localCmd, ctx, null, "Reset Repository");
         Launcher.sendOk(t, "{\"status\":\"resetting\"}");
     }
 
@@ -100,13 +98,15 @@ public class SmartHubRunner extends AbstractProjectRunner {
         Path repo = ctx.workspace().resolve("client-java");
         String gradleBin = Launcher.gradleHome + "/bin/gradle";
         String cmd = gradleBin + " --console=plain " + getGradleProject() + ":build";
-        String localCmd = RunnerUtils.localCd(repo) + cmd;
-        String dockerCmd = "docker run --rm -v ${HOME}:/host_home -w /host_home/client-java ghcr.io/aethernetio/aether-launcher:latest sh -c \"" + cmd + "\"";
+        String exportJdk = Launcher.jdkHome.startsWith(Launcher.workspace.resolve("tools").toString())
+            ? RunnerUtils.exportCmd("JAVA_HOME", Launcher.jdkHome) + " && " : "";
+        String localCmd = RunnerUtils.localCd(repo) + exportJdk + cmd;
+
         ProcessBuilder pb = new ProcessBuilder(gradleBin, "--console=plain", getGradleProject() + ":build");
         pb.directory(repo.toFile());
         pb.environment().put("PATH", System.getenv("PATH"));
         pb.environment().put("JAVA_HOME", Launcher.jdkHome);
-        RunnerUtils.runCommand(pb, "build", localCmd, dockerCmd, ctx);
+        RunnerUtils.runCommand(pb, "build", localCmd, ctx, null, "Build SmartHub");
         Launcher.sendOk(t, "{\"status\":\"started\"}");
     }
 
@@ -123,13 +123,15 @@ public class SmartHubRunner extends AbstractProjectRunner {
         Path repo = ctx.workspace().resolve("client-java");
         String gradleBin = Launcher.gradleHome + "/bin/gradle";
         String cmd = gradleBin + " --console=plain " + getGradleProject() + ":run";
-        String localCmd = RunnerUtils.localCd(repo) + cmd;
-        String dockerCmd = "docker run --rm -v ${HOME}:/host_home -w /host_home/client-java ghcr.io/aethernetio/aether-launcher:latest sh -c \"" + cmd + "\"";
+        String exportJdk = Launcher.jdkHome.startsWith(Launcher.workspace.resolve("tools").toString())
+            ? RunnerUtils.exportCmd("JAVA_HOME", Launcher.jdkHome) + " && " : "";
+        String localCmd = RunnerUtils.localCd(repo) + exportJdk + cmd;
+
         ProcessBuilder pb = new ProcessBuilder(gradleBin, "--console=plain", getGradleProject() + ":run");
         pb.directory(repo.toFile());
         pb.environment().put("PATH", System.getenv("PATH"));
         pb.environment().put("JAVA_HOME", Launcher.jdkHome);
-        serviceProcess = RunnerUtils.runCommand(pb, "run", localCmd, dockerCmd, ctx);
+        serviceProcess = RunnerUtils.runCommand(pb, "run", localCmd, ctx, detectedServiceUuid, "Start SmartHub Service");
         ctx.broadcast("service_started", "{}");
         Launcher.sendOk(t, "{\"status\":\"started\"}");
     }
@@ -141,18 +143,20 @@ public class SmartHubRunner extends AbstractProjectRunner {
     }
 
     @Override public void handleRunEmulator(HttpExchange t) throws IOException {
-        if (detectedServiceUuid == null) { Launcher.sendError(t, 400, "No service UUID"); return; }
+        if (detectedServiceUuid.get() == null) { Launcher.sendError(t, 400, "No service UUID"); return; }
         stopEmulator();
         Path repo = ctx.workspace().resolve("client-java");
         String gradleBin = Launcher.gradleHome + "/bin/gradle";
-        String cmd = gradleBin + " --console=plain -DserviceUid=" + detectedServiceUuid + " " + getGradleProject() + ":runEmulator";
-        String localCmd = RunnerUtils.localCd(repo) + cmd;
-        String dockerCmd = "docker run --rm -v ${HOME}:/host_home -w /host_home/client-java ghcr.io/aethernetio/aether-launcher:latest sh -c \"" + cmd + "\"";
-        ProcessBuilder pb = new ProcessBuilder(gradleBin, "--console=plain", "-DserviceUid=" + detectedServiceUuid, getGradleProject() + ":runEmulator");
+        String cmd = gradleBin + " --console=plain -DserviceUid=" + detectedServiceUuid.get() + " " + getGradleProject() + ":runEmulator";
+        String exportJdk = Launcher.jdkHome.startsWith(Launcher.workspace.resolve("tools").toString())
+            ? RunnerUtils.exportCmd("JAVA_HOME", Launcher.jdkHome) + " && " : "";
+        String localCmd = RunnerUtils.localCd(repo) + exportJdk + cmd;
+
+        ProcessBuilder pb = new ProcessBuilder(gradleBin, "--console=plain", "-DserviceUid=" + detectedServiceUuid.get(), getGradleProject() + ":runEmulator");
         pb.directory(repo.toFile());
         pb.environment().put("PATH", System.getenv("PATH"));
         pb.environment().put("JAVA_HOME", Launcher.jdkHome);
-        emulatorProcess = RunnerUtils.runCommand(pb, "emulator", localCmd, dockerCmd, ctx);
+        emulatorProcess = RunnerUtils.runCommand(pb, "emulator", localCmd, ctx, null, "Start Emulator");
         ctx.broadcast("emulator_started", "{}");
         Launcher.sendOk(t, "{\"status\":\"started\"}");
     }
@@ -166,8 +170,8 @@ public class SmartHubRunner extends AbstractProjectRunner {
     private void stopService() {
         RunnerUtils.stopProcess(serviceProcess, "service_stopped", ctx);
         serviceProcess = null;
-        if (detectedServiceUuid != null) {
-            detectedServiceUuid = null;
+        if (detectedServiceUuid.get() != null) {
+            detectedServiceUuid.set(null);
             ctx.broadcast("uuid_clear", "{}");
         }
     }

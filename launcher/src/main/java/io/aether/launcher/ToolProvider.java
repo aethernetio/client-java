@@ -1,11 +1,23 @@
 package io.aether.launcher;
-
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.function.Consumer;
 import java.io.*;
+import java.net.*;
+import java.nio.file.*;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.function.Consumer;
 import java.util.concurrent.TimeUnit;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.function.Consumer;
+import java.util.concurrent.TimeUnit;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.function.Consumer;
+import java.util.concurrent.TimeUnit;
+
+
+
+
 
 
 /** Abstraction for a tool (JDK, Gradle, Git) that can be found or downloaded. */
@@ -58,4 +70,25 @@ public abstract class ToolProvider {
         if (found != null) return "Found: " + found.toString();
         return "Not found";
     }
+
+    protected static void downloadWithProgress(String url, Path dest, Consumer<Integer> onProgress) throws IOException {
+        java.net.URLConnection conn = new java.net.URL(url).openConnection();
+        long total = conn.getContentLengthLong();
+        long downloaded = 0;
+        try (InputStream in = conn.getInputStream();
+             OutputStream out = java.nio.file.Files.newOutputStream(dest)) {
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) != -1) {
+                out.write(buf, 0, n);
+                downloaded += n;
+                if (total > 0) {
+                    int pct = (int)(downloaded * 100 / total);
+                    onProgress.accept(pct);
+                }
+            }
+        }
+    }
+
+
 }
