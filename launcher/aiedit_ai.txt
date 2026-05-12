@@ -27,3 +27,114 @@
 - Для портабельной установки JDK/Gradle скачиваем архивы в workspace.
 - Все пути к workspace должны быть реальными (хостовыми), а не внутренними контейнерными.
 - Интерфейс должен быть интуитивным для разработчика, показывать, что происходит.
+
+===================================================
+# Aether Launcher – Development Summary (2026-05-04)
+===================================================
+
+## Project Goal
+Create a portable, self-contained launcher for Aether demo projects (SmartHub, Chat,
+Point-to-Point) that runs on any OS without preinstalled Docker or JDK.
+The launcher is a single native Java application (JAR + embedded HTTP server + browser),
+automatically finds or downloads necessary tools (JDK, Gradle, Git), and provides
+a web-based UI for managing projects.
+
+## Final Architecture (Native Java, no Docker)
+- Launcher.java – main backend: HTTP server (com.sun.net.httpserver) + SSE (Server-Sent
+  Events) for real-time log streaming.
+- index.html – frontend compiled from template fragments (TemplateEngine): header.html,
+  environment.html, project.html, scripts.html, footer.html.
+- Project runners: SmartHubRunner, ChatRunner, PointToPointRunner – each handles
+  clone/build/run/stop/emulator via RunnerUtils.
+- Tool providers: JdkProvider, GradleProvider, (future: GitProvider via JGit). They
+  find local tools or download portable versions into workspace/tools/.
+- Portable distribution: generates aether-launcher.zip with an embedded minimal JRE
+  (jlink). No need for the user to install Java.
+- Cross-platform: separate Zip tasks for Linux, Windows, macOS, each downloading the
+  appropriate Adoptium JRE and packaging correct launch scripts (launcher/.bat).
+
+## Gradle Build
+File: launcher/build.gradle
+Tasks:
+  - runtimeZipLinux  – builds aether-launcher-linux.zip  (excl. .bat, JRE from Adoptium)
+  - runtimeZipWin    – builds aether-launcher-win.zip    (excl. launcher, JRE from Adoptium)
+  - runtimeZipMac    – builds aether-launcher-mac.zip    (excl. .bat, JRE from Adoptium)
+  - runtimeZip (current OS only) – for quick local tests.
+JRE download uses Groovy ant.get (no external tools).
+Zip filePermissions set to 0755 for all executables.
+Application plugin: mainClass = io.aether.launcher.Launcher (Java 25 toolchain).
+Dependency: org.eclipse.jgit (for future JGit clone/reset, already included).
+
+## Key Decisions
+- Port changed from 8080 to 29383 to avoid common conflicts.
+- Home folder workspace: ~/aether_projects/ (user configurable).
+- JDK/Gradle downloaded into workspace/tools/.
+- Communication with frontend via SSE:
+  events: log, command_start, command_end, status, error, uuid_found, uuid_clear,
+  progress, download_progress, jdk_ready, gradle_ready, service_started, service_stopped,
+  emulator_started, emulator_stopped.
+- UI tabs: "Tools" (JDK/Gradle status, Download buttons, portable checkboxes) and
+  "Project" (workspace, project selector, action buttons, log viewer).
+- Buttons Blocking: Build/Run/Emulator disabled until jdkReady && gradleReady && cloned.
+  Start Emulator disabled until UUID received.
+- Persistent state on page reload: SSE reconnect sends current service/emulator status
+  and tool readiness (sendCurrentToolStatus).
+- UUID detection uses AtomicReference<String> in SmartHubRunner, passed to RunnerUtils.
+- Log blocks show local command with optional JAVA_HOME export for portable JDK.
+- Emulator runs with separate state file (emulator-state.bin) to avoid conflicts.
+
+## Known Issues / Workarounds
+- Groovy dollar sign escaping ($$) inside /$/.../$ required for AIEdit commands.
+  Failure to escape $$ leads to transaction errors.
+- jlink no longer uses .jmods (JEP 493), so we switched to downloading prebuilt JREs.
+- Gradle Zip task: filePermissions must use user/group/other { execute = true } syntax.
+
+## Future Steps (not yet done)
+- Replace Git clone/reset with JGit to eliminate dependency on external git.
+- Add back buttons for project-specific actions (service/emulator/gui paths).
+- Implement portable Git download/provider.
+- Clean up unused fields/methods (e.g., Docker remnants).
+- Test on Windows and macOS.
+- Publish to aethernet.io with download links.
+
+## File Locations
+- Launcher.java:  src/main/java/io/aether/launcher/Launcher.java
+- Runners:       src/main/java/io/aether/launcher/SmartHubRunner.java, ChatRunner.java, PointToPointRunner.java
+- Tools:         src/main/java/io/aether/launcher/JdkProvider.java, GradleProvider.java, ToolProvider.java
+- Templates:     src/main/resources/templates/*.html
+- Build:         launcher/build.gradle
+
+## Heartbeat watchdog
+- Launcher.java: static volatile long lastHeartbeat, обновляется при GET /api/heartbeat
+- Демон-поток в main() проверяет каждую секунду: если >3с нет heartbeat → System.exit(0)
+- scripts.html: setInterval каждые 2с шлёт fetch('/api/heartbeat')
+- PORT по умолчанию 29383, задаётся через -Dport=...
+
+## Архивы лаунчера
+- Сборка: gradle.run('runtimeZipLinux runtimeZipWin runtimeZipMac')
+- Архивы ~3.4 MB, JRE не включена — скачивается при первом запуске скриптом start.sh/start.bat
+- JRE URL: Adoptium API (25, Linux/Mac/Windows x64, hotspot, normal)
+- Скрипты лежат в константах startShScript/startBatScript в build.gradle
+- Архивы копируются в main-site/launcher/ для публикации на aethernet.io/launcher
+
+## Структура workspace
+- ~/aether_projects/client-java/ — клонированный репозиторий
+- client-java/smarthub, client-java/chat, client-java/pointToPoint — подмодули
+- tools/ — портабельные JDK/Gradle
+
+## Кнопки UI (project.html)
+- 📂 Open Project: открывает workspace/client-java/{project} через open-path API
+- open-path реализован через Desktop.open() / xdg-open на бэкенде
+- Кнопка активна только после clone (cloned=true)
+
+## Экран командных блоков
+- setLed(stream, state): state = 'running'|'success'|'error'|''
+- command_end: success → через 3с гаснет (setTimeout), error → остаётся красным
+- exitCode приходит строкой, сравнивается с "0" (строка) и 0 (число)
+
+## Решённые проблемы
+- Groovy dollar sign escaping: внутри $/.../$ нужно $$, внутри """...""" нужно \$
+- installDist генерирует bin/launcher и bin/launcher.bat — не использовать, вместо этого from configurations.runtimeClasspath + jar + свой скрипт
+- fcd.exclude() не работает внутри eachFile для Zip-задач — фильтровать до/после
+- AIEdit replace проверяет верификацию по первому символу: всегда печатай файл перед заменой
+- Номера строк стабильны внутри одного скрипта (транзакционность)

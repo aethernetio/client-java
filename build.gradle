@@ -30,7 +30,6 @@ subprojects {
         mavenCentral()
         maven {
             url = 'https://nexus.aethernet.io/maven/releases/'
-            allowInsecureProtocol = true
         }
     }
     afterEvaluate {

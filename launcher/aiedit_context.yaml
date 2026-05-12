@@ -9,4 +9,5 @@ lines:
     '**/*.{class,exe,dll,so,pyc,bin}']
   roots:
     LAUNCHER: {path: /home/angel/IdeaProjects/aether-client-java/launcher}
+    main-site: {path: /home/angel/IdeaProjects/main-site}
 projectId: cd68598f

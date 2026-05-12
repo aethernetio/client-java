@@ -34,12 +34,15 @@ function switchTab(tab) {
 }
 
 function updateButtons() {
+  cloneBtn.disabled = false;
   cloneBtn.textContent = cloned ? 'Reset Source' : 'Clone';
   buildBtn.disabled = !cloned || !jdkReady || !gradleReady || serviceRunning;
   runBtn.disabled = !cloned || !jdkReady || !gradleReady || serviceRunning;
   stopBtn.disabled = !serviceRunning;
   if (emulatorBtn) emulatorBtn.disabled = !(cloned && serviceUuid && serviceRunning && jdkReady && gradleReady);
   stopEmulatorBtn.disabled = !emulatorRunning;
+  const openProjectBtn = document.getElementById('openProjectBtn');
+  if (openProjectBtn) openProjectBtn.disabled = !cloned;
   const project = document.getElementById('projectSelect').value;
   sourceLinksEl.style.display = (cloned && project === 'smarthub') ? 'block' : 'none';
 }
@@ -143,10 +146,15 @@ evtSource.addEventListener('command_start', e => {
 
 evtSource.addEventListener('command_end', e => {
   const d = JSON.parse(e.data);
-  setLed(d.stream, d.exitCode === 0 ? 'success' : 'error');
+  setLed(d.stream, (d.exitCode === "0" || d.exitCode === 0) ? 'success' : 'error');
+  if (d.exitCode === "0" || d.exitCode === 0) {
+    setTimeout(() => setLed(d.stream, ''), 3000);
+  }
+  statusEl.textContent = '';
 });
 evtSource.addEventListener('status', e => { statusEl.textContent = e.data; });
 evtSource.addEventListener('error', e => { statusEl.textContent = 'Error: ' + e.data; });
+
 evtSource.addEventListener('uuid_found', e => {
   const d = JSON.parse(e.data);
   serviceUuid = d.uuid;
@@ -245,12 +253,6 @@ async function api(action, param) {
           statusEl.textContent = 'Installing tools, please wait...';
         }
       }
-
-function stopProcess(stream) {
-  api('stop-' + stream).catch(() => {});
-  setLed(stream, '');
-}
-
     }
   } catch (e) {
     statusEl.textContent = 'Connection error: ' + e.message;
@@ -261,6 +263,10 @@ function stopProcess(stream) {
   }
   setButtonsEnabled(true, action);
   updateButtons();
+}
+function stopProcess(stream) {
+  api('stop-' + stream).catch(() => {});
+  setLed(stream, '');
 }
 
 
@@ -333,3 +339,7 @@ function openPath(id) {
     api('open-path', el.textContent);
   }
 }
+function openProjectFolder() {
+  api('open-path', document.getElementById('workspaceInput').value + '/client-java/' + document.getElementById('projectSelect').value);
+}
+setInterval(() => { fetch('/api/heartbeat').catch(() => {}); }, 2000);

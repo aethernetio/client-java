@@ -10,6 +10,7 @@ import java.util.concurrent.*;
 public class Launcher {
     static final int PORT = Integer.getInteger("port", 29383);
     static final ExecutorService exec = Executors.newCachedThreadPool();
+    static volatile long lastHeartbeat = System.currentTimeMillis();
     static final List<SseConnection> sseConnections = Collections.synchronizedList(new ArrayList<>());
     static Path workspace = Path.of(System.getProperty("user.home"), "aether_projects");
 
@@ -316,6 +317,17 @@ public class Launcher {
         server.start();
         System.out.println("Launcher started on port " + PORT);
         openBrowser("http://localhost:" + PORT);
+        Thread heartbeatWatchdog = new Thread(() -> {
+            while (true) {
+                try { Thread.sleep(1000); } catch (InterruptedException e) { break; }
+                if (System.currentTimeMillis() - lastHeartbeat > 3000) {
+                    System.out.println("No heartbeat from browser, shutting down...");
+                    System.exit(0);
+                }
+            }
+        });
+        heartbeatWatchdog.setDaemon(true);
+        heartbeatWatchdog.start();
 
 
 
@@ -352,6 +364,7 @@ public class Launcher {
                         case "ensure-jdk": handleEnsureJdk(t); break;
                         case "get-jdk-status": handleGetJdkStatus(t); break;
                         case "ensure-gradle": handleEnsureGradle(t); break;
+                        case "heartbeat": sendOk(t, "{\"status\":\"ok\"}"); lastHeartbeat = System.currentTimeMillis(); break;
                         case "get-gradle-status": handleGetGradleStatus(t); break;
                         default: send404(t);
                     }

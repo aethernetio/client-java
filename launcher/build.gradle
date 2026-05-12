@@ -1,18 +1,152 @@
 plugins {
     id 'application'
     id 'maven-publish'
+
 }
+
+repositories {
+    mavenCentral()
+}
+
+def startShScript = $/#!/bin/sh
+DIR=$$(dirname "$$0")
+JRE_DIR="$$DIR/jre"
+if [ ! -x "$$JRE_DIR/bin/java" ]; then
+    echo "Downloading Java..."
+    mkdir -p "$$JRE_DIR"
+    if [ "$$(uname -s)" = "Darwin" ]; then
+        JRE_URL="https://api.adoptium.net/v3/binary/latest/25/ga/mac/x64/jre/hotspot/normal/eclipse?project=jdk"
+    else
+        JRE_URL="https://api.adoptium.net/v3/binary/latest/25/ga/linux/x64/jre/hotspot/normal/eclipse?project=jdk"
+    fi
+    if command -v wget >/dev/null 2>&1; then
+        wget --show-progress -O "$$JRE_DIR/jre.tar.gz" "$$JRE_URL" || { echo "Download failed!"; exit 1; }
+    elif command -v curl >/dev/null 2>&1; then
+        curl -L --progress-bar -o "$$JRE_DIR/jre.tar.gz" "$$JRE_URL" || { echo "Download failed!"; exit 1; }
+    else
+        echo "ERROR: Neither wget nor curl found. Please install one of them."
+        exit 1
+    fi
+    echo "Extracting Java..."
+    tar -xzf "$$JRE_DIR/jre.tar.gz" -C "$$JRE_DIR" --strip-components=1 || { echo "Extraction failed!"; exit 1; }
+    rm "$$JRE_DIR/jre.tar.gz"
+    echo "Java ready."
+fi
+exec "$$JRE_DIR/bin/java" -cp "$$DIR/lib/*" io.aether.launcher.Launcher "$$@"/$
+
+
+def startBatScript =$/@echo off
+set DIR=%~dp0
+set JRE_DIR=%DIR%jre
+if not exist "%JRE_DIR%\bin\java.exe" (
+    echo Downloading Java...
+    mkdir "%JRE_DIR%" 2>nul
+    curl -L --progress-bar -o "%JRE_DIR%\jre.zip" "https://api.adoptium.net/v3/binary/latest/25/ga/windows/x64/jre/hotspot/normal/eclipse?project=jdk" || (echo Download failed! & exit /b 1)
+    echo Extracting Java...
+    powershell -Command "Expand-Archive -Path '%JRE_DIR%\jre.zip' -DestinationPath '%JRE_DIR%' -Force; Move-Item '%JRE_DIR%\jdk-*\' '%JRE_DIR%\temp\' -Force; Move-Item '%JRE_DIR%\temp\*' '%JRE_DIR%\' -Force; Remove-Item '%JRE_DIR%\temp\' -Recurse -Force; Remove-Item '%JRE_DIR%\jre.zip' -Force" || (echo Extraction failed! & exit /b 1)
+    echo Java ready.
+)
+"%JRE_DIR%\bin\java" -cp "%DIR%lib\*" io.aether.launcher.Launcher %*/$
+
 
 
 
 application {
     mainClass = 'io.aether.launcher.Launcher'
 }
+
+
+tasks.register('runtimeZipLinux', Zip) {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+
+    dependsOn jar
+    from configurations.runtimeClasspath, { into 'lib' }
+    from jar, { into 'lib' }
+    from { outputFile ->
+        def sh = new File(temporaryDir, 'start.sh')
+        sh.text = startShScript
+
+
+        sh.setExecutable(true)
+        sh
+    }
+
+
+
+
+    into 'launcher'
+    archiveFileName = "aether-launcher-linux.zip"
+    destinationDirectory = layout.buildDirectory.dir("dist")
+    filePermissions {
+        user { execute = true }
+        group { execute = true }
+        other { execute = true }
+    }
+}
+
+
+tasks.register('runtimeZipWin', Zip) {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+
+    dependsOn jar
+    from configurations.runtimeClasspath, { into 'lib' }
+    from jar, { into 'lib' }
+    from { outputFile ->
+        def bat = new File(temporaryDir, 'start.bat')
+        bat.text = startBatScript
+        bat
+    }
+
+
+
+
+
+
+
+
+    into 'launcher'
+    archiveFileName = "aether-launcher-win.zip"
+    destinationDirectory = layout.buildDirectory.dir("dist")
+}
+
+tasks.register('runtimeZipMac', Zip) {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+
+    dependsOn jar
+    from configurations.runtimeClasspath, { into 'lib' }
+    from jar, { into 'lib' }
+    from { outputFile ->
+        def sh = new File(temporaryDir, 'start.sh')
+        sh.text = startShScript
+        sh.setExecutable(true)
+        sh
+    }
+
+
+
+
+
+
+
+    into 'launcher'
+    archiveFileName = "aether-launcher-mac.zip"
+    destinationDirectory = layout.buildDirectory.dir("dist")
+    filePermissions {
+        user { execute = true }
+        group { execute = true }
+        other { execute = true }
+    }
+}
+
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(25)
     }
 }
+
 publishing {
     publications {
         mavenPublication(MavenPublication){
@@ -22,6 +156,8 @@ publishing {
         }
     }
 }
+
 dependencies {
     implementation 'org.eclipse.jgit:org.eclipse.jgit:6.10.0.202406032230-r'
+
 }

@@ -40,7 +40,7 @@ publishing {
 }
 
 dependencies {
-    implementation 'io.aether:cloud-client:0.0.64'
+    implementation 'io.aether:cloud-client:+'
     implementation 'com.h2database:h2:2.2.224'
     implementation 'io.aether.crypto:hydrogen-fast:+'
     implementation 'io.aether.crypto:sodium:+'
