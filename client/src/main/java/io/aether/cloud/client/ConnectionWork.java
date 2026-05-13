@@ -422,6 +422,16 @@ protected void onConnectionStateChanged(boolean isWritable) {
                 client.onNewChild.fire(u);
             }
         }
+
+
+        @Override
+
+        public void sendUap(UUID uid, Uap uap) {
+            Log.debug("Received Uap for $uid: delta=$delta, lastRead=$lastRead", "uid", uid, "delta", uap.getDelta_ms(), "lastRead", uap.getLast_read_timestamp());
+        }
+
+
+
     }
 
     private class MyFastApiContext extends FastApiContext {

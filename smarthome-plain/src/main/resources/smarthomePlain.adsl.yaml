@@ -4,7 +4,6 @@ types:
       value: byte
       time: byte
 api:
-
   SmartHomeServiceApi:
     methods:
       registerDevice:
