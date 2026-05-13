@@ -424,11 +424,6 @@ protected void onConnectionStateChanged(boolean isWritable) {
         }
 
 
-        @Override
-
-        public void sendUap(UUID uid, Uap uap) {
-            Log.debug("Received Uap for $uid: delta=$delta, lastRead=$lastRead", "uid", uid, "delta", uap.getDelta_ms(), "lastRead", uap.getLast_read_timestamp());
-        }
 
 
 
