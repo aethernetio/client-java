@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class PointToPointTest {
     public final List<URI> registrationUri = new ArrayList<>();
@@ -45,18 +46,23 @@ public class PointToPointTest {
         client1.startFuture.onError(Log::error);
         client2.startFuture.onError(Log::error);
         AFuture.all(client1.startFuture, client2.startFuture).to(() -> {
+
             Log.info("clients is registered uid1: $uid1 uid2: $uid2", "uid1", client1.getUid(), "uid2", client2.getUid());
             AFuture checkReceiveMessage = AFuture.make();
             var message = new byte[]{1, 2, 3, 4};
+            AtomicLong sendTime = new AtomicLong();
             client2.onMessage((uid, msg) -> {
+                long receiveTime = System.currentTimeMillis();
+                long deliveryTime = receiveTime - sendTime.get();
                 if (checkReceiveMessage.tryDone()) {
-                    Log.info("First message confirm");
+                    Log.info("First message confirm. Delivery time: $time ms", "time", deliveryTime);
                 } else {
-                    Log.warn("Second message confirm");
+                    Log.warn("Second message confirm. Delivery time: $time ms", "time", deliveryTime);
                 }
             });
             Log.info("START two clients!");
             Thread.currentThread().setName("MAIN THREAD");
+            sendTime.set(System.currentTimeMillis());
             client1.sendMessage(client2.getUid(), message).to(()->{
                 client1.destroy(false).onError(testDoneFuture::error);
             });
@@ -69,8 +75,83 @@ public class PointToPointTest {
 
         }).onError(testDoneFuture::error);
 
+
         return testDoneFuture;
     }
+
+
+    public AFuture p2pBatchDeliveryTime() {
+        var parent = UUID.fromString("B1AC52C8-8D94-BD39-4C01-A631AC594165");
+        if (clientConfig1 == null)
+            clientConfig1 = new ClientStateInMemory(parent, registrationUri, null, CryptoLib.HYDROGEN);
+        if (clientConfig2 == null)
+            clientConfig2 = new ClientStateInMemory(parent, registrationUri, null, CryptoLib.HYDROGEN);
+        clientConfig1.getPingDuration().set(100L);
+        clientConfig2.getPingDuration().set(100L);
+        AetherCloudClient client1 = new AetherCloudClient(clientConfig1, "client1");
+        AetherCloudClient client2 = new AetherCloudClient(clientConfig2, "client2");
+
+        AFuture testDoneFuture = AFuture.make();
+        client1.startFuture.onError(Log::error);
+        client2.startFuture.onError(Log::error);
+
+        // Setup message handler BEFORE start to catch all messages
+        AtomicLong msgCounter = new AtomicLong(0);
+        AtomicLong totalDeliveryTime = new AtomicLong(0);
+        AtomicLong minTime = new AtomicLong(Long.MAX_VALUE);
+        AtomicLong maxTime = new AtomicLong(0);
+        ConcurrentHashMap<Integer, Long> sendTimes = new ConcurrentHashMap<>();
+
+        client2.onClientStream((st) -> {
+            st.toConsumer(msg -> {
+                long receiveTime = System.currentTimeMillis();
+                // Extract message index from first byte
+                int idx = msg[0] & 0xFF;
+                Long sendTime = sendTimes.remove(idx);
+                if (sendTime != null) {
+                    long deliveryTime = receiveTime - sendTime;
+                    long count = msgCounter.incrementAndGet();
+                    totalDeliveryTime.addAndGet(deliveryTime);
+                    minTime.updateAndGet(v -> Math.min(v, deliveryTime));
+                    maxTime.updateAndGet(v -> Math.max(v, deliveryTime));
+
+                    if (count == 50) {
+                        long avgTime = totalDeliveryTime.get() / 50;
+                        Log.info("Batch test complete. Avg: $avg ms, Min: $min ms, Max: $max ms",
+                                "avg", avgTime, "min", minTime.get(), "max", maxTime.get());
+                        testDoneFuture.done();
+                    }
+                }
+            });
+        });
+
+        AFuture.all(client1.startFuture, client2.startFuture).to(() -> {
+            Log.info("clients registered. Starting warmup + timed batch (50 messages)...");
+            // Warmup: 10 messages
+            for (int i = 0; i < 10; i++) {
+                client1.sendMessage(client2.getUid(), new byte[]{(byte) i, 1, 2, 3});
+                RU.sleep(20);
+            }
+            Log.info("Warmup done. Sending 50 timed messages...");
+            // Timed batch: 50 messages
+            for (int i = 10; i < 60; i++) {
+                byte[] msg = new byte[]{(byte) i, 1, 2, 3};
+                sendTimes.put(i, System.currentTimeMillis());
+                client1.sendMessage(client2.getUid(), msg);
+                RU.sleep(10);
+            }
+            Log.info("All 60 messages sent!");
+        }).onError(testDoneFuture::error);
+
+        testDoneFuture.to(() -> {
+            Log.info("BATCH TEST DONE!");
+            client1.destroy(false).to(() -> client2.destroy(false).to(() -> {}));
+        });
+
+        return testDoneFuture;
+    }
+
+
 
     //    @Test
     public AFuture timeOneMessage() { // ИСПРАВЛЕНО: удален дженерик

@@ -48,7 +48,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
     volatile boolean firstAuth;
 
     public ConnectionWork(AetherCloudClient client, ServerDescriptor s) {
-        super(client, s.getIpAddress().getURI(AetherCodec.TCP), ClientApiUnsafe.META, LoginApi.META);
+        super(client, s.getIpAddress().getURI(AetherCodec.UDP), ClientApiUnsafe.META, LoginApi.META);
         this.apiSafe = new MyClientApiSafe(client, this);
         apiSafeCtx = new MyFastApiContext(client);
         cryptoEngine = client.getCryptoEngineForServer(s.getId());
@@ -167,9 +167,18 @@ protected void onConnectionStateChanged(boolean isWritable) {
                 }
             }
         }
+
+
         if (messagesForSend != null && !messagesForSend.isEmpty()) {
-            a.sendMessages(messagesForSend.toArray(new Message[0]));
+            MessageBatcher batcher = new MessageBatcher();
+            for (var msg : messagesForSend) {
+                batcher.add(msg.getUid(), msg.getData());
+            }
+            batcher.flush(a);
         }
+
+
+
         if (!firstAuth) {
             firstAuth = true;
             a.ping(0).to(() -> {

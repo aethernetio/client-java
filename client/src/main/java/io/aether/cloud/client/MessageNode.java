@@ -65,6 +65,7 @@ public class MessageNode implements ToString {
     }
 
     public AFuture send(byte[] msg) {
+        if (msg == null || msg.length == 0) return AFuture.completed();
         if (bufferOut.size() >= 50) {
             Tuple2<byte[], AFuture> oldest = bufferOut.pollFirst();
             if (oldest != null) {
