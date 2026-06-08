@@ -7,7 +7,7 @@ export interface DeviceUpdate {
 
 
 
-import { AFuture, ARFuture, AetherCloudClient, ClientStateInMemory, MessageEventListenerDefault, UUID, MessageNode, FastApiContext, FastApiContextLocal, Log, LogFilter, applySodium, EventConsumer, FlushReport, aetherApi } from 'aether-client';
+import { AFuture, ARFuture, AetherCloudClient, ClientStateInMemory, MessageEventListenerDefault, UUID, MessageNode, FastApiContext, MetaContextLocal, Log, LogFilter, applySodium, EventConsumer, FlushReport, aetherApi } from 'aether-client';
 import { Base64 } from 'js-base64';
 
 
@@ -93,7 +93,7 @@ export class SmartHubController {
         console.log('[SmartHub] MessageNode created for service', serviceUuid.toAString().toString());
 
         // Локальная реализация для приёма результатов от сервера
-        const rootCtx = node.toApiR(SmartHomeClientGuiApi.META, (ctx: FastApiContextLocal<SmartHomeClientGuiApi>) => {
+        const rootCtx = node.toApiR(SmartHomeClientGuiApi.META, (ctx: MetaContextLocal<SmartHomeClientGuiApi>) => {
             console.log('[SmartHub] rootCtx localApi factory called');
             return {
                 deviceStateUpdated: (deviceUid: UUID, records: SensorRecord[]) => {
@@ -132,7 +132,7 @@ export class SmartHubController {
         const hubRegistry = SmartHomeHubRegistryApi.META.makeRemote(rootCtx);
 
         // В TS конструктор принимает только factory/impl, META не требуется
-        const guiCtx = new FastApiContextLocal(() => ({} as any));
+        const guiCtx = new MetaContextLocal(() => ({} as any));
 
 
         guiCtx.flush = (report: FlushReport) => {

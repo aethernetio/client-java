@@ -22,7 +22,7 @@ dependencies {
     implementation 'com.google.code.gson:gson:2.10.1'
     implementation 'io.aether.crypto:hydrogen-fast:+'
     implementation 'io.aether.crypto:sodium:+'
-    implementation 'io.aether:net-netty:+'
+    implementation 'io.aether:net-virtual:+'
 }
 
 java {

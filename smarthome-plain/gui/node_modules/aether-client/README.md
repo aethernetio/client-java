@@ -137,7 +137,7 @@ The **`node.toApi(meta, localApi)`** method binds your local implementation of a
 
 This method is specifically designed to manage a complete, dedicated RPC context for the peer.
 
-1.  **Creates** a FastMeta Context (`FastApiContextLocal`).
+1.  **Creates** a FastMeta Context (`MetaContextLocal`).
 2.  **Overrides** the context's internal `flush()` method to use **`node.send(data)`** for all outgoing RPC requests.
 3.  **Binds** the incoming stream (`bufferIn`) to the local API methods.
 

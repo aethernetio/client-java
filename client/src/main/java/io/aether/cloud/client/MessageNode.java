@@ -3,8 +3,8 @@ package io.aether.cloud.client;
 import io.aether.api.common.Cloud;
 import io.aether.api.common.ServerDescriptor;
 import io.aether.logger.Log;
-import io.aether.net.fastMeta.FastApiContextLocal;
-import io.aether.net.fastMeta.FastFutureContext;
+import io.aether.net.fastMeta.MetaContextLocal;
+import io.aether.net.fastMeta.MetaContext;
 import io.aether.net.fastMeta.FastMetaApi;
 import io.aether.net.fastMeta.FlushReport;
 import io.aether.utils.AString;
@@ -114,10 +114,10 @@ public class MessageNode implements ToString {
         bufferIn.add(o::accept);
     }
 
-    public <LT> FastApiContextLocal<LT> toApiR(
+    public <LT> MetaContextLocal<LT> toApiR(
             FastMetaApi<LT, ? extends LT> metaLt,
-            AFunction<FastApiContextLocal<LT>, LT> localApi) {
-        FastApiContextLocal<LT> ctx = new FastApiContextLocal<>(localApi) {
+            AFunction<MetaContextLocal<LT>, LT> localApi) {
+        MetaContextLocal<LT> ctx = new MetaContextLocal<>(localApi) {
             @Override
             public void flush(FlushReport report) {
                 send(remoteDataToArray()).addListener(f -> {
@@ -133,7 +133,7 @@ public class MessageNode implements ToString {
         return ctx;
     }
 
-    public <LT> void toApi(FastFutureContext ctx, FastMetaApi<LT, ? extends LT> metaLt, LT localApi) {
+    public <LT> void toApi(MetaContext ctx, FastMetaApi<LT, ? extends LT> metaLt, LT localApi) {
         toConsumer(v -> {
             try {
                 metaLt.makeLocal(ctx, new DataInOutStatic(v), localApi);
@@ -143,13 +143,13 @@ public class MessageNode implements ToString {
         });
     }
 
-    public <LT> FastApiContextLocal<LT> toApi(FastApiContextLocal<LT> ctx, FastMetaApi<LT, ? extends LT> metaLt) {
+    public <LT> MetaContextLocal<LT> toApi(MetaContextLocal<LT> ctx, FastMetaApi<LT, ? extends LT> metaLt) {
         toApi(ctx, metaLt, ctx.localApi);
         return ctx;
     }
 
-    public <LT> FastApiContextLocal<LT> toApi(FastMetaApi<LT, ? extends LT> metaLt, LT localApi) {
-        FastApiContextLocal<LT> ctx = new FastApiContextLocal<>(localApi) {
+    public <LT> MetaContextLocal<LT> toApi(FastMetaApi<LT, ? extends LT> metaLt, LT localApi) {
+        MetaContextLocal<LT> ctx = new MetaContextLocal<>(localApi) {
             @Override
             public void flush(FlushReport report) {
                 var d = remoteDataToArray();

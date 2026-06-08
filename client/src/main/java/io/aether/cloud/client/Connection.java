@@ -1,14 +1,11 @@
+
 package io.aether.cloud.client;
 
 import io.aether.logger.Log;
-import io.aether.net.fastMeta.FastMetaApi;
-import io.aether.net.fastMeta.FastMetaClient;
-import io.aether.net.fastMeta.FastMetaNet;
-import io.aether.net.fastMeta.RemoteApi;
+import io.aether.net.fastMeta.*;
 import io.aether.utils.RU;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
-import io.aether.utils.interfaces.AFunction;
 import io.aether.utils.interfaces.Destroyable;
 import io.aether.utils.slots.EventConsumer;
 import java.net.URI;
@@ -16,24 +13,17 @@ import java.util.concurrent.CancellationException;
 
 /**
  * Abstract base class for handling connections in the Aether Cloud client.
- * Manages the lifecycle of the underlying FastMetaClient and connection state.
+ * Manages the lifecycle of the underlying connection and connection state.
  */
 public abstract class Connection<LT, RT extends RemoteApi> implements Destroyable {
 
     protected final AetherCloudClient client;
-
     protected final URI uri;
-
     protected final ARFuture<RT> connectFuture = ARFuture.make();
-
-    protected final FastMetaClient<LT, RT> fastMetaClient;
-
+    protected final MetaContext ctx;
     protected volatile RT rootApi;
 
-    /**
-     * Observable state listeners triggered when the connection writability or availability changes.
-     * The boolean value represents the current 'isWritable' status.
-     */
+    /** Observable state listeners triggered when the connection writability or availability changes. */
     public final EventConsumer<Boolean> stateListeners = new EventConsumer<>();
 
     public Connection(AetherCloudClient client, URI uri, FastMetaApi<LT, ?> localApiMeta, FastMetaApi<?, RT> remoteApiMeta) {
@@ -43,46 +33,28 @@ public abstract class Connection<LT, RT extends RemoteApi> implements Destroyabl
         if (client.destroyer.isDestroyed()) {
             connectFuture.error(new CancellationException());
             rootApi = null;
-            this.fastMetaClient = null;
+            this.ctx = null;
             return;
         }
         client.destroyer.add(this);
         LT localApi = RU.cast(this);
-        AFunction<RT, LT> localApiProvider = remoteApi -> {
-            this.rootApi = remoteApi;
-            return localApi;
-        };
-        FastMetaNet.WritableConsumer writableConsumer = isWritable -> {
+        this.rootApi = FastMetaNet.INSTANCE.get().makeClient(uri, localApiMeta, remoteApiMeta, localApi);
+        this.ctx = rootApi.getFastMetaContext();
+        ctx.onWritable(isWritable -> {
             onConnectionStateChanged(isWritable);
             if (isWritable) {
-                if (this.rootApi != null) {
-                    this.connectFuture.tryDone(this.rootApi);
-                } else {
-                    Log.error("Connection is writable but rootApi was not set.", "uri", uri);
-                    this.connectFuture.tryError(new IllegalStateException("Connection established but rootApi is null."));
-                }
+                this.connectFuture.tryDone(this.rootApi);
             } else {
                 Log.trace("Connection lost.", "uri", uri);
             }
-        };
-        FastMetaNet factory = FastMetaNet.INSTANCE.get();
-        this.fastMetaClient = factory.makeClient(uri, localApiMeta, remoteApiMeta, localApiProvider, writableConsumer);
-        client.destroyer.add(fastMetaClient);
+        });
+        this.connectFuture.tryDone(this.rootApi);
     }
 
-    /**
-     * Hook method called when the underlying transport writability changes.
-     * Can be overridden by subclasses to react to reconnects (e.g., reset auth state).
-     *
-     * @param isWritable True if the connection is now writable (connected), false otherwise.
-     */
-    protected void onConnectionStateChanged(boolean isWritable) {
-    }
+    protected boolean isWritable() { return ctx != null && ctx.isActive(); }
+    protected void onConnectionStateChanged(boolean isWritable) {}
 
     public RT getRootApi() {
-        if (!connectFuture.isDone()) {
-            Log.warn("Accessing rootApi before connection is established: " + uri);
-        }
         return rootApi;
     }
 
@@ -92,10 +64,8 @@ public abstract class Connection<LT, RT extends RemoteApi> implements Destroyabl
 
     @Override
     public boolean equals(Object o) {
-        if (this == o)
-            return true;
-        if (o == null || getClass() != o.getClass())
-            return false;
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
         var that = (Connection<?, ?>) o;
         return uri.equals(that.uri);
     }
@@ -108,6 +78,6 @@ public abstract class Connection<LT, RT extends RemoteApi> implements Destroyabl
     @Override
     public AFuture destroy(boolean force) {
         Log.trace("Destroying Connection to " + uri);
-        return fastMetaClient.destroy(force);
+        return ctx.close();
     }
 }

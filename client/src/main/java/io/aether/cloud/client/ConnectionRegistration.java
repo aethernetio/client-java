@@ -9,7 +9,7 @@ import io.aether.crypto.AKey;
 import io.aether.crypto.CryptoEngine;
 import io.aether.crypto.CryptoProviderFactory;
 import io.aether.logger.Log;
-import io.aether.net.fastMeta.FastApiContext;
+import io.aether.net.fastMeta.MetaContextBase;
 import io.aether.net.fastMeta.FlushReport;
 import io.aether.utils.WorkProofUtil;
 import io.aether.utils.futures.AFuture;
@@ -22,13 +22,13 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
     private final AKey.Symmetric tempKey = CryptoProviderFactory.getProvider(client.getCryptLib().name()).createSymmetricKey();
     private final KeySymmetric tempKeyNative = CryptoUtils.of(tempKey);
     private final CryptoEngine tempKeyCp = tempKey.toCryptoEngine();
-    private final FastApiContext ctxSafe = new FastApiContext() {
+    private final MetaContextBase ctxSafe = new MetaContextBase() {
         @Override
         public void flush(FlushReport report) {
             Log.debug("test");
         }
     };
-    private final FastApiContext globalCtx = new FastApiContext();
+    private final MetaContextBase globalCtx = new MetaContextBase();
     private CryptoEngine gcp;
 
     public ConnectionRegistration(AetherCloudClient client, URI uri) {

@@ -44,7 +44,7 @@ dependencies {
     implementation 'com.h2database:h2:2.2.224'
     implementation 'io.aether.crypto:hydrogen-fast:+'
     implementation 'io.aether.crypto:sodium:+'
-    implementation 'io.aether:net-netty:+'
+    implementation 'io.aether:net-virtual:+'
     implementation 'org.jetbrains:annotations:24.0.1'
     implementation 'it.unimi.dsi:fastutil:8.5.12'
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.0'

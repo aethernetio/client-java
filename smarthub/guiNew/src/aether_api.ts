@@ -1,5 +1,5 @@
 import  {
-    AFuture, ARFuture, DataInOutStatic, FastMetaType, FastFutureContext, RemoteApi, FastMetaApi, BytesConverter, UUID, URI, AConsumer, ToString, AString
+    AFuture, ARFuture, DataInOutStatic, FastMetaType, MetaContext, RemoteApi, FastMetaApi, BytesConverter, UUID, URI, AConsumer, ToString, AString
 }
 from 'aether-client';
 import * as Impl from './aether_api_impl';
@@ -89,13 +89,13 @@ export class DeviceStream implements ToString  {
         return result;
         
     }
-    public accept(context: FastFutureContext, localApi: SmartHomeDeviceApi): void  {
+    public accept(context: MetaContext, localApi: SmartHomeDeviceApi): void  {
         const dataInStatic = new DataInOutStatic(this.data);
         if (!(SmartHomeDeviceApi as any).META) throw new Error(`META not found for API type SmartHomeDeviceApi`);
         (SmartHomeDeviceApi as any).META.makeLocal_fromDataIn(context, dataInStatic, localApi);
         
     }
-    public static remoteApi(context: FastFutureContext, apiConsumer: AConsumer<SmartHomeDeviceApiRemote>): DeviceStream  {
+    public static remoteApi(context: MetaContext, apiConsumer: AConsumer<SmartHomeDeviceApiRemote>): DeviceStream  {
         const api = (SmartHomeDeviceApi as any).META.makeRemote(context);
         apiConsumer(api);
         return new DeviceStream(context.remoteDataToArrayAsArray());
@@ -119,13 +119,13 @@ export class GuiStream implements ToString  {
         return result;
         
     }
-    public accept(context: FastFutureContext, localApi: SmartHomeGuiApi): void  {
+    public accept(context: MetaContext, localApi: SmartHomeGuiApi): void  {
         const dataInStatic = new DataInOutStatic(this.data);
         if (!(SmartHomeGuiApi as any).META) throw new Error(`META not found for API type SmartHomeGuiApi`);
         (SmartHomeGuiApi as any).META.makeLocal_fromDataIn(context, dataInStatic, localApi);
         
     }
-    public static remoteApi(context: FastFutureContext, apiConsumer: AConsumer<SmartHomeGuiApiRemote>): GuiStream  {
+    public static remoteApi(context: MetaContext, apiConsumer: AConsumer<SmartHomeGuiApiRemote>): GuiStream  {
         const api = (SmartHomeGuiApi as any).META.makeRemote(context);
         apiConsumer(api);
         return new GuiStream(context.remoteDataToArrayAsArray());

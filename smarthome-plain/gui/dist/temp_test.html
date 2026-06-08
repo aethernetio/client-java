@@ -18394,7 +18394,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   EventBiConsumer: () => (/* reexport safe */ _aether_future__WEBPACK_IMPORTED_MODULE_7__.EventBiConsumer),
 /* harmony export */   EventConsumer: () => (/* reexport safe */ _aether_future__WEBPACK_IMPORTED_MODULE_7__.EventConsumer),
 /* harmony export */   FastApiContext: () => (/* reexport safe */ _aether_fastmeta__WEBPACK_IMPORTED_MODULE_13__.FastApiContext),
-/* harmony export */   FastApiContextLocal: () => (/* reexport safe */ _aether_fastmeta__WEBPACK_IMPORTED_MODULE_13__.FastApiContextLocal),
+/* harmony export */   MetaContextLocal: () => (/* reexport safe */ _aether_fastmeta__WEBPACK_IMPORTED_MODULE_13__.MetaContextLocal),
 /* harmony export */   FastFutureContextStub: () => (/* reexport safe */ _aether_fastmeta__WEBPACK_IMPORTED_MODULE_13__.FastFutureContextStub),
 /* harmony export */   FastMeta: () => (/* reexport safe */ _aether_fastmeta__WEBPACK_IMPORTED_MODULE_13__.FastMeta),
 /* harmony export */   FlushReport: () => (/* reexport safe */ _aether_fastmeta__WEBPACK_IMPORTED_MODULE_13__.FlushReport),
@@ -19486,7 +19486,7 @@ class ConnectionRegistration extends _aether_client_connection_base__WEBPACK_IMP
                 }
             }
         };
-        this.ctxSafe = new _aether_fastmeta__WEBPACK_IMPORTED_MODULE_4__.FastApiContextLocal(localApi);
+        this.ctxSafe = new _aether_fastmeta__WEBPACK_IMPORTED_MODULE_4__.MetaContextLocal(localApi);
         this.globalCtx = new _aether_fastmeta__WEBPACK_IMPORTED_MODULE_4__.FastApiContext();
     }
     getAsymmetricPublicKey() {
@@ -20401,7 +20401,7 @@ class MessageNode {
      */
     toApiWithFactory(metaLt, localApiFactory) {
         const node = this;
-        const ctx = new class extends _aether_fastmeta__WEBPACK_IMPORTED_MODULE_3__.FastApiContextLocal {
+        const ctx = new class extends _aether_fastmeta__WEBPACK_IMPORTED_MODULE_3__.MetaContextLocal {
             constructor() {
                 super(localApiFactory);
             }
@@ -20430,7 +20430,7 @@ class MessageNode {
      */
     toApiR(metaLt, localApiFactory) {
         const nodeSend = this.send.bind(this);
-        const ctx = new (class extends _aether_fastmeta__WEBPACK_IMPORTED_MODULE_3__.FastApiContextLocal {
+        const ctx = new (class extends _aether_fastmeta__WEBPACK_IMPORTED_MODULE_3__.MetaContextLocal {
             constructor() {
                 super(localApiFactory); // Передаем фабрику
             }
@@ -22341,7 +22341,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   DataInOutStatic: () => (/* reexport safe */ _aether_datainout__WEBPACK_IMPORTED_MODULE_2__.DataInOutStatic),
 /* harmony export */   DeserializerPackNumber: () => (/* binding */ DeserializerPackNumber),
 /* harmony export */   FastApiContext: () => (/* binding */ FastApiContext),
-/* harmony export */   FastApiContextLocal: () => (/* binding */ FastApiContextLocal),
+/* harmony export */   MetaContextLocal: () => (/* binding */ MetaContextLocal),
 /* harmony export */   FastFutureContextStub: () => (/* binding */ FastFutureContextStub),
 /* harmony export */   FastMeta: () => (/* binding */ FastMeta),
 /* harmony export */   FlushReport: () => (/* binding */ FlushReport),
@@ -22447,7 +22447,7 @@ class DeserializerPackNumber {
     }
 }
 /**
- * A stub implementation of FastFutureContext for synchronous operations.
+ * A stub implementation of MetaContext for synchronous operations.
  */
 const FastFutureContextStub = {
     sendToRemote: (data) => { throw new Error("Context is a stub and cannot send data."); },
@@ -23129,7 +23129,7 @@ class FastApiContext {
 /**
  * Implementation of FastApiContext for a local API instance.
  */
-class FastApiContextLocal extends FastApiContext {
+class MetaContextLocal extends FastApiContext {
     localApi;
     constructor(localApi) {
         super();
@@ -23537,7 +23537,7 @@ class FastMetaClientWebSocket {
      * @param {FastMetaApi<LT, any>} localApiMeta Local API metadata
      * @param {FastMetaApi<any, RT>} remoteApiMeta Remote API metadata
      * @param {AFunction<RT, LT>} localApiProvider Local API provider function
-     * @returns {ARFuture<FastApiContextLocal<LT>>} Future resolving to connection context
+     * @returns {ARFuture<MetaContextLocal<LT>>} Future resolving to connection context
      */
     connect(uri, localApiMeta, remoteApiMeta, localApiProvider) {
         _aether_logging__WEBPACK_IMPORTED_MODULE_3__.Log.info("connect() called", { uri });
@@ -23755,7 +23755,7 @@ class FastMetaClientWebSocket {
             return;
         }
         try {
-            const context = new _aether_fastmeta__WEBPACK_IMPORTED_MODULE_2__.FastApiContextLocal((self) => {
+            const context = new _aether_fastmeta__WEBPACK_IMPORTED_MODULE_2__.MetaContextLocal((self) => {
                 const remoteApi = this.remoteApiMeta.makeRemote(self);
                 return this.localApiProvider(remoteApi);
             });
@@ -24071,7 +24071,7 @@ class FastMetaClientWebSocket {
     /**
      * @method getContext
      * @description Get connection context
-     * @returns {FastApiContextLocal<LT> | null} Connection context or null
+     * @returns {MetaContextLocal<LT> | null} Connection context or null
      */
     getContext() {
         return this.context;

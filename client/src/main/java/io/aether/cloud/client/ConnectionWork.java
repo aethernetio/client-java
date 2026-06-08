@@ -4,7 +4,7 @@ import io.aether.api.clientserverapi.*;
 import io.aether.api.common.*;
 import io.aether.crypto.CryptoEngine;
 import io.aether.logger.Log;
-import io.aether.net.fastMeta.FastApiContext;
+import io.aether.net.fastMeta.MetaContextBase;
 import io.aether.net.fastMeta.FlushReport;
 import io.aether.utils.RU;
 import io.aether.utils.flow.Flow;
@@ -33,7 +33,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
 
     final ClientApiSafe apiSafe;
 
-    final FastApiContext apiSafeCtx;
+    final MetaContextBase apiSafeCtx;
 
     final CryptoEngine cryptoEngine;
 
@@ -48,7 +48,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
     volatile boolean firstAuth;
 
     public ConnectionWork(AetherCloudClient client, ServerDescriptor s) {
-        super(client, s.getIpAddress().getURI(AetherCodec.UDP), ClientApiUnsafe.META, LoginApi.META);
+        super(client, s.getIpAddress().getURI(AetherCodec.TCP), ClientApiUnsafe.META, LoginApi.META);
         this.apiSafe = new MyClientApiSafe(client, this);
         apiSafeCtx = new MyFastApiContext(client);
         cryptoEngine = client.getCryptoEngineForServer(s.getId());
@@ -143,28 +143,36 @@ protected void onConnectionStateChanged(boolean isWritable) {
             a.client(task.uid, new ClientApiStream(apiSafeCtx, task.task::accept));
         }
         List<Message> messagesForSend = null;
-        List<Tuple2<byte[], AFuture>> messagesForSend2 = new ArrayList<>();
+
         List<Runnable> tasksForCancelMessages = new ArrayList<>();
+
+        List<Tuple2<byte[], AFuture>> messagesForSend2 = new ArrayList<>();
+
         for (var m : client.messageNodeMap.values()) {
             if (m.connectionsOut.contains(this)) {
+
+
+                List<Tuple2<byte[], AFuture>> nodeMessages = new ArrayList<>();
                 int currentBatchSize = 0;
                 final int MAX_BATCH_BYTES = 512 * 1024; // 512 KB для Java
                 while (true) {
                     var entry = m.bufferOut.peekFirst();
                     if (entry == null || (currentBatchSize + entry.val1().length > MAX_BATCH_BYTES)) break;
-                    messagesForSend2.add(m.bufferOut.pollFirst());
-                    currentBatchSize += messagesForSend2.get(messagesForSend2.size()-1).val1().length;
+                    nodeMessages.add(m.bufferOut.pollFirst());
+                    currentBatchSize += nodeMessages.get(nodeMessages.size()-1).val1().length;
                 }
-                if (!messagesForSend2.isEmpty()) {
+                if (!nodeMessages.isEmpty()) {
                     Log.debug("message send client to server: $uidFrom -> $uidTo", "uidFrom", client.getUid(), "uidTo", m.consumer);
                     if (messagesForSend == null) {
                         messagesForSend = new ObjectArrayList<>();
                     }
-                    Flow.flow(messagesForSend2).map(v -> new Message(m.consumer, v.val1())).toCollection(messagesForSend);
+                    Flow.flow(nodeMessages).map(v -> new Message(m.consumer, v.val1())).toCollection(messagesForSend);
+                    messagesForSend2.addAll(nodeMessages);
                     tasksForCancelMessages.add(() -> {
-                        m.bufferOut.addAll(messagesForSend2);
+                        m.bufferOut.addAll(nodeMessages);
                     });
                 }
+
             }
         }
 
@@ -438,7 +446,7 @@ protected void onConnectionStateChanged(boolean isWritable) {
 
     }
 
-    private class MyFastApiContext extends FastApiContext {
+    private class MyFastApiContext extends MetaContextBase {
 
         private final AetherCloudClient client;
 
@@ -448,7 +456,7 @@ protected void onConnectionStateChanged(boolean isWritable) {
 
         @Override
         public void flush(FlushReport report) {
-            if (fastMetaClient == null || !fastMetaClient.isWritable()) {
+            if (!isWritable()) {
                 report.abort();
                 return;
             }

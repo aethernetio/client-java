@@ -8,7 +8,7 @@ import io.aether.api.common.KeySignPublic;
 import io.aether.api.common.ServerDescriptor;
 import io.aether.crypto.SignChecker;
 import io.aether.logger.Log;
-import io.aether.net.fastMeta.FastFutureContext;
+import io.aether.net.fastMeta.MetaContext;
 import io.aether.utils.AString;
 import io.aether.utils.ConcurrentHashSet;
 import io.aether.utils.RU;
@@ -222,7 +222,7 @@ public class ClientStateInMemory implements ClientState, ToString {
 
     public byte[] save() {
         DataInOut d = new DataInOut();
-        ClientStateForSave.META.serialize(FastFutureContext.STUB, toDTO(), d);
+        ClientStateForSave.META.serialize(MetaContext.STUB, toDTO(), d);
         return d.toArray();
     }
 
@@ -253,7 +253,7 @@ public class ClientStateInMemory implements ClientState, ToString {
         }
     }
     public void loadState(byte[] data) {
-        var dto = ClientStateForSave.META.deserialize(FastFutureContext.STUB, new DataInOutStatic(data));
+        var dto = ClientStateForSave.META.deserialize(MetaContext.STUB, new DataInOutStatic(data));
         loadState(dto);
     }
     public void loadState(ClientStateForSave dto) {
@@ -286,7 +286,7 @@ public class ClientStateInMemory implements ClientState, ToString {
 
     public static ClientStateInMemory load(byte[] data) {
         try {
-            var dto = ClientStateForSave.META.deserialize(FastFutureContext.STUB, new DataInOutStatic(data));
+            var dto = ClientStateForSave.META.deserialize(MetaContext.STUB, new DataInOutStatic(data));
             return new ClientStateInMemory(dto);
         } catch (Exception e) {
             throw new IllegalStateException("Unparsable format state", e);

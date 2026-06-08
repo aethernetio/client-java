@@ -432,6 +432,12 @@ public final class AetherCloudClient implements Destroyable {
                 return;
             makeFirstConnection();
         }
+        clouds.checkTimeouts();
+        servers.checkTimeouts();
+        clientGroups.checkTimeouts();
+        accessGroups.checkTimeouts();
+        allAccessedClients.checkTimeouts();
+        accessCheckCache.checkTimeouts();
         for (var c : connections.values()) {
             c.flush();
         }

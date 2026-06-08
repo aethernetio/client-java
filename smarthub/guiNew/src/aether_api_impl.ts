@@ -1,5 +1,5 @@
 import  {
-    AFuture, ARFuture, DataIn, DataOut, DataInOut, DataInOutStatic, FastMetaType, FastFutureContext, FastMeta, SerializerPackNumber, DeserializerPackNumber, FastApiContextLocal, FastMetaApi, FastFutureContextStub, UUID, URI, AString, FlushReport
+    AFuture, ARFuture, DataIn, DataOut, DataInOut, DataInOutStatic, FastMetaType, MetaContext, FastMeta, SerializerPackNumber, DeserializerPackNumber, MetaContextLocal, FastMetaApi, FastFutureContextStub, UUID, URI, AString, FlushReport
 }
 from 'aether-client';
 import  {
@@ -8,12 +8,12 @@ import  {
 from './aether_api';
 // This is always relative
 export class SensorRecordMetaBodyImpl implements FastMetaType<SensorRecord>  {
-    serialize(sCtx_0: FastFutureContext, obj_1: SensorRecord, _out_2: DataOut): void  {
+    serialize(sCtx_0: MetaContext, obj_1: SensorRecord, _out_2: DataOut): void  {
         _out_2.writeByte(obj_1.value);
         _out_2.writeByte(obj_1.time);
         
     }
-    deserialize(sCtx_0: FastFutureContext, in__3: DataIn): SensorRecord  {
+    deserialize(sCtx_0: MetaContext, in__3: DataIn): SensorRecord  {
         let value_4: number;
         let time_5: number;
         value_4 = in__3.readByte();
@@ -71,11 +71,11 @@ export class SensorRecordMetaBodyImpl implements FastMetaType<SensorRecord>  {
     
 }
 export class DeviceStreamMetaImpl implements FastMetaType<DeviceStream>  {
-    serialize(ctx: FastFutureContext, obj: DeviceStream, out: DataOut): void  {
+    serialize(ctx: MetaContext, obj: DeviceStream, out: DataOut): void  {
         FastMeta.META_ARRAY_BYTE.serialize(ctx, obj.data, out);
         
     }
-    deserialize(ctx: FastFutureContext, in_: DataIn): DeviceStream  {
+    deserialize(ctx: MetaContext, in_: DataIn): DeviceStream  {
         return new DeviceStream(FastMeta.META_ARRAY_BYTE.deserialize(ctx, in_));
         
     }
@@ -116,11 +116,11 @@ export class DeviceStreamMetaImpl implements FastMetaType<DeviceStream>  {
     
 }
 export class GuiStreamMetaImpl implements FastMetaType<GuiStream>  {
-    serialize(ctx: FastFutureContext, obj: GuiStream, out: DataOut): void  {
+    serialize(ctx: MetaContext, obj: GuiStream, out: DataOut): void  {
         FastMeta.META_ARRAY_BYTE.serialize(ctx, obj.data, out);
         
     }
-    deserialize(ctx: FastFutureContext, in_: DataIn): GuiStream  {
+    deserialize(ctx: MetaContext, in_: DataIn): GuiStream  {
         return new GuiStream(FastMeta.META_ARRAY_BYTE.deserialize(ctx, in_));
         
     }
@@ -161,7 +161,7 @@ export class GuiStreamMetaImpl implements FastMetaType<GuiStream>  {
     
 }
 export class SmartHomeHubRegistryApiMetaImpl implements FastMetaApi<SmartHomeHubRegistryApi, SmartHomeHubRegistryApiRemote>  {
-    makeLocal_fromDataIn(ctx: FastFutureContext, dataIn: DataIn, localApi: SmartHomeHubRegistryApi): void  {
+    makeLocal_fromDataIn(ctx: MetaContext, dataIn: DataIn, localApi: SmartHomeHubRegistryApi): void  {
         while(dataIn.isReadable())  {
             const commandId = dataIn.readUByte();
             switch(commandId)  {
@@ -210,15 +210,15 @@ export class SmartHomeHubRegistryApiMetaImpl implements FastMetaApi<SmartHomeHub
         }
         
     }
-    makeLocal_fromBytes_ctxLocal(ctx: FastApiContextLocal<SmartHomeHubRegistryApi>, data: Uint8Array): void  {
+    makeLocal_fromBytes_ctxLocal(ctx: MetaContextLocal<SmartHomeHubRegistryApi>, data: Uint8Array): void  {
         this.makeLocal_fromDataIn(ctx, new DataInOutStatic(data), ctx.localApi);
         
     }
-    makeLocal_fromBytes_ctx(ctx: FastFutureContext, data: Uint8Array, localApi: SmartHomeHubRegistryApi): void  {
+    makeLocal_fromBytes_ctx(ctx: MetaContext, data: Uint8Array, localApi: SmartHomeHubRegistryApi): void  {
         this.makeLocal_fromDataIn(ctx, new DataInOutStatic(data), localApi);
         
     }
-    makeRemote(sCtx_14: FastFutureContext): SmartHomeHubRegistryApiRemote  {
+    makeRemote(sCtx_14: MetaContext): SmartHomeHubRegistryApiRemote  {
         const remoteApiImpl =  {
             flush: (sendFuture: FlushReport): void =>  {
                 sCtx_14.flush(sendFuture);
@@ -252,7 +252,7 @@ export class SmartHomeHubRegistryApiMetaImpl implements FastMetaApi<SmartHomeHub
     
 }
 export class SmartHomeDeviceApiMetaImpl implements FastMetaApi<SmartHomeDeviceApi, SmartHomeDeviceApiRemote>  {
-    makeLocal_fromDataIn(ctx: FastFutureContext, dataIn: DataIn, localApi: SmartHomeDeviceApi): void  {
+    makeLocal_fromDataIn(ctx: MetaContext, dataIn: DataIn, localApi: SmartHomeDeviceApi): void  {
         while(dataIn.isReadable())  {
             const commandId = dataIn.readUByte();
             switch(commandId)  {
@@ -299,15 +299,15 @@ export class SmartHomeDeviceApiMetaImpl implements FastMetaApi<SmartHomeDeviceAp
         }
         
     }
-    makeLocal_fromBytes_ctxLocal(ctx: FastApiContextLocal<SmartHomeDeviceApi>, data: Uint8Array): void  {
+    makeLocal_fromBytes_ctxLocal(ctx: MetaContextLocal<SmartHomeDeviceApi>, data: Uint8Array): void  {
         this.makeLocal_fromDataIn(ctx, new DataInOutStatic(data), ctx.localApi);
         
     }
-    makeLocal_fromBytes_ctx(ctx: FastFutureContext, data: Uint8Array, localApi: SmartHomeDeviceApi): void  {
+    makeLocal_fromBytes_ctx(ctx: MetaContext, data: Uint8Array, localApi: SmartHomeDeviceApi): void  {
         this.makeLocal_fromDataIn(ctx, new DataInOutStatic(data), localApi);
         
     }
-    makeRemote(sCtx_32: FastFutureContext): SmartHomeDeviceApiRemote  {
+    makeRemote(sCtx_32: MetaContext): SmartHomeDeviceApiRemote  {
         const remoteApiImpl =  {
             flush: (sendFuture: FlushReport): void =>  {
                 sCtx_32.flush(sendFuture);
@@ -336,7 +336,7 @@ export class SmartHomeDeviceApiMetaImpl implements FastMetaApi<SmartHomeDeviceAp
     
 }
 export class SmartHomeGuiApiMetaImpl implements FastMetaApi<SmartHomeGuiApi, SmartHomeGuiApiRemote>  {
-    makeLocal_fromDataIn(ctx: FastFutureContext, dataIn: DataIn, localApi: SmartHomeGuiApi): void  {
+    makeLocal_fromDataIn(ctx: MetaContext, dataIn: DataIn, localApi: SmartHomeGuiApi): void  {
         while(dataIn.isReadable())  {
             const commandId = dataIn.readUByte();
             switch(commandId)  {
@@ -385,15 +385,15 @@ export class SmartHomeGuiApiMetaImpl implements FastMetaApi<SmartHomeGuiApi, Sma
         }
         
     }
-    makeLocal_fromBytes_ctxLocal(ctx: FastApiContextLocal<SmartHomeGuiApi>, data: Uint8Array): void  {
+    makeLocal_fromBytes_ctxLocal(ctx: MetaContextLocal<SmartHomeGuiApi>, data: Uint8Array): void  {
         this.makeLocal_fromDataIn(ctx, new DataInOutStatic(data), ctx.localApi);
         
     }
-    makeLocal_fromBytes_ctx(ctx: FastFutureContext, data: Uint8Array, localApi: SmartHomeGuiApi): void  {
+    makeLocal_fromBytes_ctx(ctx: MetaContext, data: Uint8Array, localApi: SmartHomeGuiApi): void  {
         this.makeLocal_fromDataIn(ctx, new DataInOutStatic(data), localApi);
         
     }
-    makeRemote(sCtx_47: FastFutureContext): SmartHomeGuiApiRemote  {
+    makeRemote(sCtx_47: MetaContext): SmartHomeGuiApiRemote  {
         const remoteApiImpl =  {
             flush: (sendFuture: FlushReport): void =>  {
                 sCtx_47.flush(sendFuture);
@@ -427,7 +427,7 @@ export class SmartHomeGuiApiMetaImpl implements FastMetaApi<SmartHomeGuiApi, Sma
     
 }
 export class SmartHomeClientGuiApiMetaImpl implements FastMetaApi<SmartHomeClientGuiApi, SmartHomeClientGuiApiRemote>  {
-    makeLocal_fromDataIn(ctx: FastFutureContext, dataIn: DataIn, localApi: SmartHomeClientGuiApi): void  {
+    makeLocal_fromDataIn(ctx: MetaContext, dataIn: DataIn, localApi: SmartHomeClientGuiApi): void  {
         while(dataIn.isReadable())  {
             const commandId = dataIn.readUByte();
             switch(commandId)  {
@@ -512,15 +512,15 @@ export class SmartHomeClientGuiApiMetaImpl implements FastMetaApi<SmartHomeClien
         }
         
     }
-    makeLocal_fromBytes_ctxLocal(ctx: FastApiContextLocal<SmartHomeClientGuiApi>, data: Uint8Array): void  {
+    makeLocal_fromBytes_ctxLocal(ctx: MetaContextLocal<SmartHomeClientGuiApi>, data: Uint8Array): void  {
         this.makeLocal_fromDataIn(ctx, new DataInOutStatic(data), ctx.localApi);
         
     }
-    makeLocal_fromBytes_ctx(ctx: FastFutureContext, data: Uint8Array, localApi: SmartHomeClientGuiApi): void  {
+    makeLocal_fromBytes_ctx(ctx: MetaContext, data: Uint8Array, localApi: SmartHomeClientGuiApi): void  {
         this.makeLocal_fromDataIn(ctx, new DataInOutStatic(data), localApi);
         
     }
-    makeRemote(sCtx_78: FastFutureContext): SmartHomeClientGuiApiRemote  {
+    makeRemote(sCtx_78: MetaContext): SmartHomeClientGuiApiRemote  {
         const remoteApiImpl =  {
             flush: (sendFuture: FlushReport): void =>  {
                 sCtx_78.flush(sendFuture);

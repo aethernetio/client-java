@@ -1,5 +1,5 @@
 import  {
-    AFuture, ARFuture, DataIn, DataOut, DataInOut, DataInOutStatic, FastMetaType, FastFutureContext, RemoteApi, FastMeta, SerializerPackNumber, DeserializerPackNumber, FastApiContextLocal, FastMetaApi, BytesConverter, UUID, URI, AConsumer, ToString, AString, FlushReport
+    AFuture, ARFuture, DataIn, DataOut, DataInOut, DataInOutStatic, FastMetaType, MetaContext, RemoteApi, FastMeta, SerializerPackNumber, DeserializerPackNumber, MetaContextLocal, FastMetaApi, BytesConverter, UUID, URI, AConsumer, ToString, AString, FlushReport
 }
 from 'aether-client';
 import * as Impl from './aether_api_impl';

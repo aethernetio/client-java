@@ -1,5 +1,5 @@
 import  {
-    AFuture, ARFuture, DataIn, DataOut, DataInOut, DataInOutStatic, FastMetaType, FastFutureContext, RemoteApi, FastMeta, SerializerPackNumber, DeserializerPackNumber, FastApiContextLocal, FastMetaApi, BytesConverter, RemoteApiFuture, FastFutureContextStub, UUID, URI, AConsumer, ToString, AString
+    AFuture, ARFuture, DataIn, DataOut, DataInOut, DataInOutStatic, FastMetaType, MetaContext, RemoteApi, FastMeta, SerializerPackNumber, DeserializerPackNumber, MetaContextLocal, FastMetaApi, BytesConverter, RemoteApiFuture, FastFutureContextStub, UUID, URI, AConsumer, ToString, AString
 }
 from 'aether-client';
 import  {
@@ -8,7 +8,7 @@ import  {
 from './aether_api';
 // This is always relative
 export class HardwareDeviceMetaImpl implements FastMetaType<HardwareDevice>  {
-    serialize(sCtx_0: FastFutureContext, obj_1: HardwareDevice, _out_2: DataOut): void  {
+    serialize(sCtx_0: MetaContext, obj_1: HardwareDevice, _out_2: DataOut): void  {
         const typeId = typeof (obj_1 as any).getAetherTypeId === 'function' ? obj_1.getAetherTypeId() : -1;
         if (typeId === undefined || typeId < 0) throw new Error(`Cannot serialize 'HardwareDevice' with invalid type id $ {
             typeId
@@ -28,7 +28,7 @@ export class HardwareDeviceMetaImpl implements FastMetaType<HardwareDevice>  {
         }
         
     }
-    deserialize(sCtx_0: FastFutureContext, in__3: DataIn): HardwareDevice  {
+    deserialize(sCtx_0: MetaContext, in__3: DataIn): HardwareDevice  {
         const typeId = in__3.readUByte();
         switch(typeId)  {
             case 1: return (HardwareSensor as any).META_BODY.deserialize(sCtx_0, in__3) as any as HardwareDevice;
@@ -113,7 +113,7 @@ export class HardwareDeviceMetaImpl implements FastMetaType<HardwareDevice>  {
     
 }
 export class VariantDataMetaImpl implements FastMetaType<VariantData>  {
-    serialize(sCtx_4: FastFutureContext, obj_5: VariantData, _out_6: DataOut): void  {
+    serialize(sCtx_4: MetaContext, obj_5: VariantData, _out_6: DataOut): void  {
         const typeId = typeof (obj_5 as any).getAetherTypeId === 'function' ? obj_5.getAetherTypeId() : -1;
         if (typeId === undefined || typeId < 0) throw new Error(`Cannot serialize 'VariantData' with invalid type id $ {
             typeId
@@ -139,7 +139,7 @@ export class VariantDataMetaImpl implements FastMetaType<VariantData>  {
         }
         
     }
-    deserialize(sCtx_4: FastFutureContext, in__7: DataIn): VariantData  {
+    deserialize(sCtx_4: MetaContext, in__7: DataIn): VariantData  {
         const typeId = in__7.readUByte();
         switch(typeId)  {
             case 1: return (VariantBool as any).META_BODY.deserialize(sCtx_4, in__7) as any as VariantData;
@@ -239,7 +239,7 @@ export class VariantDataMetaImpl implements FastMetaType<VariantData>  {
     
 }
 export class AppStateDataMetaBodyImpl implements FastMetaType<AppStateData>  {
-    serialize(sCtx_8: FastFutureContext, obj_9: AppStateData, _out_10: DataOut): void  {
+    serialize(sCtx_8: MetaContext, obj_9: AppStateData, _out_10: DataOut): void  {
         let _mask: number = 0;
         if (obj_9.targetCommutatorUuid === null) _mask |= 1;
         _out_10.writeByte(_mask);
@@ -278,7 +278,7 @@ export class AppStateDataMetaBodyImpl implements FastMetaType<AppStateData>  {
         }
         
     }
-    deserialize(sCtx_8: FastFutureContext, in__11: DataIn): AppStateData  {
+    deserialize(sCtx_8: MetaContext, in__11: DataIn): AppStateData  {
         let pollingTimeoutMs_20: number;
         let pollingBufferSize_21: number;
         let targetDeviceId_22: number;
@@ -428,12 +428,12 @@ export class AppStateDataMetaBodyImpl implements FastMetaType<AppStateData>  {
     
 }
 export class DeviceStateDataMetaBodyImpl implements FastMetaType<DeviceStateData>  {
-    serialize(sCtx_46: FastFutureContext, obj_47: DeviceStateData, _out_48: DataOut): void  {
+    serialize(sCtx_46: MetaContext, obj_47: DeviceStateData, _out_48: DataOut): void  {
         VariantData.META.serialize(sCtx_46, obj_47.payload, _out_48);
         _out_48.writeLong(obj_47.timestamp.getTime());
         
     }
-    deserialize(sCtx_46: FastFutureContext, in__49: DataIn): DeviceStateData  {
+    deserialize(sCtx_46: MetaContext, in__49: DataIn): DeviceStateData  {
         let payload_50: VariantData;
         let timestamp_51: Date;
         payload_50 = VariantData.META.deserialize(sCtx_46, in__49);
@@ -491,12 +491,12 @@ export class DeviceStateDataMetaBodyImpl implements FastMetaType<DeviceStateData
     
 }
 export class GraphPointMetaBodyImpl implements FastMetaType<GraphPoint>  {
-    serialize(sCtx_52: FastFutureContext, obj_53: GraphPoint, _out_54: DataOut): void  {
+    serialize(sCtx_52: MetaContext, obj_53: GraphPoint, _out_54: DataOut): void  {
         _out_54.writeLong(obj_53.timestamp);
         _out_54.writeDouble(obj_53.value);
         
     }
-    deserialize(sCtx_52: FastFutureContext, in__55: DataIn): GraphPoint  {
+    deserialize(sCtx_52: MetaContext, in__55: DataIn): GraphPoint  {
         let timestamp_56: bigint;
         let value_57: number;
         timestamp_56 = in__55.readLong();
@@ -554,14 +554,14 @@ export class GraphPointMetaBodyImpl implements FastMetaType<GraphPoint>  {
     
 }
 export class HardwareActorMetaBodyImpl implements FastMetaType<HardwareActor>  {
-    serialize(sCtx_58: FastFutureContext, obj_59: HardwareActor, _out_60: DataOut): void  {
+    serialize(sCtx_58: MetaContext, obj_59: HardwareActor, _out_60: DataOut): void  {
         _out_60.writeInt(obj_59.localId);
         const stringBytes_62 = new TextEncoder().encode(obj_59.descriptor);
         SerializerPackNumber.INSTANCE.put(_out_60, stringBytes_62.length);
         _out_60.write(stringBytes_62);
         
     }
-    deserialize(sCtx_58: FastFutureContext, in__61: DataIn): HardwareActor  {
+    deserialize(sCtx_58: MetaContext, in__61: DataIn): HardwareActor  {
         let localId_64: number;
         let descriptor_65: string;
         localId_64 = in__61.readInt();
@@ -625,7 +625,7 @@ export class HardwareActorMetaBodyImpl implements FastMetaType<HardwareActor>  {
     
 }
 export class HardwareActorMetaImpl implements FastMetaType<HardwareActor>  {
-    serialize(sCtx_70: FastFutureContext, obj_71: HardwareActor, _out_72: DataOut): void  {
+    serialize(sCtx_70: MetaContext, obj_71: HardwareActor, _out_72: DataOut): void  {
         const typeId = typeof (obj_71 as any).getAetherTypeId === 'function' ? obj_71.getAetherTypeId() : -1;
         if (typeId === undefined || typeId < 0) throw new Error(`Cannot serialize 'HardwareActor' with invalid type id $ {
             typeId
@@ -645,7 +645,7 @@ export class HardwareActorMetaImpl implements FastMetaType<HardwareActor>  {
         }
         
     }
-    deserialize(sCtx_70: FastFutureContext, in__73: DataIn): HardwareActor  {
+    deserialize(sCtx_70: MetaContext, in__73: DataIn): HardwareActor  {
         const typeId = in__73.readUByte();
         switch(typeId)  {
             case 2: return (HardwareActor as any).META_BODY.deserialize(sCtx_70, in__73) as any as HardwareActor;
@@ -730,7 +730,7 @@ export class HardwareActorMetaImpl implements FastMetaType<HardwareActor>  {
     
 }
 export class HardwareSensorMetaBodyImpl implements FastMetaType<HardwareSensor>  {
-    serialize(sCtx_74: FastFutureContext, obj_75: HardwareSensor, _out_76: DataOut): void  {
+    serialize(sCtx_74: MetaContext, obj_75: HardwareSensor, _out_76: DataOut): void  {
         let _mask: number = 0;
         if (obj_75.unit === null) _mask |= 1;
         _out_76.writeByte(_mask);
@@ -746,7 +746,7 @@ export class HardwareSensorMetaBodyImpl implements FastMetaType<HardwareSensor> 
         }
         
     }
-    deserialize(sCtx_74: FastFutureContext, in__77: DataIn): HardwareSensor  {
+    deserialize(sCtx_74: MetaContext, in__77: DataIn): HardwareSensor  {
         let localId_82: number;
         let descriptor_83: string;
         let unit_84: string;
@@ -828,7 +828,7 @@ export class HardwareSensorMetaBodyImpl implements FastMetaType<HardwareSensor> 
     
 }
 export class HardwareSensorMetaImpl implements FastMetaType<HardwareSensor>  {
-    serialize(sCtx_93: FastFutureContext, obj_94: HardwareSensor, _out_95: DataOut): void  {
+    serialize(sCtx_93: MetaContext, obj_94: HardwareSensor, _out_95: DataOut): void  {
         const typeId = typeof (obj_94 as any).getAetherTypeId === 'function' ? obj_94.getAetherTypeId() : -1;
         if (typeId === undefined || typeId < 0) throw new Error(`Cannot serialize 'HardwareSensor' with invalid type id $ {
             typeId
@@ -848,7 +848,7 @@ export class HardwareSensorMetaImpl implements FastMetaType<HardwareSensor>  {
         }
         
     }
-    deserialize(sCtx_93: FastFutureContext, in__96: DataIn): HardwareSensor  {
+    deserialize(sCtx_93: MetaContext, in__96: DataIn): HardwareSensor  {
         const typeId = in__96.readUByte();
         switch(typeId)  {
             case 1: return (HardwareSensor as any).META_BODY.deserialize(sCtx_93, in__96) as any as HardwareSensor;
@@ -933,7 +933,7 @@ export class HardwareSensorMetaImpl implements FastMetaType<HardwareSensor>  {
     
 }
 export class KnownCommutatorMetaBodyImpl implements FastMetaType<KnownCommutator>  {
-    serialize(sCtx_97: FastFutureContext, obj_98: KnownCommutator, _out_99: DataOut): void  {
+    serialize(sCtx_97: MetaContext, obj_98: KnownCommutator, _out_99: DataOut): void  {
         let _mask: number = 0;
         if (obj_98.label === null) _mask |= 1;
         _out_99.writeByte(_mask);
@@ -951,7 +951,7 @@ export class KnownCommutatorMetaBodyImpl implements FastMetaType<KnownCommutator
         _out_99.writeInt(obj_98.totalResponses);
         
     }
-    deserialize(sCtx_97: FastFutureContext, in__100: DataIn): KnownCommutator  {
+    deserialize(sCtx_97: MetaContext, in__100: DataIn): KnownCommutator  {
         let uuid_105: string;
         let label_106: string;
         let lastSeen_107: bigint;
@@ -1043,12 +1043,12 @@ export class KnownCommutatorMetaBodyImpl implements FastMetaType<KnownCommutator
     
 }
 export class MetricPointMetaBodyImpl implements FastMetaType<MetricPoint>  {
-    serialize(sCtx_118: FastFutureContext, obj_119: MetricPoint, _out_120: DataOut): void  {
+    serialize(sCtx_118: MetaContext, obj_119: MetricPoint, _out_120: DataOut): void  {
         _out_120.writeLong(obj_119.timestamp);
         _out_120.writeInt(obj_119.rtt);
         
     }
-    deserialize(sCtx_118: FastFutureContext, in__121: DataIn): MetricPoint  {
+    deserialize(sCtx_118: MetaContext, in__121: DataIn): MetricPoint  {
         let timestamp_122: bigint;
         let rtt_123: number;
         timestamp_122 = in__121.readLong();
@@ -1106,7 +1106,7 @@ export class MetricPointMetaBodyImpl implements FastMetaType<MetricPoint>  {
     
 }
 export class SensorHistorySeriesMetaBodyImpl implements FastMetaType<SensorHistorySeries>  {
-    serialize(sCtx_124: FastFutureContext, obj_125: SensorHistorySeries, _out_126: DataOut): void  {
+    serialize(sCtx_124: MetaContext, obj_125: SensorHistorySeries, _out_126: DataOut): void  {
         let _mask: number = 0;
         if (obj_125.unit === null) _mask |= 1;
         _out_126.writeByte(_mask);
@@ -1130,7 +1130,7 @@ export class SensorHistorySeriesMetaBodyImpl implements FastMetaType<SensorHisto
         }
         
     }
-    deserialize(sCtx_124: FastFutureContext, in__127: DataIn): SensorHistorySeries  {
+    deserialize(sCtx_124: MetaContext, in__127: DataIn): SensorHistorySeries  {
         let commutatorUuid_135: string;
         let deviceId_136: number;
         let deviceName_137: string;
@@ -1233,11 +1233,11 @@ export class SensorHistorySeriesMetaBodyImpl implements FastMetaType<SensorHisto
     
 }
 export class VariantBoolMetaBodyImpl implements FastMetaType<VariantBool>  {
-    serialize(sCtx_154: FastFutureContext, obj_155: VariantBool, _out_156: DataOut): void  {
+    serialize(sCtx_154: MetaContext, obj_155: VariantBool, _out_156: DataOut): void  {
         _out_156.writeBoolean(obj_155.value);
         
     }
-    deserialize(sCtx_154: FastFutureContext, in__157: DataIn): VariantBool  {
+    deserialize(sCtx_154: MetaContext, in__157: DataIn): VariantBool  {
         let value_158: boolean;
         value_158 = in__157.readBoolean();
         return new VariantBool(value_158);
@@ -1289,7 +1289,7 @@ export class VariantBoolMetaBodyImpl implements FastMetaType<VariantBool>  {
     
 }
 export class VariantBoolMetaImpl implements FastMetaType<VariantBool>  {
-    serialize(sCtx_159: FastFutureContext, obj_160: VariantBool, _out_161: DataOut): void  {
+    serialize(sCtx_159: MetaContext, obj_160: VariantBool, _out_161: DataOut): void  {
         const typeId = typeof (obj_160 as any).getAetherTypeId === 'function' ? obj_160.getAetherTypeId() : -1;
         if (typeId === undefined || typeId < 0) throw new Error(`Cannot serialize 'VariantBool' with invalid type id $ {
             typeId
@@ -1315,7 +1315,7 @@ export class VariantBoolMetaImpl implements FastMetaType<VariantBool>  {
         }
         
     }
-    deserialize(sCtx_159: FastFutureContext, in__162: DataIn): VariantBool  {
+    deserialize(sCtx_159: MetaContext, in__162: DataIn): VariantBool  {
         const typeId = in__162.readUByte();
         switch(typeId)  {
             case 1: return (VariantBool as any).META_BODY.deserialize(sCtx_159, in__162) as any as VariantBool;
@@ -1415,12 +1415,12 @@ export class VariantBoolMetaImpl implements FastMetaType<VariantBool>  {
     
 }
 export class VariantBytesMetaBodyImpl implements FastMetaType<VariantBytes>  {
-    serialize(sCtx_163: FastFutureContext, obj_164: VariantBytes, _out_165: DataOut): void  {
+    serialize(sCtx_163: MetaContext, obj_164: VariantBytes, _out_165: DataOut): void  {
         SerializerPackNumber.INSTANCE.put(_out_165, obj_164.value.length);
         _out_165.write(obj_164.value);
         
     }
-    deserialize(sCtx_163: FastFutureContext, in__166: DataIn): VariantBytes  {
+    deserialize(sCtx_163: MetaContext, in__166: DataIn): VariantBytes  {
         let value_168: Uint8Array;
         const len_170 = Number(DeserializerPackNumber.INSTANCE.put(in__166));
         const bytes_171 = in__166.readBytes(len_170);
@@ -1474,7 +1474,7 @@ export class VariantBytesMetaBodyImpl implements FastMetaType<VariantBytes>  {
     
 }
 export class VariantBytesMetaImpl implements FastMetaType<VariantBytes>  {
-    serialize(sCtx_172: FastFutureContext, obj_173: VariantBytes, _out_174: DataOut): void  {
+    serialize(sCtx_172: MetaContext, obj_173: VariantBytes, _out_174: DataOut): void  {
         const typeId = typeof (obj_173 as any).getAetherTypeId === 'function' ? obj_173.getAetherTypeId() : -1;
         if (typeId === undefined || typeId < 0) throw new Error(`Cannot serialize 'VariantBytes' with invalid type id $ {
             typeId
@@ -1500,7 +1500,7 @@ export class VariantBytesMetaImpl implements FastMetaType<VariantBytes>  {
         }
         
     }
-    deserialize(sCtx_172: FastFutureContext, in__175: DataIn): VariantBytes  {
+    deserialize(sCtx_172: MetaContext, in__175: DataIn): VariantBytes  {
         const typeId = in__175.readUByte();
         switch(typeId)  {
             case 5: return (VariantBytes as any).META_BODY.deserialize(sCtx_172, in__175) as any as VariantBytes;
@@ -1600,11 +1600,11 @@ export class VariantBytesMetaImpl implements FastMetaType<VariantBytes>  {
     
 }
 export class VariantDoubleMetaBodyImpl implements FastMetaType<VariantDouble>  {
-    serialize(sCtx_176: FastFutureContext, obj_177: VariantDouble, _out_178: DataOut): void  {
+    serialize(sCtx_176: MetaContext, obj_177: VariantDouble, _out_178: DataOut): void  {
         _out_178.writeDouble(obj_177.value);
         
     }
-    deserialize(sCtx_176: FastFutureContext, in__179: DataIn): VariantDouble  {
+    deserialize(sCtx_176: MetaContext, in__179: DataIn): VariantDouble  {
         let value_180: number;
         value_180 = in__179.readDouble();
         return new VariantDouble(value_180);
@@ -1656,7 +1656,7 @@ export class VariantDoubleMetaBodyImpl implements FastMetaType<VariantDouble>  {
     
 }
 export class VariantDoubleMetaImpl implements FastMetaType<VariantDouble>  {
-    serialize(sCtx_181: FastFutureContext, obj_182: VariantDouble, _out_183: DataOut): void  {
+    serialize(sCtx_181: MetaContext, obj_182: VariantDouble, _out_183: DataOut): void  {
         const typeId = typeof (obj_182 as any).getAetherTypeId === 'function' ? obj_182.getAetherTypeId() : -1;
         if (typeId === undefined || typeId < 0) throw new Error(`Cannot serialize 'VariantDouble' with invalid type id $ {
             typeId
@@ -1682,7 +1682,7 @@ export class VariantDoubleMetaImpl implements FastMetaType<VariantDouble>  {
         }
         
     }
-    deserialize(sCtx_181: FastFutureContext, in__184: DataIn): VariantDouble  {
+    deserialize(sCtx_181: MetaContext, in__184: DataIn): VariantDouble  {
         const typeId = in__184.readUByte();
         switch(typeId)  {
             case 3: return (VariantDouble as any).META_BODY.deserialize(sCtx_181, in__184) as any as VariantDouble;
@@ -1782,11 +1782,11 @@ export class VariantDoubleMetaImpl implements FastMetaType<VariantDouble>  {
     
 }
 export class VariantLongMetaBodyImpl implements FastMetaType<VariantLong>  {
-    serialize(sCtx_185: FastFutureContext, obj_186: VariantLong, _out_187: DataOut): void  {
+    serialize(sCtx_185: MetaContext, obj_186: VariantLong, _out_187: DataOut): void  {
         _out_187.writeLong(obj_186.value);
         
     }
-    deserialize(sCtx_185: FastFutureContext, in__188: DataIn): VariantLong  {
+    deserialize(sCtx_185: MetaContext, in__188: DataIn): VariantLong  {
         let value_189: bigint;
         value_189 = in__188.readLong();
         return new VariantLong(value_189);
@@ -1838,7 +1838,7 @@ export class VariantLongMetaBodyImpl implements FastMetaType<VariantLong>  {
     
 }
 export class VariantLongMetaImpl implements FastMetaType<VariantLong>  {
-    serialize(sCtx_190: FastFutureContext, obj_191: VariantLong, _out_192: DataOut): void  {
+    serialize(sCtx_190: MetaContext, obj_191: VariantLong, _out_192: DataOut): void  {
         const typeId = typeof (obj_191 as any).getAetherTypeId === 'function' ? obj_191.getAetherTypeId() : -1;
         if (typeId === undefined || typeId < 0) throw new Error(`Cannot serialize 'VariantLong' with invalid type id $ {
             typeId
@@ -1864,7 +1864,7 @@ export class VariantLongMetaImpl implements FastMetaType<VariantLong>  {
         }
         
     }
-    deserialize(sCtx_190: FastFutureContext, in__193: DataIn): VariantLong  {
+    deserialize(sCtx_190: MetaContext, in__193: DataIn): VariantLong  {
         const typeId = in__193.readUByte();
         switch(typeId)  {
             case 2: return (VariantLong as any).META_BODY.deserialize(sCtx_190, in__193) as any as VariantLong;
@@ -1964,13 +1964,13 @@ export class VariantLongMetaImpl implements FastMetaType<VariantLong>  {
     
 }
 export class VariantStringMetaBodyImpl implements FastMetaType<VariantString>  {
-    serialize(sCtx_194: FastFutureContext, obj_195: VariantString, _out_196: DataOut): void  {
+    serialize(sCtx_194: MetaContext, obj_195: VariantString, _out_196: DataOut): void  {
         const stringBytes_198 = new TextEncoder().encode(obj_195.value);
         SerializerPackNumber.INSTANCE.put(_out_196, stringBytes_198.length);
         _out_196.write(stringBytes_198);
         
     }
-    deserialize(sCtx_194: FastFutureContext, in__197: DataIn): VariantString  {
+    deserialize(sCtx_194: MetaContext, in__197: DataIn): VariantString  {
         let value_200: string;
         let stringBytes_201: Uint8Array;
         const len_203 = Number(DeserializerPackNumber.INSTANCE.put(in__197));
@@ -2026,7 +2026,7 @@ export class VariantStringMetaBodyImpl implements FastMetaType<VariantString>  {
     
 }
 export class VariantStringMetaImpl implements FastMetaType<VariantString>  {
-    serialize(sCtx_205: FastFutureContext, obj_206: VariantString, _out_207: DataOut): void  {
+    serialize(sCtx_205: MetaContext, obj_206: VariantString, _out_207: DataOut): void  {
         const typeId = typeof (obj_206 as any).getAetherTypeId === 'function' ? obj_206.getAetherTypeId() : -1;
         if (typeId === undefined || typeId < 0) throw new Error(`Cannot serialize 'VariantString' with invalid type id $ {
             typeId
@@ -2052,7 +2052,7 @@ export class VariantStringMetaImpl implements FastMetaType<VariantString>  {
         }
         
     }
-    deserialize(sCtx_205: FastFutureContext, in__208: DataIn): VariantString  {
+    deserialize(sCtx_205: MetaContext, in__208: DataIn): VariantString  {
         const typeId = in__208.readUByte();
         switch(typeId)  {
             case 4: return (VariantString as any).META_BODY.deserialize(sCtx_205, in__208) as any as VariantString;
@@ -2152,11 +2152,11 @@ export class VariantStringMetaImpl implements FastMetaType<VariantString>  {
     
 }
 export class SmartHomeClientStreamMetaImpl implements FastMetaType<SmartHomeClientStream>  {
-    serialize(ctx: FastFutureContext, obj: SmartHomeClientStream, out: DataOut): void  {
+    serialize(ctx: MetaContext, obj: SmartHomeClientStream, out: DataOut): void  {
         FastMeta.META_ARRAY_BYTE.serialize(ctx, obj.data, out);
         
     }
-    deserialize(ctx: FastFutureContext, in_: DataIn): SmartHomeClientStream  {
+    deserialize(ctx: MetaContext, in_: DataIn): SmartHomeClientStream  {
         return new SmartHomeClientStream(FastMeta.META_ARRAY_BYTE.deserialize(ctx, in_));
         
     }
@@ -2197,11 +2197,11 @@ export class SmartHomeClientStreamMetaImpl implements FastMetaType<SmartHomeClie
     
 }
 export class SmartHomeCommutatorStreamMetaImpl implements FastMetaType<SmartHomeCommutatorStream>  {
-    serialize(ctx: FastFutureContext, obj: SmartHomeCommutatorStream, out: DataOut): void  {
+    serialize(ctx: MetaContext, obj: SmartHomeCommutatorStream, out: DataOut): void  {
         FastMeta.META_ARRAY_BYTE.serialize(ctx, obj.data, out);
         
     }
-    deserialize(ctx: FastFutureContext, in_: DataIn): SmartHomeCommutatorStream  {
+    deserialize(ctx: MetaContext, in_: DataIn): SmartHomeCommutatorStream  {
         return new SmartHomeCommutatorStream(FastMeta.META_ARRAY_BYTE.deserialize(ctx, in_));
         
     }
@@ -2242,7 +2242,7 @@ export class SmartHomeCommutatorStreamMetaImpl implements FastMetaType<SmartHome
     
 }
 export class SmartHomeCommutatorApiMetaImpl implements FastMetaApi<SmartHomeCommutatorApi, SmartHomeCommutatorApiRemote>  {
-    makeLocal_fromDataIn(ctx: FastFutureContext, dataIn: DataIn, localApi: SmartHomeCommutatorApi): void  {
+    makeLocal_fromDataIn(ctx: MetaContext, dataIn: DataIn, localApi: SmartHomeCommutatorApi): void  {
         while(dataIn.isReadable())  {
             const commandId = dataIn.readUByte();
             switch(commandId)  {
@@ -2342,15 +2342,15 @@ export class SmartHomeCommutatorApiMetaImpl implements FastMetaApi<SmartHomeComm
         }
         
     }
-    makeLocal_fromBytes_ctxLocal(ctx: FastApiContextLocal<SmartHomeCommutatorApi>, data: Uint8Array): void  {
+    makeLocal_fromBytes_ctxLocal(ctx: MetaContextLocal<SmartHomeCommutatorApi>, data: Uint8Array): void  {
         this.makeLocal_fromDataIn(ctx, new DataInOutStatic(data), ctx.localApi);
         
     }
-    makeLocal_fromBytes_ctx(ctx: FastFutureContext, data: Uint8Array, localApi: SmartHomeCommutatorApi): void  {
+    makeLocal_fromBytes_ctx(ctx: MetaContext, data: Uint8Array, localApi: SmartHomeCommutatorApi): void  {
         this.makeLocal_fromDataIn(ctx, new DataInOutStatic(data), localApi);
         
     }
-    makeRemote(sCtx_231: FastFutureContext): SmartHomeCommutatorApiRemote  {
+    makeRemote(sCtx_231: MetaContext): SmartHomeCommutatorApiRemote  {
         const remoteApiImpl =  {
             flush: (sendFuture?: AFuture): AFuture =>  {
                 const futureToUse = sendFuture || AFuture.make();
@@ -2450,7 +2450,7 @@ export class SmartHomeCommutatorApiMetaImpl implements FastMetaApi<SmartHomeComm
     
 }
 export class SmartHomeClientApiMetaImpl implements FastMetaApi<SmartHomeClientApi, SmartHomeClientApiRemote>  {
-    makeLocal_fromDataIn(ctx: FastFutureContext, dataIn: DataIn, localApi: SmartHomeClientApi): void  {
+    makeLocal_fromDataIn(ctx: MetaContext, dataIn: DataIn, localApi: SmartHomeClientApi): void  {
         while(dataIn.isReadable())  {
             const commandId = dataIn.readUByte();
             switch(commandId)  {
@@ -2490,15 +2490,15 @@ export class SmartHomeClientApiMetaImpl implements FastMetaApi<SmartHomeClientAp
         }
         
     }
-    makeLocal_fromBytes_ctxLocal(ctx: FastApiContextLocal<SmartHomeClientApi>, data: Uint8Array): void  {
+    makeLocal_fromBytes_ctxLocal(ctx: MetaContextLocal<SmartHomeClientApi>, data: Uint8Array): void  {
         this.makeLocal_fromDataIn(ctx, new DataInOutStatic(data), ctx.localApi);
         
     }
-    makeLocal_fromBytes_ctx(ctx: FastFutureContext, data: Uint8Array, localApi: SmartHomeClientApi): void  {
+    makeLocal_fromBytes_ctx(ctx: MetaContext, data: Uint8Array, localApi: SmartHomeClientApi): void  {
         this.makeLocal_fromDataIn(ctx, new DataInOutStatic(data), localApi);
         
     }
-    makeRemote(sCtx_257: FastFutureContext): SmartHomeClientApiRemote  {
+    makeRemote(sCtx_257: MetaContext): SmartHomeClientApiRemote  {
         const remoteApiImpl =  {
             flush: (sendFuture?: AFuture): AFuture =>  {
                 const futureToUse = sendFuture || AFuture.make();

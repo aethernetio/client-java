@@ -9,7 +9,7 @@ import io.aether.api.smarthome.SimpleDeviceApi;
 import io.aether.cloud.client.AetherCloudClient;
 import io.aether.cloud.client.ClientStateInMemory;
 import io.aether.logger.Log;
-import io.aether.net.fastMeta.FastApiContextLocal;
+import io.aether.net.fastMeta.MetaContextLocal;
 import io.aether.utils.futures.AFuture;
 
 import java.io.File;
@@ -50,7 +50,7 @@ public class MockCommutatorClientPlain {
                 }
             };
 
-            FastApiContextLocal<SimpleDeviceApi> ctx = node.toApi(SimpleDeviceApi.META, localApiStub);
+            MetaContextLocal<SimpleDeviceApi> ctx = node.toApi(SimpleDeviceApi.META, localApiStub);
 
             // Реализация логики
             node.toApi(SimpleDeviceApi.META, new SimpleDeviceApi() {

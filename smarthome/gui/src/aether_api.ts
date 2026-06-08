@@ -1,5 +1,5 @@
 import  {
-    AFuture, ARFuture, DataIn, DataOut, DataInOut, DataInOutStatic, FastMetaType, FastFutureContext, RemoteApi, FastMeta, SerializerPackNumber, DeserializerPackNumber, FastApiContextLocal, FastMetaApi, BytesConverter, RemoteApiFuture, UUID, URI, AConsumer, ToString, AString
+    AFuture, ARFuture, DataIn, DataOut, DataInOut, DataInOutStatic, FastMetaType, MetaContext, RemoteApi, FastMeta, SerializerPackNumber, DeserializerPackNumber, MetaContextLocal, FastMetaApi, BytesConverter, RemoteApiFuture, UUID, URI, AConsumer, ToString, AString
 }
 from 'aether-client';
 import * as Impl from './aether_api_impl';
@@ -1162,20 +1162,20 @@ export class SmartHomeClientStream implements ToString  {
         return result;
         
     }
-    public accept(context: FastFutureContext, provider: BytesConverter, localApi: SmartHomeClientApi): void  {
+    public accept(context: MetaContext, provider: BytesConverter, localApi: SmartHomeClientApi): void  {
         const decryptedData = provider(this.data);
         const dataInStatic = new DataInOutStatic(decryptedData);
         if (!(SmartHomeClientApi as any).META) throw new Error(`META not found for API type SmartHomeClientApi`);
         (SmartHomeClientApi as any).META.makeLocal_fromDataIn(context, dataInStatic, localApi);
         
     }
-    public static fromRemote(context: FastFutureContext, provider: BytesConverter, remote: RemoteApiFuture<SmartHomeClientApiRemote>, sendFuture: AFuture): SmartHomeClientStream  {
+    public static fromRemote(context: MetaContext, provider: BytesConverter, remote: RemoteApiFuture<SmartHomeClientApiRemote>, sendFuture: AFuture): SmartHomeClientStream  {
         remote.executeAll(context, sendFuture);
         const encryptedData = provider(context.remoteDataToArrayAsArray());
         return new SmartHomeClientStream(encryptedData);
         
     }
-    public static fromRemoteConsumer(context: FastFutureContext, provider: BytesConverter, remoteConsumer: AConsumer<SmartHomeClientApiRemote>): SmartHomeClientStream  {
+    public static fromRemoteConsumer(context: MetaContext, provider: BytesConverter, remoteConsumer: AConsumer<SmartHomeClientApiRemote>): SmartHomeClientStream  {
         const api = (SmartHomeClientApi as any).META.makeRemote(context);
         remoteConsumer(api);
         const encryptedData = provider(context.remoteDataToArrayAsArray());
@@ -1205,20 +1205,20 @@ export class SmartHomeCommutatorStream implements ToString  {
         return result;
         
     }
-    public accept(context: FastFutureContext, provider: BytesConverter, localApi: SmartHomeCommutatorApi): void  {
+    public accept(context: MetaContext, provider: BytesConverter, localApi: SmartHomeCommutatorApi): void  {
         const decryptedData = provider(this.data);
         const dataInStatic = new DataInOutStatic(decryptedData);
         if (!(SmartHomeCommutatorApi as any).META) throw new Error(`META not found for API type SmartHomeCommutatorApi`);
         (SmartHomeCommutatorApi as any).META.makeLocal_fromDataIn(context, dataInStatic, localApi);
         
     }
-    public static fromRemote(context: FastFutureContext, provider: BytesConverter, remote: RemoteApiFuture<SmartHomeCommutatorApiRemote>, sendFuture: AFuture): SmartHomeCommutatorStream  {
+    public static fromRemote(context: MetaContext, provider: BytesConverter, remote: RemoteApiFuture<SmartHomeCommutatorApiRemote>, sendFuture: AFuture): SmartHomeCommutatorStream  {
         remote.executeAll(context, sendFuture);
         const encryptedData = provider(context.remoteDataToArrayAsArray());
         return new SmartHomeCommutatorStream(encryptedData);
         
     }
-    public static fromRemoteConsumer(context: FastFutureContext, provider: BytesConverter, remoteConsumer: AConsumer<SmartHomeCommutatorApiRemote>): SmartHomeCommutatorStream  {
+    public static fromRemoteConsumer(context: MetaContext, provider: BytesConverter, remoteConsumer: AConsumer<SmartHomeCommutatorApiRemote>): SmartHomeCommutatorStream  {
         const api = (SmartHomeCommutatorApi as any).META.makeRemote(context);
         remoteConsumer(api);
         const encryptedData = provider(context.remoteDataToArrayAsArray());

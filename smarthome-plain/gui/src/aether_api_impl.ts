@@ -1,5 +1,5 @@
 import  {
-    AFuture, ARFuture, DataIn, DataOut, DataInOut, DataInOutStatic, FastMetaType, FastFutureContext, RemoteApi, FastMeta, SerializerPackNumber, DeserializerPackNumber, FastApiContextLocal, FastMetaApi, BytesConverter, RemoteApiFuture, FastFutureContextStub, UUID, URI, AConsumer, ToString, AString, FlushReport
+    AFuture, ARFuture, DataIn, DataOut, DataInOut, DataInOutStatic, FastMetaType, MetaContext, RemoteApi, FastMeta, SerializerPackNumber, DeserializerPackNumber, MetaContextLocal, FastMetaApi, BytesConverter, RemoteApiFuture, FastFutureContextStub, UUID, URI, AConsumer, ToString, AString, FlushReport
 }
 from 'aether-client';
 import  {
@@ -8,12 +8,12 @@ import  {
 from './aether_api';
 // This is always relative
 export class RecordMetaBodyImpl implements FastMetaType<Record>  {
-    serialize(sCtx_0: FastFutureContext, obj_1: Record, _out_2: DataOut): void  {
+    serialize(sCtx_0: MetaContext, obj_1: Record, _out_2: DataOut): void  {
         _out_2.writeByte(obj_1.value);
         _out_2.writeByte(obj_1.time);
         
     }
-    deserialize(sCtx_0: FastFutureContext, in__3: DataIn): Record  {
+    deserialize(sCtx_0: MetaContext, in__3: DataIn): Record  {
         let value_4: number;
         let time_5: number;
         value_4 = in__3.readByte();
@@ -71,7 +71,7 @@ export class RecordMetaBodyImpl implements FastMetaType<Record>  {
     
 }
 export class SimpleDeviceApiMetaImpl implements FastMetaApi<SimpleDeviceApi, SimpleDeviceApiRemote>  {
-    makeLocal_fromDataIn(ctx: FastFutureContext, dataIn: DataIn, localApi: SimpleDeviceApi): void  {
+    makeLocal_fromDataIn(ctx: MetaContext, dataIn: DataIn, localApi: SimpleDeviceApi): void  {
         while(dataIn.isReadable())  {
             const commandId = dataIn.readUByte();
             switch(commandId)  {
@@ -109,15 +109,15 @@ export class SimpleDeviceApiMetaImpl implements FastMetaApi<SimpleDeviceApi, Sim
         }
         
     }
-    makeLocal_fromBytes_ctxLocal(ctx: FastApiContextLocal<SimpleDeviceApi>, data: Uint8Array): void  {
+    makeLocal_fromBytes_ctxLocal(ctx: MetaContextLocal<SimpleDeviceApi>, data: Uint8Array): void  {
         this.makeLocal_fromDataIn(ctx, new DataInOutStatic(data), ctx.localApi);
         
     }
-    makeLocal_fromBytes_ctx(ctx: FastFutureContext, data: Uint8Array, localApi: SimpleDeviceApi): void  {
+    makeLocal_fromBytes_ctx(ctx: MetaContext, data: Uint8Array, localApi: SimpleDeviceApi): void  {
         this.makeLocal_fromDataIn(ctx, new DataInOutStatic(data), localApi);
         
     }
-    makeRemote(sCtx_10: FastFutureContext): SimpleDeviceApiRemote  {
+    makeRemote(sCtx_10: MetaContext): SimpleDeviceApiRemote  {
         const remoteApiImpl =  {
             flush: (sendFuture: FlushReport): void =>  {
                 sCtx_10.flush(sendFuture);
@@ -141,7 +141,7 @@ export class SimpleDeviceApiMetaImpl implements FastMetaApi<SimpleDeviceApi, Sim
     
 }
 export class SimpleClientApiMetaImpl implements FastMetaApi<SimpleClientApi, SimpleClientApiRemote>  {
-    makeLocal_fromDataIn(ctx: FastFutureContext, dataIn: DataIn, localApi: SimpleClientApi): void  {
+    makeLocal_fromDataIn(ctx: MetaContext, dataIn: DataIn, localApi: SimpleClientApi): void  {
         while(dataIn.isReadable())  {
             const commandId = dataIn.readUByte();
             switch(commandId)  {
@@ -186,15 +186,15 @@ export class SimpleClientApiMetaImpl implements FastMetaApi<SimpleClientApi, Sim
         }
         
     }
-    makeLocal_fromBytes_ctxLocal(ctx: FastApiContextLocal<SimpleClientApi>, data: Uint8Array): void  {
+    makeLocal_fromBytes_ctxLocal(ctx: MetaContextLocal<SimpleClientApi>, data: Uint8Array): void  {
         this.makeLocal_fromDataIn(ctx, new DataInOutStatic(data), ctx.localApi);
         
     }
-    makeLocal_fromBytes_ctx(ctx: FastFutureContext, data: Uint8Array, localApi: SimpleClientApi): void  {
+    makeLocal_fromBytes_ctx(ctx: MetaContext, data: Uint8Array, localApi: SimpleClientApi): void  {
         this.makeLocal_fromDataIn(ctx, new DataInOutStatic(data), localApi);
         
     }
-    makeRemote(sCtx_22: FastFutureContext): SimpleClientApiRemote  {
+    makeRemote(sCtx_22: MetaContext): SimpleClientApiRemote  {
         const remoteApiImpl =  {
             flush: (sendFuture: FlushReport): void =>  {
                 sCtx_22.flush(sendFuture);

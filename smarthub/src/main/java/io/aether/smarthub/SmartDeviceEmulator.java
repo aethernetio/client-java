@@ -4,8 +4,8 @@ import io.aether.api.smarthub.*;
 import io.aether.cloud.client.AetherCloudClient;
 import io.aether.cloud.client.ClientStateInFile;
 import io.aether.logger.Log;
-import io.aether.net.fastMeta.FastApiContext;
-import io.aether.net.fastMeta.FastFutureContext;
+import io.aether.net.fastMeta.MetaContextBase;
+import io.aether.net.fastMeta.MetaContext;
 import io.aether.net.fastMeta.FlushReport;
 import io.aether.net.fastMeta.FutureRec;
 import io.aether.utils.futures.AFuture;
@@ -64,7 +64,7 @@ public class SmartDeviceEmulator {
 
                 var ctx = node.toApi(SmartHomeClientDeviceApi.META, SmartHomeClientDeviceApi.EMPTY);
                 final SmartHomeHubRegistryApiRemote remoteHubApi = ctx.makeRemote(SmartHomeHubRegistryApi.META);
-                FastFutureContext ctx2 = new FastApiContext() {
+                MetaContext ctx2 = new MetaContextBase() {
                     @Override
                     public int regFuture(FutureRec worker) {
                         return ctx.regFuture(worker);
