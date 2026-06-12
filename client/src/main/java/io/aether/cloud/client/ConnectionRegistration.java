@@ -9,8 +9,6 @@ import io.aether.crypto.AKey;
 import io.aether.crypto.CryptoEngine;
 import io.aether.crypto.CryptoProviderFactory;
 import io.aether.logger.Log;
-import io.aether.net.fastMeta.MetaContextBase;
-import io.aether.net.fastMeta.FlushReport;
 import io.aether.utils.WorkProofUtil;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
@@ -22,13 +20,18 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
     private final AKey.Symmetric tempKey = CryptoProviderFactory.getProvider(client.getCryptLib().name()).createSymmetricKey();
     private final KeySymmetric tempKeyNative = CryptoUtils.of(tempKey);
     private final CryptoEngine tempKeyCp = tempKey.toCryptoEngine();
-    private final MetaContextBase ctxSafe = new MetaContextBase() {
-        @Override
-        public void flush(FlushReport report) {
-            Log.debug("test");
-        }
-    };
-    private final MetaContextBase globalCtx = new MetaContextBase();
+
+
+
+
+
+    private final io.aether.net.fastMeta.MetaContext ctxSafe = io.aether.net.fastMeta.MetaContext.STUB;
+    private final io.aether.net.fastMeta.MetaContext globalCtx = io.aether.net.fastMeta.MetaContext.STUB;
+
+
+
+
+
     private CryptoEngine gcp;
 
     public ConnectionRegistration(AetherCloudClient client, URI uri) {
@@ -72,7 +75,7 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
                 return;
             }
 
-            api.enter(client.getCryptLib(), new ServerRegistrationApiStream(ctxSafe, asymCE::encrypt, apiInner -> {
+            api.enter(client.getCryptLib(), new ServerRegistrationApiStream().context(ctxSafe).convert(asymCE::encrypt).send(apiInner -> {
                 apiInner.setReturnKey(tempKeyNative);
                 apiInner.requestWorkProofData(client.getParent(), PowMethod.AE_BCRYPT_CRC32)
                         .to(wpd -> {
@@ -89,11 +92,13 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
                             }
                             gcp = CryptoEngine.of(CryptoUtils.of(wpd.getGlobalKey().getKey()).asAsymmetric().toCryptoEngine(), client.getMasterKey().toCryptoEngine());
 
-                            api.enter(client.getCryptLib(), new ServerRegistrationApiStream(ctxSafe, asymCE::encrypt,
+
+                            api.enter(client.getCryptLib(), new ServerRegistrationApiStream().context(ctxSafe).convert(asymCE::encrypt).send(
                                     a2 -> {
                                         a2.setReturnKey(tempKeyNative);
                                         a2.registration(wpd.getSalt(), wpd.getSuffix(), passwords, client.getParent(),
-                                                new GlobalApiStream(globalCtx, gcp::encrypt, gapi -> {
+                                                new GlobalApiStream().context(globalCtx).convert(gcp::encrypt).send(gapi -> {
+
                                                     gapi.setMasterKey(CryptoUtils.of(client.getMasterKey()));
                                                     gapi.finish()
                                                             .to(d -> {
@@ -110,19 +115,9 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
                                                             });
                                                 }));
                                     }));
-                            api.flush(r->{
-                                if(!r){
-                                    Log.error("flush task canceled 2!");
-                                }
-                            });
                         }, 6, () -> Log.warn("RegConn: timeout requestWorkProofData"));
 
             }));
-            api.flush(r->{
-                if(!r){
-                    Log.error("flush task canceled 3!");
-                }
-            });
         });
     }
 
@@ -142,7 +137,7 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
         AFuture result = client.recoveryFuture;
         Log.debug("Resolving cloud: " + cloud);
 
-        rootApi.enter(client.getCryptLib(), new ServerRegistrationApiStream(ctxSafe, asymCE::encrypt, a3 -> {
+        rootApi.enter(client.getCryptLib(), new ServerRegistrationApiStream().context(ctxSafe).convert(asymCE::encrypt).send(a3 -> {
             Log.trace("RegConn: registration step resolve servers: $servers", "servers", cloud);
             a3.resolveServers(cloud)
                     .to(ss -> {
@@ -163,13 +158,15 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
         return result;
     }
 
+
     @Override
     public void enterGlobal(GlobalRegClientApiStream stream) {
-        stream.accept(globalCtx, gcp::decrypt, GlobalRegClientApi.EMPTY);
+        stream.context(globalCtx).convert(gcp::decrypt).accept();
     }
 
     @Override
     public void enter(ClientApiRegSafeStream stream) {
-        stream.accept(ctxSafe, tempKeyCp::decrypt, ClientApiRegSafe.EMPTY);
+        stream.context(ctxSafe).convert(tempKeyCp::decrypt).accept();
     }
+
 }

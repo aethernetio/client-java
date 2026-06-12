@@ -1,5 +1,5 @@
 import  {
-    AFuture, ARFuture, DataIn, DataOut, DataInOut, DataInOutStatic, FastMetaType, MetaContext, RemoteApi, FastMeta, SerializerPackNumber, DeserializerPackNumber, MetaContextLocal, FastMetaApi, BytesConverter, RemoteApiFuture, FastFutureContextStub, UUID, URI, AConsumer, ToString, AString, FlushReport
+    AFuture, ARFuture, DataIn, DataOut, DataInOut, DataInOutStatic, FastMetaType, MetaContext, RemoteApi, FastMeta, SerializerPackNumber, DeserializerPackNumber, MetaContext, FastMetaApi, BytesConverter, RemoteApiFuture, FastFutureContextStub, UUID, URI, AConsumer, ToString, AString, FlushReport
 }
 from 'aether-client';
 import  {
@@ -109,7 +109,7 @@ export class SimpleDeviceApiMetaImpl implements FastMetaApi<SimpleDeviceApi, Sim
         }
         
     }
-    makeLocal_fromBytes_ctxLocal(ctx: MetaContextLocal<SimpleDeviceApi>, data: Uint8Array): void  {
+    makeLocal_fromBytes_ctxLocal(ctx: MetaContext<SimpleDeviceApi>, data: Uint8Array): void  {
         this.makeLocal_fromDataIn(ctx, new DataInOutStatic(data), ctx.localApi);
         
     }
@@ -186,7 +186,7 @@ export class SimpleClientApiMetaImpl implements FastMetaApi<SimpleClientApi, Sim
         }
         
     }
-    makeLocal_fromBytes_ctxLocal(ctx: MetaContextLocal<SimpleClientApi>, data: Uint8Array): void  {
+    makeLocal_fromBytes_ctxLocal(ctx: MetaContext<SimpleClientApi>, data: Uint8Array): void  {
         this.makeLocal_fromDataIn(ctx, new DataInOutStatic(data), ctx.localApi);
         
     }

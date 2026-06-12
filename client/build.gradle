@@ -17,8 +17,8 @@ publishing {
     publications {
         mavenPublication(MavenPublication) {
             from components.java
-            groupId "io.aether"
-            artifactId "cloud-client"
+            groupId = "io.aether"
+            artifactId = "cloud-client"
         }
     }
 }

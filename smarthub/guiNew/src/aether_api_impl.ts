@@ -1,5 +1,5 @@
 import  {
-    AFuture, ARFuture, DataIn, DataOut, DataInOut, DataInOutStatic, FastMetaType, MetaContext, FastMeta, SerializerPackNumber, DeserializerPackNumber, MetaContextLocal, FastMetaApi, FastFutureContextStub, UUID, URI, AString, FlushReport
+    AFuture, ARFuture, DataIn, DataOut, DataInOut, DataInOutStatic, FastMetaType, MetaContext, FastMeta, SerializerPackNumber, DeserializerPackNumber, MetaContext, FastMetaApi, FastFutureContextStub, UUID, URI, AString, FlushReport
 }
 from 'aether-client';
 import  {
@@ -210,7 +210,7 @@ export class SmartHomeHubRegistryApiMetaImpl implements FastMetaApi<SmartHomeHub
         }
         
     }
-    makeLocal_fromBytes_ctxLocal(ctx: MetaContextLocal<SmartHomeHubRegistryApi>, data: Uint8Array): void  {
+    makeLocal_fromBytes_ctxLocal(ctx: MetaContext<SmartHomeHubRegistryApi>, data: Uint8Array): void  {
         this.makeLocal_fromDataIn(ctx, new DataInOutStatic(data), ctx.localApi);
         
     }
@@ -299,7 +299,7 @@ export class SmartHomeDeviceApiMetaImpl implements FastMetaApi<SmartHomeDeviceAp
         }
         
     }
-    makeLocal_fromBytes_ctxLocal(ctx: MetaContextLocal<SmartHomeDeviceApi>, data: Uint8Array): void  {
+    makeLocal_fromBytes_ctxLocal(ctx: MetaContext<SmartHomeDeviceApi>, data: Uint8Array): void  {
         this.makeLocal_fromDataIn(ctx, new DataInOutStatic(data), ctx.localApi);
         
     }
@@ -385,7 +385,7 @@ export class SmartHomeGuiApiMetaImpl implements FastMetaApi<SmartHomeGuiApi, Sma
         }
         
     }
-    makeLocal_fromBytes_ctxLocal(ctx: MetaContextLocal<SmartHomeGuiApi>, data: Uint8Array): void  {
+    makeLocal_fromBytes_ctxLocal(ctx: MetaContext<SmartHomeGuiApi>, data: Uint8Array): void  {
         this.makeLocal_fromDataIn(ctx, new DataInOutStatic(data), ctx.localApi);
         
     }
@@ -512,7 +512,7 @@ export class SmartHomeClientGuiApiMetaImpl implements FastMetaApi<SmartHomeClien
         }
         
     }
-    makeLocal_fromBytes_ctxLocal(ctx: MetaContextLocal<SmartHomeClientGuiApi>, data: Uint8Array): void  {
+    makeLocal_fromBytes_ctxLocal(ctx: MetaContext<SmartHomeClientGuiApi>, data: Uint8Array): void  {
         this.makeLocal_fromDataIn(ctx, new DataInOutStatic(data), ctx.localApi);
         
     }

@@ -6,7 +6,6 @@ import io.aether.cloud.client.ClientStateInFile;
 import io.aether.logger.Log;
 import io.aether.net.fastMeta.MetaContextBase;
 import io.aether.net.fastMeta.MetaContext;
-import io.aether.net.fastMeta.FlushReport;
 import io.aether.net.fastMeta.FutureRec;
 import io.aether.utils.futures.AFuture;
 
@@ -69,13 +68,13 @@ public class SmartDeviceEmulator {
                     public int regFuture(FutureRec worker) {
                         return ctx.regFuture(worker);
                     }
-
-                    @Override
-                    public void flush(FlushReport report) {
-                        var dataApi2 = remoteDataToArray();
-                        remoteHubApi.device(new DeviceStream(dataApi2));
-                        remoteHubApi.flush(report);
-                    }
+//TODO
+//                    @Override
+//                    public void flush(FlushReport report) {
+//                        var dataApi2 = remoteDataToArray();
+//                        remoteHubApi.device(new DeviceStream(dataApi2));
+//                        remoteHubApi.flush(report);
+//                    }
                 };
                 var remoteDeviceApi = ctx2.makeRemote(SmartHomeDeviceApi.META);
                 Log.info("Starting scheduled temperature reporting", "intervalSec", 5);

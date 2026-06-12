@@ -37,8 +37,10 @@ public abstract class Connection<LT, RT extends RemoteApi> implements Destroyabl
             return;
         }
         client.destroyer.add(this);
-        LT localApi = RU.cast(this);
-        this.rootApi = FastMetaNet.INSTANCE.get().makeClient(uri, localApiMeta, remoteApiMeta, localApi);
+
+
+        this.rootApi = FastMetaNet.INSTANCE.get().makeClient(uri, localApiMeta, remoteApiMeta, ctx->RU.cast(this));
+
         this.ctx = rootApi.getFastMetaContext();
         ctx.onWritable(isWritable -> {
             onConnectionStateChanged(isWritable);

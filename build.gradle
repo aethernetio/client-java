@@ -20,11 +20,11 @@
     }
 //}
 
-group 'io.aether'
-version '0.0.' + (new File(projectDir, "version").getText('UTF-8'))
+group = "io.aether"
+version = "0.0." + (new File(projectDir, "version").getText("UTF-8"))
 subprojects {
-    group rootProject.group
-    version rootProject.version
+    group = rootProject.group
+    version = rootProject.version
     repositories {
         mavenLocal()
         mavenCentral()
@@ -43,13 +43,13 @@ subprojects {
                             if (version.toString().endsWith("SNAPSHOT")) {
                                 url(snapshotsUrl)
                             } else {
-                                url(releasesUrl)
+                                url = releasesUrl
                             }
                             allowInsecureProtocol = true
 
                             credentials {
-                                username project.findProperty('aetherRepoUser') ?: ''
-                                password project.findProperty('aetherRepoPassword') ?: ''
+                                username = project.findProperty("aetherRepoUser") ?: ""
+                                password = project.findProperty("aetherRepoPassword") ?: ""
                             }
                         }
                     }

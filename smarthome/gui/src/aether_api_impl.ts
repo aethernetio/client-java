@@ -1,5 +1,5 @@
 import  {
-    AFuture, ARFuture, DataIn, DataOut, DataInOut, DataInOutStatic, FastMetaType, MetaContext, RemoteApi, FastMeta, SerializerPackNumber, DeserializerPackNumber, MetaContextLocal, FastMetaApi, BytesConverter, RemoteApiFuture, FastFutureContextStub, UUID, URI, AConsumer, ToString, AString
+    AFuture, ARFuture, DataIn, DataOut, DataInOut, DataInOutStatic, FastMetaType, MetaContext, RemoteApi, FastMeta, SerializerPackNumber, DeserializerPackNumber, MetaContext, FastMetaApi, BytesConverter, RemoteApiFuture, FastFutureContextStub, UUID, URI, AConsumer, ToString, AString
 }
 from 'aether-client';
 import  {
@@ -2342,7 +2342,7 @@ export class SmartHomeCommutatorApiMetaImpl implements FastMetaApi<SmartHomeComm
         }
         
     }
-    makeLocal_fromBytes_ctxLocal(ctx: MetaContextLocal<SmartHomeCommutatorApi>, data: Uint8Array): void  {
+    makeLocal_fromBytes_ctxLocal(ctx: MetaContext<SmartHomeCommutatorApi>, data: Uint8Array): void  {
         this.makeLocal_fromDataIn(ctx, new DataInOutStatic(data), ctx.localApi);
         
     }
@@ -2490,7 +2490,7 @@ export class SmartHomeClientApiMetaImpl implements FastMetaApi<SmartHomeClientAp
         }
         
     }
-    makeLocal_fromBytes_ctxLocal(ctx: MetaContextLocal<SmartHomeClientApi>, data: Uint8Array): void  {
+    makeLocal_fromBytes_ctxLocal(ctx: MetaContext<SmartHomeClientApi>, data: Uint8Array): void  {
         this.makeLocal_fromDataIn(ctx, new DataInOutStatic(data), ctx.localApi);
         
     }

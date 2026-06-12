@@ -3,10 +3,9 @@ package io.aether.cloud.client;
 import io.aether.api.common.Cloud;
 import io.aether.api.common.ServerDescriptor;
 import io.aether.logger.Log;
-import io.aether.net.fastMeta.MetaContextLocal;
 import io.aether.net.fastMeta.MetaContext;
 import io.aether.net.fastMeta.FastMetaApi;
-import io.aether.net.fastMeta.FlushReport;
+import io.aether.net.fastMeta.MetaContextBase;
 import io.aether.utils.AString;
 import io.aether.utils.ConcurrentHashSet;
 import io.aether.utils.ToString;
@@ -114,59 +113,40 @@ public class MessageNode implements ToString {
         bufferIn.add(o::accept);
     }
 
-    public <LT> MetaContextLocal<LT> toApiR(
+
+
+    public <LT> MetaContext toApiR(
             FastMetaApi<LT, ? extends LT> metaLt,
-            AFunction<MetaContextLocal<LT>, LT> localApi) {
-        MetaContextLocal<LT> ctx = new MetaContextLocal<>(localApi) {
-            @Override
-            public void flush(FlushReport report) {
-                send(remoteDataToArray()).addListener(f -> {
-                    if (f.isError()) {
-                        report.abort();
-                    } else {
-                        report.done();
-                    }
-                });
-            }
-        };
-        toApi(ctx, metaLt, ctx.localApi);
+            AFunction<MetaContext, LT> localApiFactory) {
+
+        MetaContextBase ctx = new MetaContextBase();
+        LT localApi = localApiFactory.apply(ctx);
+        ctx.setLocalApi(localApi);
+
+        ctx.onFlushData(data -> send(data));
+        toApi(ctx, metaLt);
         return ctx;
     }
 
-    public <LT> void toApi(MetaContext ctx, FastMetaApi<LT, ? extends LT> metaLt, LT localApi) {
+    public <LT> void toApi(MetaContext ctx, FastMetaApi<LT, ? extends LT> metaLt) {
         toConsumer(v -> {
             try {
-                metaLt.makeLocal(ctx, new DataInOutStatic(v), localApi);
+                metaLt.makeLocal(ctx, new DataInOutStatic(v));
             } catch (Exception e) {
                 Log.error("Read message api exception", "data", v);
             }
         });
     }
 
-    public <LT> MetaContextLocal<LT> toApi(MetaContextLocal<LT> ctx, FastMetaApi<LT, ? extends LT> metaLt) {
-        toApi(ctx, metaLt, ctx.localApi);
+
+
+    public <LT> MetaContext toApi(FastMetaApi<LT, ? extends LT> metaLt, LT localApi) {
+        MetaContextBase ctx = new MetaContextBase();
+        ctx.setLocalApi(localApi);
+        ctx.onFlushData(data -> send(data));
+        toApi(ctx, metaLt);
         return ctx;
     }
 
-    public <LT> MetaContextLocal<LT> toApi(FastMetaApi<LT, ? extends LT> metaLt, LT localApi) {
-        MetaContextLocal<LT> ctx = new MetaContextLocal<>(localApi) {
-            @Override
-            public void flush(FlushReport report) {
-                var d = remoteDataToArray();
-                if (d.length > 0) {
-                    send(d).addListener(f -> {
-                        if (f.isError()) {
-                            report.abort();
-                        } else {
-                            report.done();
-                        }
-                    });
-                } else {
-                    report.done();
-                }
-            }
-        };
-        toApi(ctx, metaLt, localApi);
-        return ctx;
-    }
+
 }

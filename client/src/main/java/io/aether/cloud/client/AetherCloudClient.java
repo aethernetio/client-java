@@ -35,6 +35,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 public final class AetherCloudClient implements Destroyable {
 
@@ -62,7 +63,6 @@ public final class AetherCloudClient implements Destroyable {
     final EventBiConsumer<UUID, ServerApiByUid> onNewChildApi = new EventBiConsumer<>();
     final Map<Long, Map<UUID, ARFuture<Boolean>>> accessOperationsAdd = new ConcurrentHashMap<>();
     final Map<Long, Map<UUID, ARFuture<Boolean>>> accessOperationsRemove = new ConcurrentHashMap<>();
-    final Queue<ClientTask> clientTasks = new ConcurrentLinkedQueue<>();
     final Queue<AConsumer<AuthorizedApi>> authTasks = new ConcurrentLinkedQueue<>();
 
     final CloudPriorityManager priorityManager = new CloudPriorityManager();
@@ -101,9 +101,10 @@ public final class AetherCloudClient implements Destroyable {
             populateCachesFromState();
             onNewChild.add(u -> {
                 if (onNewChildApi.hasListener()) {
-                    getClientApi(u, api -> {
-                        onNewChildApi.fire(u, api);
-                    });
+//                    TODO Я удалил очередь задач. Нужно сделать прямой выбор ConnectionWork
+//                    getClientApi(u, api -> {
+//                        onNewChildApi.fire(u, api);
+//                    });
                 }
             });
             connect();
@@ -432,15 +433,6 @@ public final class AetherCloudClient implements Destroyable {
                 return;
             makeFirstConnection();
         }
-        clouds.checkTimeouts();
-        servers.checkTimeouts();
-        clientGroups.checkTimeouts();
-        accessGroups.checkTimeouts();
-        allAccessedClients.checkTimeouts();
-        accessCheckCache.checkTimeouts();
-        for (var c : connections.values()) {
-            c.flush();
-        }
     }
 
     /**
@@ -625,11 +617,6 @@ public final class AetherCloudClient implements Destroyable {
         });
     }
 
-    public void getClientApi(UUID uid, AConsumer<ServerApiByUid> c) {
-        clientTasks.add(new ClientTask(uid, c));
-        flush();
-    }
-
     public boolean verifySign(SignedKey signedKey) {
         return CryptoUtils.verifySign(signedKey, clientState.getRootSigners());
     }
@@ -637,6 +624,13 @@ public final class AetherCloudClient implements Destroyable {
     public AFuture sendMessage(UUID uid, byte[] message) {
         return getMessageNode(uid, MessageEventListener.DEFAULT).send(message);
     }
+
+    @Deprecated
+    public void getClientApi(UUID uid, AConsumer<ServerApiByUid> callback) {
+        // TODO: rewrite after Connection/ConnectionWork refactoring
+        throw new UnsupportedOperationException("getClientApi is deprecated, use getMessageNode instead");
+    }
+
 
 public CryptoEngine getCryptoEngineForServer(short serverId) {
         var k = getMasterKey();
@@ -702,15 +696,4 @@ public CryptoEngine getCryptoEngineForServer(short serverId) {
         }
     }
 
-    static class ClientTask {
-
-        final UUID uid;
-
-        final AConsumer<ServerApiByUid> task;
-
-        public ClientTask(UUID uid, AConsumer<ServerApiByUid> task) {
-            this.uid = uid;
-            this.task = task;
-        }
-    }
 }

@@ -5,7 +5,6 @@ import io.aether.api.common.*;
 import io.aether.crypto.CryptoEngine;
 import io.aether.logger.Log;
 import io.aether.net.fastMeta.MetaContextBase;
-import io.aether.net.fastMeta.FlushReport;
 import io.aether.utils.RU;
 import io.aether.utils.flow.Flow;
 import io.aether.utils.futures.AFuture;
@@ -33,8 +32,6 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
 
     final ClientApiSafe apiSafe;
 
-    final MetaContextBase apiSafeCtx;
-
     final CryptoEngine cryptoEngine;
 
     private final ServerDescriptor serverDescriptor;
@@ -50,7 +47,6 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
     public ConnectionWork(AetherCloudClient client, ServerDescriptor s) {
         super(client, s.getIpAddress().getURI(AetherCodec.TCP), ClientApiUnsafe.META, LoginApi.META);
         this.apiSafe = new MyClientApiSafe(client, this);
-        apiSafeCtx = new MyFastApiContext(client);
         cryptoEngine = client.getCryptoEngineForServer(s.getId());
 
         if (cryptoEngine == null) {
@@ -67,7 +63,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
      * @param isWritable True if the connection is active and writable, false otherwise.
      */
     @Override
-protected void onConnectionStateChanged(boolean isWritable) {
+    protected void onConnectionStateChanged(boolean isWritable) {
         if (cryptoEngine == null) {
             Log.warn("onConnectionStateChanged called before cryptoEngine initialized, deferring flush");
             stateListeners.fire(isWritable);
@@ -76,15 +72,14 @@ protected void onConnectionStateChanged(boolean isWritable) {
         if (isWritable) {
             Log.info("Network restored. Resetting auth state and forcing flush.", "uri", uri);
             this.firstAuth = false;
-            this.flush();
         } else {
             this.firstAuth = false;
         }
         stateListeners.fire(isWritable);
     }
 
-    private FlushReport flushBackgroundRequests(AuthorizedApi a) {
-        UUID[] requestCloud = client.clouds.pollAllRequests().toArray(new UUID[0]);;
+    private void flushBackgroundRequests(AuthorizedApi a) {
+        UUID[] requestCloud = client.clouds.pollAllRequests().toArray(new UUID[0]);
         if (requestCloud.length > 0) {
             a.resolveClouds(requestCloud);
         }
@@ -134,24 +129,14 @@ protected void onConnectionStateChanged(boolean isWritable) {
         }
         while (true) {
             var t = client.authTasks.poll();
-            if (t == null)
-                break;
+            if (t == null) break;
             t.accept(a);
         }
-        AetherCloudClient.ClientTask task;
-        while ((task = client.clientTasks.poll()) != null) {
-            a.client(task.uid, new ClientApiStream(apiSafeCtx, task.task::accept));
-        }
         List<Message> messagesForSend = null;
-
         List<Runnable> tasksForCancelMessages = new ArrayList<>();
-
         List<Tuple2<byte[], AFuture>> messagesForSend2 = new ArrayList<>();
-
         for (var m : client.messageNodeMap.values()) {
             if (m.connectionsOut.contains(this)) {
-
-
                 List<Tuple2<byte[], AFuture>> nodeMessages = new ArrayList<>();
                 int currentBatchSize = 0;
                 final int MAX_BATCH_BYTES = 512 * 1024; // 512 KB для Java
@@ -159,7 +144,7 @@ protected void onConnectionStateChanged(boolean isWritable) {
                     var entry = m.bufferOut.peekFirst();
                     if (entry == null || (currentBatchSize + entry.val1().length > MAX_BATCH_BYTES)) break;
                     nodeMessages.add(m.bufferOut.pollFirst());
-                    currentBatchSize += nodeMessages.get(nodeMessages.size()-1).val1().length;
+                    currentBatchSize += nodeMessages.get(nodeMessages.size() - 1).val1().length;
                 }
                 if (!nodeMessages.isEmpty()) {
                     Log.debug("message send client to server: $uidFrom -> $uidTo", "uidFrom", client.getUid(), "uidTo", m.consumer);
@@ -172,11 +157,8 @@ protected void onConnectionStateChanged(boolean isWritable) {
                         m.bufferOut.addAll(nodeMessages);
                     });
                 }
-
             }
         }
-
-
         if (messagesForSend != null && !messagesForSend.isEmpty()) {
             MessageBatcher batcher = new MessageBatcher();
             for (var msg : messagesForSend) {
@@ -184,7 +166,6 @@ protected void onConnectionStateChanged(boolean isWritable) {
             }
             batcher.flush(a);
         }
-
 
 
         if (!firstAuth) {
@@ -196,18 +177,6 @@ protected void onConnectionStateChanged(boolean isWritable) {
                 firstAuth = false;
             });
         }
-        return r->{
-          if(r){
-              client.priorityManager.promote(client.getUid(), serverDescriptor.getId());
-              for (var v : messagesForSend2) {
-                  v.val2().done();
-              }
-          }else{
-              for (var v : tasksForCancelMessages) {
-                  v.run();
-              }
-          }
-        };
     }
 
     @Override
@@ -217,7 +186,10 @@ protected void onConnectionStateChanged(boolean isWritable) {
 
     @Override
     public void sendSafeApiData(LoginClientStream data) {
-        data.accept(apiSafeCtx, cryptoEngine::decrypt, apiSafe);
+        data.convert(cryptoEngine::decrypt)
+                .keys(c-> new MyClientApiSafe(client, this))
+                //.onFlushData(d->) TODO Нужна ссылка на root api чтобы получить доступ к защищенному уровню api
+                .accept();
     }
 
     public ServerDescriptor getServerDescriptor() {
@@ -239,32 +211,11 @@ protected void onConnectionStateChanged(boolean isWritable) {
 
     public void scheduledWork() {
         var t = RU.time();
-        if ((t - lastWorkTime < client.getPingTime() || !inProcess.compareAndSet(false, true)))
-            return;
+        if ((t - lastWorkTime < client.getPingTime() || !inProcess.compareAndSet(false, true))) return;
         lastWorkTime = t;
         var f = AFuture.make();
         f.timeout(2, () -> {
             Log.warn("connection work flush 1 timeout");
-        });
-        apiSafeCtx.flush(r->{
-            inProcess.set(false);
-            f.done();
-        });
-    }
-
-    public void flush() {
-        if (apiSafeCtx == null)
-            return;
-        if (!inProcess.compareAndSet(false, true))
-            return;
-        lastWorkTime = RU.time();
-        var f = AFuture.make();
-        f.timeout(2, () -> {
-            Log.warn("connection work flush 2 timeout");
-        });
-        apiSafeCtx.flush(r->{
-            inProcess.set(false);
-            f.done();
         });
     }
 
@@ -400,23 +351,26 @@ protected void onConnectionStateChanged(boolean isWritable) {
         public void sendMessages(Message[] msg) {
             Log.trace("receive messages: $count", "count", msg.length);
             // Adaptive Cloud: Promote connection on data receipt
-            client.priorityManager.promote(client.getUid(), (short) serverDescriptor.getId());
+            client.priorityManager.promote(client.getUid(), serverDescriptor.getId());
             // Adaptive Cloud: Promote on data receipt
-            client.priorityManager.promote(client.getUid(), (short) connection.getServerDescriptor().getId());
+            client.priorityManager.promote(client.getUid(), connection.getServerDescriptor().getId());
             for (var m : msg) {
-                Log.trace("receive message $uid1 <- $uid2", "uid1", client.getUid(), "uid2", m.getUid());
-                client.getMessageNode(m.getUid(), MessageEventListener.DEFAULT).sendMessageFromServerToClient(m.getData());
+                sendMessage(m);
             }
         }
-
+        @Override
+        public void sendMessage(Message m) {
+                Log.trace("receive message $uid1 <- $uid2", "uid1", client.getUid(), "uid2", m.getUid());
+                client.getMessageNode(m.getUid(), MessageEventListener.DEFAULT).sendMessageFromServerToClient(m.getData());
+        }
         @Override
         public void sendServerDescriptor(ServerDescriptor v) {
             client.putServerDescriptor(v);
         }
 
         @Override
-        public void sendCloud(UUID uid, Cloud cloud) {
-            client.setCloud(uid, cloud);
+        public void sendCloud(UUIDAndCloud uidAndCloud) {
+            client.setCloud(uidAndCloud.getUid(), uidAndCloud.getCloud());
         }
 
         @Override
@@ -429,74 +383,17 @@ protected void onConnectionStateChanged(boolean isWritable) {
         @Override
         public void sendClouds(UUIDAndCloud[] clouds) {
             for (var c : clouds) {
-                sendCloud(c.getUid(), c.getCloud());
+                sendCloud(c);
             }
         }
 
         @Override
         public void newChildren(UUID[] uid) {
-            for(var u:uid){
+            for (var u : uid) {
                 client.onNewChild.fire(u);
             }
         }
 
 
-
-
-
-    }
-
-    private class MyFastApiContext extends MetaContextBase {
-
-        private final AetherCloudClient client;
-
-        public MyFastApiContext(AetherCloudClient client) {
-            this.client = client;
-        }
-
-        @Override
-        public void flush(FlushReport report) {
-            if (!isWritable()) {
-                report.abort();
-                return;
-            }
-            boolean hasWork = true;
-            if (!hasWork) {
-                report.done();
-                return;
-            }
-            getRootApiFuture().to(api -> {
-                FlushReport r2=ConnectionWork.this.flushBackgroundRequests(makeRemote(AuthorizedApi.META));
-                var d = remoteDataToArray();
-                if (d.length == 0) {
-                    report.done();
-                    return;
-                }
-
-                if (d.length > 500000) {
-                    Log.error("NETWORK_DEBUG: LoginStream packet is too large, dropping!", "size", d.length);
-                    report.abort();
-                    return;
-                }
-        if (cryptoEngine == null) {
-            Log.error("MyFastApiContext.flush: cryptoEngine is null, aborting flush");
-            report.abort();
-            return;
-        }
-
-                var loginStream = new LoginStream(data -> {
-                    if(data==null||data.length==0){
-                        return new byte[0];
-                    }else{
-                        return cryptoEngine.encrypt(data);
-                    }
-                }, d);
-                api.loginByAlias(client.getAlias(), loginStream);
-                rootApi.flush(r->{
-                    r2.report(r);
-                    report.report(r);
-                });
-            }).onError(e->report.abort());
-        }
     }
 }

@@ -6,8 +6,9 @@ import io.aether.cloud.client.ClientStateInFile;
 import io.aether.cloud.client.ClientStateInMemory;
 import io.aether.logger.LNode;
 import io.aether.logger.Log;
+
 import io.aether.logger.LogFilter;
-import io.aether.net.fastMeta.FlushReport;
+
 import io.aether.utils.futures.AFuture;
 import org.h2.jdbcx.JdbcConnectionPool;
 
@@ -172,7 +173,7 @@ public class SmartHubService {
 
                     }
                     Log.info("SmartHub: Device stream connected", "uid", devUid);
-                    stream.accept(rootCtx, api2DeviceLocal);
+                    stream.accept();
                     Log.info("SmartHub: stream.accept finished successfully");
                 }
 
@@ -193,7 +194,7 @@ public class SmartHubService {
                             for (UUID u : devicesArray) Log.info("device", "uid", u);
                             guiRemote.onGetDevicesResult(devicesArray);
                             Log.info("About to call flush after onGetDevicesResult");
-                            guiRemote.flush(FlushReport.STUB);
+
                             Log.info("Flush completed");
                         }
 
@@ -215,11 +216,11 @@ public class SmartHubService {
                                 Log.error(e);
                             }
                             guiRemote.onRequestHistoryResult(d, records.toArray(new SensorRecord[0]));
-                            guiRemote.flush(FlushReport.STUB);
+
                         }
                     };
                     Log.info("SmartHub: GUI stream connected", "uid", guiUid);
-                    stream.accept(rootCtx, guiLocal);
+                    stream.accept();
                 }
 
             });

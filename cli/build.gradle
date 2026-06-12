@@ -58,8 +58,8 @@ publishing {
     publications {
         mavenPublication(MavenPublication) {
             from components.java
-            groupId "io.aether"
-            artifactId "cli"
+            groupId = "io.aether"
+            artifactId = "cli"
         }
     }
 }

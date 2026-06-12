@@ -16,24 +16,24 @@ java {
 repositories {
     mavenCentral()
     maven {
-        url "https://nexus.aethernet.io/maven/releases/"
+        url = "https://nexus.aethernet.io/maven/releases/"
     }
 }
 publishing {
     publications {
         mavenPublication(MavenPublication){
             from components.java
-            groupId "io.aether"
-            artifactId "example-smart-hub"
+            groupId = "io.aether"
+            artifactId = "example-smart-hub"
         }
     }
     repositories {
         maven {
-            url "https://nexus.aethernet.io/maven/releases/"
+            url = "https://nexus.aethernet.io/maven/releases/"
             allowInsecureProtocol = true
             credentials {
-                username project.findProperty('aetherRepoUser') ?: ''
-                password project.findProperty('aetherRepoPassword') ?: ''
+                username = project.findProperty("aetherRepoUser") ?: ""
+                password = project.findProperty("aetherRepoPassword") ?: ""
             }
         }
     }

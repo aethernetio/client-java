@@ -12,8 +12,8 @@ publishing {
     publications {
         mavenPublication(MavenPublication){
             from components.java
-            groupId "io.aether"
-            artifactId "example-smart-home"
+            groupId = "io.aether"
+            artifactId = "example-smart-home"
         }
     }
 }
