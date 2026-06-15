@@ -433,6 +433,9 @@ public final class AetherCloudClient implements Destroyable {
                 return;
             makeFirstConnection();
         }
+        for (var c : connections.values()) {
+            c.flushBackgroundRequests();
+        }
     }
 
     /**
@@ -459,7 +462,7 @@ public final class AetherCloudClient implements Destroyable {
                     ConnectionWork conn = getConnection(descriptor);
                     // For the primary (top) server, link it to the client's start status
                     if (sid == orderedSids[0]) {
-                        conn.connectFuture.to(startFuture::tryDone);
+                        startFuture.tryDone();
                     }
                 }).onError(e -> {
                     priorityManager.demote(uid, sid);

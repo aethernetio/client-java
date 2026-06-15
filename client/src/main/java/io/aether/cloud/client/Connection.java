@@ -19,7 +19,6 @@ public abstract class Connection<LT, RT extends RemoteApi> implements Destroyabl
 
     protected final AetherCloudClient client;
     protected final URI uri;
-    protected final ARFuture<RT> connectFuture = ARFuture.make();
     protected final MetaContext ctx;
     protected volatile RT rootApi;
 
@@ -32,7 +31,6 @@ public abstract class Connection<LT, RT extends RemoteApi> implements Destroyabl
         this.uri = uri;
         this.client = client;
         if (client.destroyer.isDestroyed()) {
-            connectFuture.error(new CancellationException());
             rootApi = null;
             this.ctx = null;
             return;
@@ -50,7 +48,6 @@ public abstract class Connection<LT, RT extends RemoteApi> implements Destroyabl
                 Log.trace("Connection lost.", "uri", uri);
             }
         });
-        this.connectFuture.tryDone(this.rootApi);
     }
 
 
@@ -59,10 +56,6 @@ public abstract class Connection<LT, RT extends RemoteApi> implements Destroyabl
 
     public RT getRootApi() {
         return rootApi;
-    }
-
-    public ARFuture<RT> getRootApiFuture() {
-        return connectFuture;
     }
 
     @Override

@@ -39,11 +39,11 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
             return kk.key().asAsymmetric().toCryptoEngine();
         });
     }
-
+    final AFuture connectFuture=AFuture.make();
     public AFuture registration() {
         Log.debug("RegConn: Starting async registration process.", "uri", uri);
         getAsymmetricPublicKey().to(this::regProcess);
-        return connectFuture.toFuture();
+        return connectFuture;
     }
 
     private void regProcess(CryptoEngine asymCE) {
@@ -79,6 +79,8 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
                             }).addListener((f) -> {
                                 if (!f.isDone()) {
                                     Log.error("flush task canceled 1! $f", "f", f);
+                                }else{
+                                    connectFuture.done();
                                 }
                             });
                 }, 6, () -> Log.warn("RegConn: timeout requestWorkProofData"));
