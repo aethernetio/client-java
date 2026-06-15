@@ -173,7 +173,7 @@ public class SmartHubService {
 
                     }
                     Log.info("SmartHub: Device stream connected", "uid", devUid);
-                    stream.accept();
+                    stream.asIn().accept();
                     Log.info("SmartHub: stream.accept finished successfully");
                 }
 
@@ -220,7 +220,7 @@ public class SmartHubService {
                         }
                     };
                     Log.info("SmartHub: GUI stream connected", "uid", guiUid);
-                    stream.accept();
+                    stream.asIn().accept();
                 }
 
             });

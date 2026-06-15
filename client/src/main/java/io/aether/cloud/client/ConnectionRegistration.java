@@ -20,18 +20,8 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
     private final AKey.Symmetric tempKey = CryptoProviderFactory.getProvider(client.getCryptLib().name()).createSymmetricKey();
     private final KeySymmetric tempKeyNative = CryptoUtils.of(tempKey);
     private final CryptoEngine tempKeyCp = tempKey.toCryptoEngine();
-
-
-
-
-
-    private final io.aether.net.fastMeta.MetaContext ctxSafe = io.aether.net.fastMeta.MetaContext.STUB;
-    private final io.aether.net.fastMeta.MetaContext globalCtx = io.aether.net.fastMeta.MetaContext.STUB;
-
-
-
-
-
+    volatile ServerRegistrationApiRemote safeApi;
+    volatile GlobalRegServerApiRemote globalApi;
     private CryptoEngine gcp;
 
     public ConnectionRegistration(AetherCloudClient client, URI uri) {
@@ -39,25 +29,15 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
     }
 
     private ARFuture<CryptoEngine> getAsymmetricPublicKey() {
-        ARFuture<CryptoEngine> result = ARFuture.make();
-        getRootApiFuture()
-                .to(api -> {
-                    Log.debug("RegConn: TCP connection successful, requesting asymmetric key.", "uri", uri);
-                    api.getAsymmetricPublicKey(client.getCryptLib()).to(k -> {
-                        var kk = CryptoUtils.of(k);
-                        if (!client.verifySign(kk)) {
-                            Log.error("RegConn: Key verification failed.", "signedKey", kk);
-                            throw new IllegalStateException("Key verification exception");
-                        }
-                        result.done(kk.key().asAsymmetric().toCryptoEngine());
-                    });
-                    api.flush();
-                })
-                .onError(e -> {
-                    Log.error("RegConn: Initial connection failed.", e, "uri", uri);
-                    result.error(e);
-                });
-        return result;
+        Log.debug("RegConn: TCP connection successful, requesting asymmetric key.", "uri", uri);
+        return rootApi.getAsymmetricPublicKey(client.getCryptLib()).map(k -> {
+            var kk = CryptoUtils.of(k);
+            if (!client.verifySign(kk)) {
+                Log.error("RegConn: Key verification failed.", "signedKey", kk);
+                throw new IllegalStateException("Key verification exception");
+            }
+            return kk.key().asAsymmetric().toCryptoEngine();
+        });
     }
 
     public AFuture registration() {
@@ -67,58 +47,41 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
     }
 
     private void regProcess(CryptoEngine asymCE) {
+        safeApi = rootApi.openEnter(client.getCryptLib(), r -> ClientApiRegSafe.EMPTY, asymCE::encrypt, "reg safe");
         Log.info("RegConn: Asym public key was received.");
-        getRootApiFuture().to(api -> {
+        safeApi.setReturnKey(tempKeyNative);
+        safeApi.requestWorkProofData(client.getParent(), PowMethod.AE_BCRYPT_CRC32)
+                .to(wpd -> {
+                    Log.info("RegConn: WorkProofData has been received. Starting PoW calculation.");
+                    var passwords = WorkProofUtil.generateProofOfWorkPool(
+                            wpd.getSalt(),
+                            wpd.getSuffix(),
+                            wpd.getMaxHashVal(),
+                            wpd.getPoolSize(),
+                            5300);
+                    if (!client.verifySign(CryptoUtils.of(wpd.getGlobalKey()))) {
+                        Log.error("RegConn: Global key verification failed.");
+                        throw new RuntimeException();
+                    }
+                    gcp = CryptoEngine.of(CryptoUtils.of(wpd.getGlobalKey().getKey()).asAsymmetric().toCryptoEngine(), client.getMasterKey().toCryptoEngine());
 
-            if (api == null) {
-                Log.error("RegConn: Root API is null after successful connection.");
-                return;
-            }
-
-            api.enter(client.getCryptLib(), new ServerRegistrationApiStream().context(ctxSafe).convert(asymCE::encrypt).send(apiInner -> {
-                apiInner.setReturnKey(tempKeyNative);
-                apiInner.requestWorkProofData(client.getParent(), PowMethod.AE_BCRYPT_CRC32)
-                        .to(wpd -> {
-                            Log.info("RegConn: WorkProofData has been received. Starting PoW calculation.");
-                            var passwords = WorkProofUtil.generateProofOfWorkPool(
-                                    wpd.getSalt(),
-                                    wpd.getSuffix(),
-                                    wpd.getMaxHashVal(),
-                                    wpd.getPoolSize(),
-                                    5300);
-                            if (!client.verifySign(CryptoUtils.of(wpd.getGlobalKey()))) {
-                                Log.error("RegConn: Global key verification failed.");
-                                throw new RuntimeException();
-                            }
-                            gcp = CryptoEngine.of(CryptoUtils.of(wpd.getGlobalKey().getKey()).asAsymmetric().toCryptoEngine(), client.getMasterKey().toCryptoEngine());
-
-
-                            api.enter(client.getCryptLib(), new ServerRegistrationApiStream().context(ctxSafe).convert(asymCE::encrypt).send(
-                                    a2 -> {
-                                        a2.setReturnKey(tempKeyNative);
-                                        a2.registration(wpd.getSalt(), wpd.getSuffix(), passwords, client.getParent(),
-                                                new GlobalApiStream().context(globalCtx).convert(gcp::encrypt).send(gapi -> {
-
-                                                    gapi.setMasterKey(CryptoUtils.of(client.getMasterKey()));
-                                                    gapi.finish()
-                                                            .to(d -> {
-                                                                Log.trace("RegConn: registration step finish.");
-                                                                client.confirmRegistration(d);
-                                                                Log.info("RegConn: Registration confirmed.");
-                                                                resolveCloud(d.getCloud(), asymCE).to(() -> {
-                                                                    Log.info("RegConn: resolve cloud.");
-                                                                });
-                                                            }).addListener((f) -> {
-                                                                if (!f.isDone()) {
-                                                                    Log.error("flush task canceled 1! $f", "f", f);
-                                                                }
-                                                            });
-                                                }));
-                                    }));
-                        }, 6, () -> Log.warn("RegConn: timeout requestWorkProofData"));
-
-            }));
-        });
+                    safeApi.setReturnKey(tempKeyNative);
+                    globalApi = safeApi.openRegistration(wpd.getSalt(), wpd.getSuffix(), passwords, client.getParent(), r -> GlobalRegClientApi.EMPTY, gcp::encrypt, "global");
+                    globalApi.setMasterKey(CryptoUtils.of(client.getMasterKey()));
+                    globalApi.finish()
+                            .to(d -> {
+                                Log.trace("RegConn: registration step finish.");
+                                client.confirmRegistration(d);
+                                Log.info("RegConn: Registration confirmed.");
+                                resolveCloud(d.getCloud(), asymCE).to(() -> {
+                                    Log.info("RegConn: resolve cloud.");
+                                });
+                            }).addListener((f) -> {
+                                if (!f.isDone()) {
+                                    Log.error("flush task canceled 1! $f", "f", f);
+                                }
+                            });
+                }, 6, () -> Log.warn("RegConn: timeout requestWorkProofData"));
     }
 
     public AFuture resolveCloud(Cloud cloud) {
@@ -137,36 +100,39 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
         AFuture result = client.recoveryFuture;
         Log.debug("Resolving cloud: " + cloud);
 
-        rootApi.enter(client.getCryptLib(), new ServerRegistrationApiStream().context(ctxSafe).convert(asymCE::encrypt).send(a3 -> {
-            Log.trace("RegConn: registration step resolve servers: $servers", "servers", cloud);
-            a3.resolveServers(cloud)
-                    .to(ss -> {
-                        Log.debug("Received server descriptors: " + Arrays.toString(ss));
-                        for (var s : ss) {
-                            Log.debug("Putting server descriptor: " + s);
-                            client.putServerDescriptor(s);
-                        }
-                        result.tryDone();
-                        Log.info("RegConn: Server descriptors resolved.");
-                    })
-                    .onError(e -> {
-                        Log.error("Failed to resolve servers", e);
-                        result.tryError(e);
-                    });
-        }));
-        rootApi.flush();
+        Log.trace("RegConn: registration step resolve servers: $servers", "servers", cloud);
+        safeApi.resolveServers(cloud)
+                .to(ss -> {
+                    Log.debug("Received server descriptors: " + Arrays.toString(ss));
+                    for (var s : ss) {
+                        Log.debug("Putting server descriptor: " + s);
+                        client.putServerDescriptor(s);
+                    }
+                    result.tryDone();
+                    Log.info("RegConn: Server descriptors resolved.");
+                })
+                .onError(e -> {
+                    Log.error("Failed to resolve servers", e);
+                    result.tryError(e);
+                });
         return result;
     }
 
 
     @Override
     public void enterGlobal(GlobalRegClientApiStream stream) {
-        stream.context(globalCtx).convert(gcp::decrypt).accept();
+        stream.asIn()
+                .convert(gcp::decrypt)
+                .ctx(globalApi.getFastMetaContext())
+                .accept();
     }
 
     @Override
     public void enter(ClientApiRegSafeStream stream) {
-        stream.context(ctxSafe).convert(tempKeyCp::decrypt).accept();
+        stream.asIn()
+                .ctx(safeApi.getFastMetaContext())
+                .convert(tempKeyCp::decrypt)
+                .accept();
     }
 
 }

@@ -26,6 +26,7 @@ public abstract class Connection<LT, RT extends RemoteApi> implements Destroyabl
     /** Observable state listeners triggered when the connection writability or availability changes. */
     public final EventConsumer<Boolean> stateListeners = new EventConsumer<>();
 
+
     public Connection(AetherCloudClient client, URI uri, FastMetaApi<LT, ?> localApiMeta, FastMetaApi<?, RT> remoteApiMeta) {
         assert uri != null;
         this.uri = uri;
@@ -38,20 +39,20 @@ public abstract class Connection<LT, RT extends RemoteApi> implements Destroyabl
         }
         client.destroyer.add(this);
 
-
-        this.rootApi = FastMetaNet.INSTANCE.get().makeClient(uri, localApiMeta, remoteApiMeta, ctx->RU.cast(this));
-
+        try (var ignored = Log.of("ServerHost", uri.getHost(), "ServerPort", uri.getPort()).context()) {
+            this.rootApi = FastMetaNet.INSTANCE.get().makeClient(uri, localApiMeta, remoteApiMeta, ctx -> RU.cast(this));
+        }
         this.ctx = rootApi.getFastMetaContext();
+
         ctx.onWritable(isWritable -> {
             onConnectionStateChanged(isWritable);
-            if (isWritable) {
-                this.connectFuture.tryDone(this.rootApi);
-            } else {
+            if (!isWritable) {
                 Log.trace("Connection lost.", "uri", uri);
             }
         });
         this.connectFuture.tryDone(this.rootApi);
     }
+
 
     protected boolean isWritable() { return ctx != null && ctx.isActive(); }
     protected void onConnectionStateChanged(boolean isWritable) {}

@@ -120,8 +120,7 @@ public class MessageNode implements ToString {
             AFunction<MetaContext, LT> localApiFactory) {
 
         MetaContextBase ctx = new MetaContextBase();
-        LT localApi = localApiFactory.apply(ctx);
-        ctx.setLocalApi(localApi);
+        ctx.localApi= localApiFactory.apply(ctx);
 
         ctx.onFlushData(data -> send(data));
         toApi(ctx, metaLt);
@@ -142,8 +141,8 @@ public class MessageNode implements ToString {
 
     public <LT> MetaContext toApi(FastMetaApi<LT, ? extends LT> metaLt, LT localApi) {
         MetaContextBase ctx = new MetaContextBase();
-        ctx.setLocalApi(localApi);
-        ctx.onFlushData(data -> send(data));
+        ctx.localApi=localApi;
+        ctx.onFlushData(this::send);
         toApi(ctx, metaLt);
         return ctx;
     }

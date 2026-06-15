@@ -184,13 +184,15 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         throw new UnsupportedOperationException();
     }
 
+
     @Override
     public void sendSafeApiData(LoginClientStream data) {
-        data.convert(cryptoEngine::decrypt)
-                .keys(c-> new MyClientApiSafe(client, this))
-                //.onFlushData(d->) TODO Нужна ссылка на root api чтобы получить доступ к защищенному уровню api
-                .accept();
+        data.asIn()
+            .convert(cryptoEngine::decrypt)
+            .keys(c -> new MyClientApiSafe(client, this))
+            .accept();
     }
+
 
     public ServerDescriptor getServerDescriptor() {
         return serverDescriptor;
