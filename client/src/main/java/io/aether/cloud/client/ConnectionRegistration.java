@@ -67,22 +67,24 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
 
                     safeApi.setReturnKey(tempKeyNative);
                     globalApi = safeApi.openRegistration(wpd.getSalt(), wpd.getSuffix(), passwords, client.getParent(), r -> GlobalRegClientApi.EMPTY, gcp::encrypt, "global");
-                    globalApi.setMasterKey(CryptoUtils.of(client.getMasterKey()));
-                    globalApi.finish()
-                            .to(d -> {
-                                Log.trace("RegConn: registration step finish.");
-                                client.confirmRegistration(d);
-                                Log.info("RegConn: Registration confirmed.");
-                                resolveCloud(d.getCloud(), asymCE).to(() -> {
-                                    Log.info("RegConn: resolve cloud.");
+                    try(var l=globalApi.getFastMetaContext().lock()) {
+                        globalApi.setMasterKey(CryptoUtils.of(client.getMasterKey()));
+                        globalApi.finish()
+                                .to(d -> {
+                                    Log.trace("RegConn: registration step finish.");
+                                    client.confirmRegistration(d);
+                                    Log.info("RegConn: Registration confirmed.");
+                                    resolveCloud(d.getCloud(), asymCE).to(() -> {
+                                        Log.info("RegConn: resolve cloud.");
+                                    });
+                                }).addListener((f) -> {
+                                    if (!f.isDone()) {
+                                        Log.error("flush task canceled 1! $f", "f", f);
+                                    } else {
+                                        connectFuture.done();
+                                    }
                                 });
-                            }).addListener((f) -> {
-                                if (!f.isDone()) {
-                                    Log.error("flush task canceled 1! $f", "f", f);
-                                }else{
-                                    connectFuture.done();
-                                }
-                            });
+                    }
                 }, 6, () -> Log.warn("RegConn: timeout requestWorkProofData"));
     }
 
