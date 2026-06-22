@@ -166,9 +166,11 @@ class ClientApiSafeImpl implements ClientApiSafe {
     }
 
     @Override
+
     public void sendCloud(UUIDAndCloud uidAndCloud) {
         client.setCloud(uidAndCloud.getUid(), uidAndCloud.getCloud());
     }
+
 
     @Override
     public void sendServerDescriptors(ServerDescriptor[] serverDescriptors) {
@@ -188,6 +190,26 @@ class ClientApiSafeImpl implements ClientApiSafe {
     public void newChildren(UUID[] uid) {
         for (var u : uid) {
             client.onNewChild.fire(u);
+        }
+    }
+
+
+
+
+    @Override
+    public void sendCloudConfigs(CloudConfig[] configs) {
+        for (CloudConfig cc : configs) {
+            client.clouds.get(cc.getSubjectUid(), new io.aether.utils.interfaces.Future<>() {
+                @Override
+                public void onResolved(ClientCloud clientCloud) {
+                    clientCloud.applyCloudConfig(cc, client.pendingAppliedConfigs);
+                }
+
+                @Override
+                public void onError(int time, Exception error) {
+                    client.clouds.put(cc.getSubjectUid(), new ClientCloud(cc.getSubjectUid(), cc.getCloud()));
+                }
+            });
         }
     }
 

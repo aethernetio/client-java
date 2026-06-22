@@ -1,6 +1,9 @@
 package io.aether.cloud.client;
 
+import io.aether.api.common.AppliedConfig;
 import io.aether.api.common.Cloud;
+import io.aether.api.common.CloudConfig;
+
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -11,6 +14,10 @@ public class ClientCloud {
     public UUID getUid() {
         return uid;
     }
+
+
+    private volatile long configVersion;
+    private volatile long confirmedConfigVersion;
 
     private short[] sids;
 
@@ -43,6 +50,11 @@ public class ClientCloud {
         return new Cloud(sids);
     }
 
+    public short[] getData() {
+        return sids;
+    }
+
+
     public synchronized void smartMerge(Cloud newCloud) {
         short[] newData = newCloud.getData();
         
@@ -73,4 +85,34 @@ public class ClientCloud {
     public void setWeight(short sid, long weight) {
         weights.put(sid, weight);
     }
+
+    public long getConfigVersion() {
+        return configVersion;
+    }
+
+    public void setConfigVersion(long configVersion) {
+        this.configVersion = configVersion;
+    }
+
+    public long getConfirmedConfigVersion() {
+        return confirmedConfigVersion;
+    }
+
+
+    public void applyCloudConfig(CloudConfig config, Queue<AppliedConfig> pendingQueue) {
+        if (config.getConfigVersion() > this.configVersion) {
+            smartMerge(config.getCloud());
+            this.configVersion = config.getConfigVersion();
+            pendingQueue.add(new AppliedConfig(uid, configVersion));
+        }
+    }
+
+
+
+    public void updateConfirmedConfigVersion(long version) {
+        if (version > this.confirmedConfigVersion) {
+            this.confirmedConfigVersion = version;
+        }
+    }
+
 }

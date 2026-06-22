@@ -27,7 +27,7 @@ public class MessageNode implements ToString {
     private static final int MAX_BUFFER_SIZE = 1000;
     public final EventConsumerWithQueue<byte[]> bufferIn = new EventConsumerWithQueue<>();
     final UUID consumer;
-    final ARFuture<Cloud> consumerCloud;
+    final ARFuture<ClientCloud> consumerCloud;
     final Set<ConnectionWork> connectionsOut = new ConcurrentHashSet<>();
     final Deque<Tuple2<byte[], AFuture>> bufferOut = new ConcurrentLinkedDeque<>();
     private final AetherCloudClient client;

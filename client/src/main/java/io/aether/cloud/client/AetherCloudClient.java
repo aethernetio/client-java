@@ -50,7 +50,7 @@ public final class AetherCloudClient implements Destroyable {
     public final AFuture recoveryFuture = AFuture.make();
     final LNode logClientContext;
     final Map<Integer, ConnectionWork> connections = new ConcurrentHashMap<>();
-    final BMap<UUID, Cloud> clouds = RCol.bMap("CloudCache");
+    final BMap<UUID, ClientCloud> clouds = RCol.bMap("CloudCache");
     final AtomicReference<RegStatus> regStatus = new AtomicReference<>(RegStatus.NO);
     final BMap<Integer, ServerDescriptor> servers = RCol.bMap("ServerCache");
     final BMap<UUID, Set<Long>> clientGroups = RCol.bMap("ClientGroupsCache");
@@ -63,6 +63,7 @@ public final class AetherCloudClient implements Destroyable {
     final EventBiConsumer<UUID, ServerApiByUid> onNewChildApi = new EventBiConsumer<>();
     final Map<Long, Map<UUID, ARFuture<Boolean>>> accessOperationsAdd = new ConcurrentHashMap<>();
     final Map<Long, Map<UUID, ARFuture<Boolean>>> accessOperationsRemove = new ConcurrentHashMap<>();
+    final Queue<AppliedConfig> pendingAppliedConfigs = new ConcurrentLinkedQueue<>();
     final Queue<AConsumer<AuthorizedApi>> authTasks = new ConcurrentLinkedQueue<>();
 
     final CloudPriorityManager priorityManager = new CloudPriorityManager();
@@ -119,13 +120,14 @@ public final class AetherCloudClient implements Destroyable {
         connections.clear();
     }
 
+
     public void populateCachesFromState() {
         if (getUid() == null)
             return;
         for (var c : clientState.getClientInfoAll()) {
             if (c.getCloud() != null) {
                 priorityManager.updateCloudFromWork(c.getUid(), c.getCloud().toCloud());
-                clouds.put(c.getUid(), c.getCloud().toCloud());
+                clouds.put(c.getUid(), c.getCloud());
                 clientState.saveCloud(c.getCloud());
             }
         }
@@ -134,6 +136,7 @@ public final class AetherCloudClient implements Destroyable {
                 putServerDescriptor(s.getDescriptor());
         }
     }
+
 
     public ARFuture<Set<Long>> getClientGroups(UUID uid) {
         return clientGroups.getFuture(uid);
@@ -319,7 +322,7 @@ public final class AetherCloudClient implements Destroyable {
                 resultFuture.error(new IllegalStateException("Fetched cloud was null for UID: " + uid));
                 return;
             }
-            clientState.saveCloud(new ClientCloud(uid, cloud));
+            clientState.saveCloud(cloud);
             List<ARFuture<ServerDescriptor>> serverFutures = new ArrayList<>();
             for (var sid : cloud.getData()) {
                 serverFutures.add(getServer(sid));
@@ -338,6 +341,7 @@ public final class AetherCloudClient implements Destroyable {
     }
 
 
+
     public AFuture triggerRecovery() {
         if (isRecoveryInProgress.get()) {
             return recoveryFuture;
@@ -351,19 +355,15 @@ public final class AetherCloudClient implements Destroyable {
         if (cloud != null) {
             // Есть облако в кэше - пытаемся разрешить сервера
             recoveryFutureLocal = AFuture.any(regs.map(c -> c.resolveCloud(cloud)));
-
-
         } else {
             // Нет облака - выполняем полную регистрацию заново
             Log.info("Cloud missing from cache, performing full re-registration.");
             Log.info("TriggerRecovery: cloud is null, uid=$uid, performing full re-registration.", "uid", getUid());
-            // Reset registration status to allow confirmRegistration to succeed
             regStatus.set(RegStatus.BEGIN);
             AFuture regDone = AFuture.any(regs.map(ConnectionRegistration::registration));
             recoveryFutureLocal = regDone.to(clouds.getFuture(getUid()).toFuture());
             Log.info("TriggerRecovery: re-registration done, new uid=$uid, waiting for cloud in cache.", "uid", getUid());
         }
-
 
         recoveryFutureLocal.to(() -> {
             Log.info("Recovery successful.");
@@ -375,6 +375,7 @@ public final class AetherCloudClient implements Destroyable {
         });
         return recoveryFutureLocal;
     }
+
 
 
     private void startScheduledTask() {
@@ -455,7 +456,7 @@ public final class AetherCloudClient implements Destroyable {
                 return;
             }
             // Get Sids ordered by Experience Weight (Primary first)
-            short[] orderedSids = priorityManager.getOrderedSids(uid, cloud);
+            short[] orderedSids = priorityManager.getOrderedSids(uid, cloud.toCloud());
             // Connect to ALL servers in the cloud to ensure message delivery from any path
             for (short sid : orderedSids) {
                 getServer((int) sid).to(descriptor -> {
@@ -479,14 +480,15 @@ public final class AetherCloudClient implements Destroyable {
         return connections.values();
     }
 
-    public ARFuture<Cloud> getCloud(@NotNull UUID uid) {
+
+    public ARFuture<ClientCloud> getCloud(@NotNull UUID uid) {
         var r = clientState.getCloud(uid);
         if (r != null)
-            return ARFuture.of(r.toCloud());
-        var res = ARFuture.<Cloud>make();
+            return ARFuture.of(r);
+        var res = ARFuture.<ClientCloud>make();
         clouds.get(uid, 10, new Future<>() {
             @Override
-            public void onResolved(Cloud value) {
+            public void onResolved(ClientCloud value) {
                 res.done(value);
             }
 
@@ -499,6 +501,7 @@ public final class AetherCloudClient implements Destroyable {
         return res;
     }
 
+
     public long getPingTime() {
         return clientState.getPingDuration().getNow();
     }
@@ -508,13 +511,14 @@ public final class AetherCloudClient implements Destroyable {
     }
 
 
+
     public void confirmRegistration(FinishResult regResp) {
         if (!regStatus.compareAndSet(RegStatus.BEGIN, RegStatus.CONFIRM)) {
             Log.info("Already registration");
             return;
         }
         Log.info("confirm registration: $uid", "uid", regResp.getUid());
-        clouds.put(regResp.getUid(), regResp.getCloud());
+        clouds.put(regResp.getUid(), new ClientCloud(regResp.getUid(), regResp.getCloud()));
         // Сохраняем облако в персистентное состояние клиента
         clientState.saveCloud(new ClientCloud(regResp.getUid(), regResp.getCloud()));
         clientState.setUid(regResp.getUid());
@@ -527,6 +531,7 @@ public final class AetherCloudClient implements Destroyable {
         }
         startFuture.done();
     }
+
 
 
     public MessageNode getMessageNode(@NotNull UUID uid) {
@@ -656,9 +661,16 @@ public CryptoEngine getCryptoEngineForServer(short serverId) {
         return 0;
     }
 
+
     public void setCloud(UUID uid, Cloud cloud) {
-        clouds.put(uid, cloud);
+        ClientCloud cc = clouds.getNow(uid);
+        if (cc != null) {
+            cc.applyCloudConfig(new CloudConfig(uid, 0, cloud), pendingAppliedConfigs);
+        } else {
+            clouds.put(uid, new ClientCloud(uid, cloud));
+        }
     }
+
 
     public void putServerDescriptor(ServerDescriptor s) {
         servers.put((int) s.getId(), s);
@@ -696,6 +708,19 @@ public CryptoEngine getCryptoEngineForServer(short serverId) {
 
         public ClientTimeoutException(String message) {
             super(message);
+        }
+
+
+
+    }
+
+
+    public void reportAppliedConfig(AppliedConfig[] configs) {
+        for (AppliedConfig ac : configs) {
+            ClientCloud cc = clouds.getNow(ac.getSubjectUid());
+            if (cc != null && ac.getConfigVersion() > cc.getConfirmedConfigVersion()) {
+                cc.updateConfirmedConfigVersion(ac.getConfigVersion());
+            }
         }
     }
 

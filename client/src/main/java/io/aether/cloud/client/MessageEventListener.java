@@ -5,7 +5,7 @@ import io.aether.api.common.*;
 public interface MessageEventListener {
     MessageEventListener DEFAULT = new MessageEventListener() {
         @Override
-        public void setConsumerCloud(MessageNode messageNode, Cloud cloud) {
+        public void setConsumerCloud(MessageNode messageNode, ClientCloud cloud) {
             messageNode.addConsumerServerOut(cloud.getData()[0]);
         }
 
@@ -20,7 +20,7 @@ public interface MessageEventListener {
         }
     };
 
-    void setConsumerCloud(MessageNode messageNode, Cloud cloud);
+    void setConsumerCloud(MessageNode messageNode, ClientCloud cloud);
 
     void onResolveConsumerServer(MessageNode messageNode, ServerDescriptor serverDescriptor);
 

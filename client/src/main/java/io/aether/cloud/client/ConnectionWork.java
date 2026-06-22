@@ -3,6 +3,7 @@ package io.aether.cloud.client;
 import io.aether.api.clientserverapi.*;
 import io.aether.api.common.AccessCheckPair;
 import io.aether.api.common.AetherCodec;
+import io.aether.api.common.AppliedConfig;
 import io.aether.api.common.ServerDescriptor;
 import io.aether.crypto.CryptoEngine;
 import io.aether.logger.Log;
@@ -170,6 +171,12 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                 firstAuth = false;
             });
         }
+
+        AppliedConfig[] pending = client.pendingAppliedConfigs.toArray(new AppliedConfig[0]);
+        if (pending.length > 0) {
+            a.reportAppliedConfig(pending);
+        }
+
     }
 
     @Override
