@@ -425,6 +425,8 @@ public final class AetherCloudClient implements Destroyable {
         authTasks.add(t);
     }
 
+
+
     public void flush() {
         if (connections.isEmpty()) {
             if (getUid() == null)
@@ -438,6 +440,8 @@ public final class AetherCloudClient implements Destroyable {
             c.flushBackgroundRequests();
         }
     }
+
+
 
     /**
      * Establishes connections to all servers in the client's cloud.
@@ -670,6 +674,13 @@ public CryptoEngine getCryptoEngineForServer(short serverId) {
             clouds.put(uid, new ClientCloud(uid, cloud));
         }
     }
+
+    public void requestCloudConfig(UUID subjectUid) {
+        ClientCloud cc = clouds.getNow(subjectUid);
+        long version = cc != null ? cc.getConfigVersion() - 1 : -1;
+        pendingAppliedConfigs.add(new AppliedConfig(subjectUid, version));
+    }
+
 
 
     public void putServerDescriptor(ServerDescriptor s) {

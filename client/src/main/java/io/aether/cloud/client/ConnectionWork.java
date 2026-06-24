@@ -71,13 +71,23 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         stateListeners.fire(isWritable);
     }
 
+
+
     public void flushBackgroundRequests() {
         var a = authorizedApi;
-        UUID[] requestCloud = client.clouds.pollAllRequests().toArray(new UUID[0]);
-        if (requestCloud.length > 0) {
-            a.resolveClouds(requestCloud);
+        // Запросы облаков через новый механизм
+        for (UUID uid : client.clouds.pollAllRequests()) {
+            ClientCloud cc = client.clouds.getNow(uid);
+            long version = cc != null ? cc.getConfigVersion() - 1 : -1;
+            client.pendingAppliedConfigs.add(new AppliedConfig(uid, version));
         }
+        AppliedConfig[] pending = client.pendingAppliedConfigs.toArray(new AppliedConfig[0]);
+        if (pending.length > 0) {
+            a.reportAppliedConfig(pending);
+        }
+
         Integer[] requestServers = client.servers.pollAllRequests().toArray(new Integer[0]);
+
         if (requestServers.length > 0) {
             short[] serverIds = new short[requestServers.length];
             for (int i = 0; i < requestServers.length; i++) {
@@ -172,10 +182,6 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             });
         }
 
-        AppliedConfig[] pending = client.pendingAppliedConfigs.toArray(new AppliedConfig[0]);
-        if (pending.length > 0) {
-            a.reportAppliedConfig(pending);
-        }
 
     }
 

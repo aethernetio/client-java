@@ -196,22 +196,25 @@ class ClientApiSafeImpl implements ClientApiSafe {
 
 
 
+
+
     @Override
     public void sendCloudConfigs(CloudConfig[] configs) {
         for (CloudConfig cc : configs) {
-            client.clouds.get(cc.getSubjectUid(), new io.aether.utils.interfaces.Future<>() {
-                @Override
-                public void onResolved(ClientCloud clientCloud) {
-                    clientCloud.applyCloudConfig(cc, client.pendingAppliedConfigs);
-                }
-
-                @Override
-                public void onError(int time, Exception error) {
-                    client.clouds.put(cc.getSubjectUid(), new ClientCloud(cc.getSubjectUid(), cc.getCloud()));
-                }
-            });
+            sendCloudConfig(cc);
         }
     }
+
+    private void sendCloudConfig(CloudConfig cc) {
+        ClientCloud clientCloud = client.clouds.getNow(cc.getSubjectUid());
+        if (clientCloud != null) {
+            clientCloud.applyCloudConfig(cc, client.pendingAppliedConfigs);
+        } else {
+            client.clouds.put(cc.getSubjectUid(), new ClientCloud(cc.getSubjectUid(), cc.getCloud()));
+        }
+    }
+
+
 
 
 }
