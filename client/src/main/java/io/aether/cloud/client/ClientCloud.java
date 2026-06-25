@@ -3,6 +3,7 @@ package io.aether.cloud.client;
 import io.aether.api.common.AppliedConfig;
 import io.aether.api.common.Cloud;
 import io.aether.api.common.CloudConfig;
+import io.aether.utils.rcollections.BMap;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -99,13 +100,17 @@ public class ClientCloud {
     }
 
 
-    public void applyCloudConfig(CloudConfig config, Queue<AppliedConfig> pendingQueue) {
+
+
+    public void applyCloudConfig(CloudConfig config, BMap<AppliedConfig, Boolean> requestsBMap) {
         if (config.getConfigVersion() > this.configVersion) {
             smartMerge(config.getCloud());
             this.configVersion = config.getConfigVersion();
-            pendingQueue.add(new AppliedConfig(uid, configVersion));
+            requestsBMap.getFuture(new AppliedConfig(uid, configVersion));
         }
     }
+
+
 
 
 

@@ -38,7 +38,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
     volatile boolean firstAuth;
 
     public ConnectionWork(AetherCloudClient client, ServerDescriptor s) {
-        super(client, s.getIpAddress().getURI(AetherCodec.UDP), ClientApiUnsafe.META, LoginApi.META);
+        super(client, s.getIpAddress().getURI(AetherCodec.TCP), ClientApiUnsafe.META, LoginApi.META);
         cryptoEngine = client.getCryptoEngineForServer(s.getId());
 
         if (cryptoEngine == null) {
@@ -76,15 +76,32 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
     public void flushBackgroundRequests() {
         var a = authorizedApi;
         // Запросы облаков через новый механизм
+
         for (UUID uid : client.clouds.pollAllRequests()) {
             ClientCloud cc = client.clouds.getNow(uid);
             long version = cc != null ? cc.getConfigVersion() - 1 : -1;
-            client.pendingAppliedConfigs.add(new AppliedConfig(uid, version));
+            client.appliedConfigsRequests.getFuture(new AppliedConfig(uid, version));
         }
-        AppliedConfig[] pending = client.pendingAppliedConfigs.toArray(new AppliedConfig[0]);
-        if (pending.length > 0) {
-            a.reportAppliedConfig(pending);
+
+
+        for (ClientCloud cc : client.clouds.values()) {
+            if (cc.getConfigVersion() > cc.getConfirmedConfigVersion()) {
+                client.appliedConfigsRequests.getFuture(new AppliedConfig(cc.getUid(), cc.getConfigVersion()));
+            }
         }
+
+
+        List<AppliedConfig> pendingList = new ArrayList<>();
+        AppliedConfig req;
+        while ((req = client.appliedConfigsRequests.pollNextRequest()) != null) {
+            pendingList.add(req);
+        }
+        if (!pendingList.isEmpty()) {
+            a.reportAppliedConfig(pendingList.toArray(new AppliedConfig[0]));
+        }
+
+
+
 
         Integer[] requestServers = client.servers.pollAllRequests().toArray(new Integer[0]);
 

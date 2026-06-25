@@ -63,7 +63,7 @@ public final class AetherCloudClient implements Destroyable {
     final EventBiConsumer<UUID, ServerApiByUid> onNewChildApi = new EventBiConsumer<>();
     final Map<Long, Map<UUID, ARFuture<Boolean>>> accessOperationsAdd = new ConcurrentHashMap<>();
     final Map<Long, Map<UUID, ARFuture<Boolean>>> accessOperationsRemove = new ConcurrentHashMap<>();
-    final Queue<AppliedConfig> pendingAppliedConfigs = new ConcurrentLinkedQueue<>();
+    final BMap<AppliedConfig, Boolean> appliedConfigsRequests = new BMap<>("AppliedConfigsRequests", 5000, 10000);
     final Queue<AConsumer<AuthorizedApi>> authTasks = new ConcurrentLinkedQueue<>();
 
     final CloudPriorityManager priorityManager = new CloudPriorityManager();
@@ -666,20 +666,24 @@ public CryptoEngine getCryptoEngineForServer(short serverId) {
     }
 
 
+
     public void setCloud(UUID uid, Cloud cloud) {
         ClientCloud cc = clouds.getNow(uid);
         if (cc != null) {
-            cc.applyCloudConfig(new CloudConfig(uid, 0, cloud), pendingAppliedConfigs);
+            cc.applyCloudConfig(new CloudConfig(uid, 0, cloud), appliedConfigsRequests);
         } else {
             clouds.put(uid, new ClientCloud(uid, cloud));
         }
     }
 
+
+
     public void requestCloudConfig(UUID subjectUid) {
         ClientCloud cc = clouds.getNow(subjectUid);
         long version = cc != null ? cc.getConfigVersion() - 1 : -1;
-        pendingAppliedConfigs.add(new AppliedConfig(subjectUid, version));
+        appliedConfigsRequests.getFuture(new AppliedConfig(subjectUid, version));
     }
+
 
 
 
@@ -726,13 +730,16 @@ public CryptoEngine getCryptoEngineForServer(short serverId) {
     }
 
 
+
     public void reportAppliedConfig(AppliedConfig[] configs) {
         for (AppliedConfig ac : configs) {
             ClientCloud cc = clouds.getNow(ac.getSubjectUid());
             if (cc != null && ac.getConfigVersion() > cc.getConfirmedConfigVersion()) {
                 cc.updateConfirmedConfigVersion(ac.getConfigVersion());
             }
+            appliedConfigsRequests.put(ac, true);
         }
     }
+
 
 }
