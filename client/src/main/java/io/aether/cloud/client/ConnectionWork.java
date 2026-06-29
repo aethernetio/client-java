@@ -191,7 +191,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
 
         if (!firstAuth) {
             firstAuth = true;
-            a.ping(0).to(() -> {
+            a.ping(0, 0).to(() -> {
                 Log.debug("First ping response received. Marking connection ready.");
             }).onError(e -> {
                 Log.warn("First ping failed, will retry.", e);
