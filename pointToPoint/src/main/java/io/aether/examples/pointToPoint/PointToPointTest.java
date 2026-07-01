@@ -16,8 +16,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class PointToPointTest {
     public final List<URI> registrationUri = new ArrayList<>();
@@ -467,5 +469,100 @@ public class PointToPointTest {
 
         return testDoneFuture;
     }
+
+
+
+    public AFuture p2pPeriodicSend() {
+        var parent = UUID.fromString("B1AC52C8-8D94-BD39-4C01-A631AC594165");
+        if (clientConfig1 == null)
+            clientConfig1 = new ClientStateInMemory(parent, registrationUri, null, CryptoLib.SODIUM);
+        if (clientConfig2 == null)
+            clientConfig2 = new ClientStateInMemory(parent, registrationUri, null, CryptoLib.HYDROGEN);
+        clientConfig1.getPingDuration().set(100L);
+        clientConfig2.getPingDuration().set(100L);
+        
+        AetherCloudClient client1 = new AetherCloudClient(clientConfig1, "periodicClient1");
+        AetherCloudClient client2 = new AetherCloudClient(clientConfig2, "periodicClient2");
+        
+        AFuture testDoneFuture = AFuture.make();
+        AtomicLong messageCounter = new AtomicLong(0);
+        AtomicLong lastReceivedCounter = new AtomicLong(0);
+        AtomicReference<Throwable> errorRef = new AtomicReference<>();
+        AtomicReference<ScheduledFuture<?>> schedulerRef = new AtomicReference<>();
+        
+        client2.onMessage((uid, msg) -> {
+            long received = lastReceivedCounter.incrementAndGet();
+            long sent = messageCounter.get();
+            Log.info("Received message #$received from $uid, sent: $sent");
+        });
+        
+        AFuture.all(client1.startFuture, client2.startFuture).to(() -> {
+            Log.info("Both clients registered. UID1: $uid1, UID2: $uid2", 
+                     "uid1", client1.getUid(), "uid2", client2.getUid());
+            
+            // Периодическая отправка раз в секунду через RU.scheduleAtFixedRate
+            ScheduledFuture<?> scheduler = RU.scheduleAtFixedRate(1000, () -> {
+                if (testDoneFuture.isDone()) {
+                    ScheduledFuture<?> s = schedulerRef.get();
+                    if (s != null) s.cancel(false);
+                    return;
+                }
+                
+                long idx = messageCounter.incrementAndGet();
+                byte[] msg = new byte[8];
+                msg[0] = (byte)(idx & 0xFF);
+                msg[1] = (byte)((idx >> 8) & 0xFF);
+                msg[2] = (byte)((idx >> 16) & 0xFF);
+                msg[3] = (byte)((idx >> 24) & 0xFF);
+                msg[4] = 1;
+                msg[5] = 2;
+                msg[6] = 3;
+                msg[7] = 4;
+                
+                Log.info("Sending message #$idx", "idx", idx);
+                
+                client1.sendMessage(client2.getUid(), msg).onError(e -> {
+                    Log.error("Failed to send message #$idx", e);
+                    errorRef.set(e);
+                    testDoneFuture.error(e);
+                    ScheduledFuture<?> s = schedulerRef.get();
+                    if (s != null) s.cancel(false);
+                });
+            });
+                client1.flush();
+            
+            schedulerRef.set(scheduler);
+            
+            // Таймаут - 2 минуты
+            AFuture timeout = AFuture.make();
+            timeout.timeoutMs(1800000, () -> {
+                if (!testDoneFuture.isDone()) {
+                    Log.info("Test timeout reached. Sent: $sent, Received: $received",
+                             "sent", messageCounter.get(), "received", lastReceivedCounter.get());
+                    testDoneFuture.done();
+                    ScheduledFuture<?> s = schedulerRef.get();
+                    if (s != null) s.cancel(false);
+                }
+            });
+            
+        }).onError(e -> {
+            Log.error("Failed to start clients", e);
+            testDoneFuture.error(e);
+        });
+        
+        testDoneFuture.to(() -> {
+            Log.info("Periodic test completed. Sent: $sent, Received: $received",
+                     "sent", messageCounter.get(), "received", lastReceivedCounter.get());
+            ScheduledFuture<?> s = schedulerRef.get();
+            if (s != null) s.cancel(false);
+            client1.destroy(true);
+            client2.destroy(true);
+        });
+        
+        return testDoneFuture;
+    }
+
+
+
 
 }
