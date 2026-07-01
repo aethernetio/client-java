@@ -35,7 +35,6 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
 
 public final class AetherCloudClient implements Destroyable {
 
@@ -75,8 +74,8 @@ public final class AetherCloudClient implements Destroyable {
     private final AtomicBoolean startScheduledTaskFlag = new AtomicBoolean();
 
     private final Set<ConnectionRegistration> connectionRegistrations = new ConcurrentHashSet<>();
+    private final ARFuture<Connection<?, ?>> anyConnection = ARFuture.make();
     private boolean beginConnect;
-
     private String name;
 
     {
@@ -120,7 +119,6 @@ public final class AetherCloudClient implements Destroyable {
         connections.clear();
     }
 
-
     public void populateCachesFromState() {
         if (getUid() == null)
             return;
@@ -136,7 +134,6 @@ public final class AetherCloudClient implements Destroyable {
                 putServerDescriptor(s.getDescriptor());
         }
     }
-
 
     public ARFuture<Set<Long>> getClientGroups(UUID uid) {
         return clientGroups.getFuture(uid);
@@ -220,6 +217,7 @@ public final class AetherCloudClient implements Destroyable {
                         }
                     }
                 });
+                anyConnection.tryDone(conn);
                 return conn;
             }
         });
@@ -237,7 +235,11 @@ public final class AetherCloudClient implements Destroyable {
             List<java.net.URI> uris = clientState.getRegistrationUri();
             uris.stream()
                     .limit(3)
-                    .map(uri -> new ConnectionRegistration(this, uri))
+                    .map(uri -> {
+                        var res = new ConnectionRegistration(this, uri);
+                        anyConnection.tryDone(res);
+                        return res;
+                    })
                     .forEach(connectionRegistrations::add);
         }
         return Flow.flow(connectionRegistrations);
@@ -340,8 +342,6 @@ public final class AetherCloudClient implements Destroyable {
         return resultFuture;
     }
 
-
-
     public AFuture triggerRecovery() {
         if (isRecoveryInProgress.get()) {
             return recoveryFuture;
@@ -376,8 +376,6 @@ public final class AetherCloudClient implements Destroyable {
         return recoveryFutureLocal;
     }
 
-
-
     private void startScheduledTask() {
         if (startScheduledTaskFlag.compareAndSet(false, true)) {
             RU.scheduleAtFixedRate(destroyer, 3, TimeUnit.MILLISECONDS, this::flush);
@@ -407,16 +405,8 @@ public final class AetherCloudClient implements Destroyable {
         return res;
     }
 
-    private ConnectionWork getAnyConnection() {
-        if (connections.isEmpty()) {
-            makeFirstConnection();
-            return null;
-        }
-        for (var c : connections.values()) {
-            if (c.firstAuth)
-                return c;
-        }
-        return connections.values().stream().findFirst().orElse(null);
+    public ARFuture<Connection<?, ?>> getAnyConnection() {
+        return anyConnection;
     }
 
     public void getAuthApi(@NotNull AConsumer<AuthorizedApi> t) {
@@ -424,8 +414,6 @@ public final class AetherCloudClient implements Destroyable {
             return;
         authTasks.add(t);
     }
-
-
 
     public void flush() {
         if (connections.isEmpty()) {
@@ -440,8 +428,6 @@ public final class AetherCloudClient implements Destroyable {
             c.flushBackgroundRequests();
         }
     }
-
-
 
     /**
      * Establishes connections to all servers in the client's cloud.
@@ -515,7 +501,6 @@ public final class AetherCloudClient implements Destroyable {
     }
 
 
-
     public void confirmRegistration(FinishResult regResp) {
         if (!regStatus.compareAndSet(RegStatus.BEGIN, RegStatus.CONFIRM)) {
             Log.info("Already registration");
@@ -535,7 +520,6 @@ public final class AetherCloudClient implements Destroyable {
         }
         startFuture.done();
     }
-
 
 
     public MessageNode getMessageNode(@NotNull UUID uid) {
@@ -644,7 +628,7 @@ public final class AetherCloudClient implements Destroyable {
     }
 
 
-public CryptoEngine getCryptoEngineForServer(short serverId) {
+    public CryptoEngine getCryptoEngineForServer(short serverId) {
         var k = getMasterKey();
         if (k == null) {
             Log.error("Cannot create crypto engine for server " + serverId + ": master key is null");
@@ -666,7 +650,6 @@ public CryptoEngine getCryptoEngineForServer(short serverId) {
     }
 
 
-
     public void setCloud(UUID uid, Cloud cloud) {
         ClientCloud cc = clouds.getNow(uid);
         if (cc != null) {
@@ -677,7 +660,6 @@ public CryptoEngine getCryptoEngineForServer(short serverId) {
     }
 
 
-
     public void requestCloudConfig(UUID subjectUid) {
         ClientCloud cc = clouds.getNow(subjectUid);
         long version = cc != null ? cc.getConfigVersion() - 1 : -1;
@@ -685,11 +667,82 @@ public CryptoEngine getCryptoEngineForServer(short serverId) {
     }
 
 
-
-
     public void putServerDescriptor(ServerDescriptor s) {
         servers.put((int) s.getId(), s);
         clientState.getServerInfo(s.getId()).setDescriptor(s);
+    }
+
+
+
+
+    public ARFuture<IpInfo> getMyIp() {
+        ARFuture<IpInfo> result = ARFuture.make();
+        getMyIp0(result);
+        return result;
+    }
+
+
+
+    private void getMyIp0(ARFuture<IpInfo> result) {
+        ARFuture<IpInfo> timeout = ARFuture.make();
+        timeout.timeoutMs(2000, () -> {
+            if (!result.isDone()) {
+                retryGetMyIp(result);
+            }
+        });
+        for (var conn : connections.values()) {
+            if (conn.isWritable()) {
+                conn.getRootApi().getMyIp().to(r -> {
+                    if (result.tryDone(r)) timeout.cancel();
+                }).onError(e -> {
+                    if (!result.isDone()) retryGetMyIp(result);
+                });
+                return;
+            }
+        }
+        getAnyConnection().to(c -> {
+            if(c instanceof ConnectionWork cw && cw.isWritable()){
+                cw.getRootApi().getMyIp().to(r -> {
+                    if (result.tryDone(r)) timeout.cancel();
+                }).onError(e -> {
+                    if (!result.isDone()) retryGetMyIp(result);
+                });
+            }else if(c instanceof ConnectionRegistration cr && cr.isWritable()){
+                cr.getRootApi().getMyIp().to(r -> {
+                    if (result.tryDone(r)) timeout.cancel();
+                }).onError(e -> {
+                    if (!result.isDone()) retryGetMyIp(result);
+                });
+            } else {
+                if (!result.isDone()) retryGetMyIp(result);
+            }
+        }).onError(e -> {
+            if (!result.isDone()) retryGetMyIp(result);
+        });
+    }
+
+    private void retryGetMyIp(ARFuture<IpInfo> result) {
+        if (destroyer.isDestroyed()) return;
+        RU.schedule(500, () -> {
+            if (!result.isDone()) {
+                getMyIp0(result);
+            }
+        });
+    }
+
+
+
+
+
+
+    public void reportAppliedConfig(AppliedConfig[] configs) {
+        for (AppliedConfig ac : configs) {
+            ClientCloud cc = clouds.getNow(ac.getSubjectUid());
+            if (cc != null && ac.getConfigVersion() > cc.getConfirmedConfigVersion()) {
+                cc.updateConfirmedConfigVersion(ac.getConfigVersion());
+            }
+            appliedConfigsRequests.put(ac, true);
+        }
     }
 
     public static AetherCloudClient of(ClientState state) {
@@ -726,19 +779,6 @@ public CryptoEngine getCryptoEngineForServer(short serverId) {
         }
 
 
-
-    }
-
-
-
-    public void reportAppliedConfig(AppliedConfig[] configs) {
-        for (AppliedConfig ac : configs) {
-            ClientCloud cc = clouds.getNow(ac.getSubjectUid());
-            if (cc != null && ac.getConfigVersion() > cc.getConfirmedConfigVersion()) {
-                cc.updateConfirmedConfigVersion(ac.getConfigVersion());
-            }
-            appliedConfigsRequests.put(ac, true);
-        }
     }
 
 
