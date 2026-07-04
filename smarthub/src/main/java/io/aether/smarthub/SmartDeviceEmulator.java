@@ -40,58 +40,32 @@ public class SmartDeviceEmulator {
     }
 
 
+
     public void start(String regUri) throws Exception {
         Log.info("SmartDeviceEmulator.start() called", "regUri", regUri, "serviceUid", serviceUid);
-        ClientStateInFile state = new ClientStateInFile(serviceUid, List.of(URI.create(regUri)), new File(statePath));
-        client = new AetherCloudClient(state, "Emulator-for-" + serviceUid);
-        Log.info("AetherCloudClient created");
-        client.connect()
-                .timeoutError(60, "Connect timeout")
-                .to(() -> {
-                    Log.info("Connect callback started");
-                    deviceUid = state.getUid();
+        URI uri = URI.create(regUri);
+        client = AetherCloudClient.asClient(serviceUid, uri, "Emulator-" + serviceUid,
+                SmartHomeClientDeviceApi.META,
+                SmartHomeHubRegistryApi.META,
+                remoteHubApi -> {
+                    deviceUid = client.getUid();
                     Log.info("Device Emulator connected", "uid", deviceUid);
+                    remoteHubApi.openDevice(remoteDeviceApi -> {
+                        Log.info("Starting scheduled temperature reporting", "intervalSec", 1);
+                        scheduler.scheduleAtFixedRate(() -> {
+                            int tempCelsius = 22 + (int) (Math.random() * 5);
+                            byte rawTemp = (byte) ((tempCelsius + 30) * 3);
+                            Log.info("Sending temperature", "celsius", tempCelsius, "raw", (rawTemp & 0xFF), "deviceUid", deviceUid);
+                            remoteDeviceApi.reportState(rawTemp);
+                        }, 0, 1, TimeUnit.SECONDS);
+                        return SmartHomeClientDeviceApi.EMPTY;
+                    },d->d);
+
                     ready.done();
-                })
-                .onError(ready::error);
-
-
-        ready.to(() -> {
-            Log.info("DeviceUid obtained, starting device reporting", "deviceUid", deviceUid);
-            try {
-                io.aether.cloud.client.MessageNode node = client.getMessageNode(serviceUid);
-
-                var ctx = node.toApi(SmartHomeClientDeviceApi.META, SmartHomeClientDeviceApi.EMPTY);
-                final SmartHomeHubRegistryApiRemote remoteHubApi = ctx.makeRemote(SmartHomeHubRegistryApi.META);
-                MetaContext ctx2 = new MetaContextBase() {
-                    @Override
-                    public int regFuture(FutureRec worker) {
-                        return ctx.regFuture(worker);
-                    }
-//TODO
-//                    @Override
-//                    public void flush(FlushReport report) {
-//                        var dataApi2 = remoteDataToArray();
-//                        remoteHubApi.device(new DeviceStream(dataApi2));
-//                        remoteHubApi.flush(report);
-//                    }
-                };
-                var remoteDeviceApi = ctx2.makeRemote(SmartHomeDeviceApi.META);
-                Log.info("Starting scheduled temperature reporting", "intervalSec", 5);
-                scheduler.scheduleAtFixedRate(() -> {
-                    int tempCelsius = 22 + (int) (Math.random() * 5);
-                    // Формат: 0 = -30C, шаг 1/3 градуса. 25C -> (25+30)*3 = 165
-                    byte rawTemp = (byte) ((tempCelsius + 30) * 3);
-                    Log.info("Sending temperature", "celsius", tempCelsius, "raw", (rawTemp & 0xFF), "deviceUid", deviceUid);
-                    remoteDeviceApi.reportState(rawTemp);
-                    remoteDeviceApi.flush();
-                }, 0, 1, TimeUnit.SECONDS);
-            } catch (Exception e) {
-                Log.error("Failed to start device reporting", e);
-            }
-        });
-
+                    return SmartHomeClientDeviceApi.EMPTY;
+                });
     }
+
 
 
     public void stop() {

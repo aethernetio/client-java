@@ -1,1 +1,44 @@
-{projectId: af193fb7}
+{
+  projectId: af193fb7,
+  roots: [
+    /home/angel/projects/aether-client-java,
+    /home/angel/projects/aether/fast-meta
+  ]
+  ,
+  outputFilters: [
+    ],
+  ignore: [
+    '*/.git/*',
+    '*/build/*',
+    '*/target/*',
+    '*/node_modules/*',
+    '*/.idea/*',
+    '*/out/*',
+    '*/.gradle/*',
+    '*/*.png',
+    '*/*.jpg',
+    '*/*.jpeg',
+    '*/*.gif',
+    '*/*.ico',
+    '*/*.webp',
+    '*/*.zip',
+    '*/*.jar',
+    '*/*.tar',
+    '*/*.gz',
+    '*/*.7z',
+    '*/*.rar',
+    '*/*.class',
+    '*/*.exe',
+    '*/*.dll',
+    '*/*.so',
+    '*/*.pyc',
+    '*/*.bin'
+  ]
+  ,
+  allow: [
+    '*.java',
+    '*.yml',
+    '*.yaml'
+  ]
+  
+}

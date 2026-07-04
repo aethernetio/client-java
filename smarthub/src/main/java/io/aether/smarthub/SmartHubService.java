@@ -2,13 +2,13 @@ package io.aether.smarthub;
 
 import io.aether.StandardUUIDs;
 import io.aether.api.smarthub.*;
+import io.aether.cloud.client.AetherCloudClient;
 import io.aether.cloud.client.ClientStateInFile;
 import io.aether.cloud.client.ClientStateInMemory;
 import io.aether.logger.LNode;
 import io.aether.logger.Log;
-
 import io.aether.logger.LogFilter;
-
+import io.aether.net.fastMeta.MetaContext;
 import io.aether.utils.futures.AFuture;
 import org.h2.jdbcx.JdbcConnectionPool;
 
@@ -48,6 +48,7 @@ public class SmartHubService {
         return connectionPool;
     }
 
+
     public AFuture start() throws Exception {
         try (var ctx = LNode.of(Log.SYSTEM_COMPONENT, TAG).context()) {
             Log.info("Starting SmartHub Service...");
@@ -55,30 +56,17 @@ public class SmartHubService {
             loadKnownDevicesFromDb();
 
             java.io.File stateFile = new java.io.File(STATE_PATH);
-            if (stateFile.exists() && clientState == null) {
-                Log.info("Loading identity from " + STATE_PATH);
-                clientState = io.aether.cloud.client.ClientStateInMemory.load(stateFile);
-            }
-
-            client = (clientState != null)
-                    ? new io.aether.cloud.client.AetherCloudClient(clientState, "SmartHub")
-                    : new io.aether.cloud.client.AetherCloudClient();
-
-            client.connect().to(() -> {
-                if (client.getClientState() instanceof io.aether.cloud.client.ClientStateInMemory inMemoryState) {
-                    try {
-                        client.forceUpdateStateFromCache();
-                        inMemoryState.save(stateFile);
-                    } catch (Exception e) {
-                        Log.error(e);
-                    }
-                }
-                registerApis();
-                Log.info("SmartHub Service started with UUID: " + client.getUid());
-            });
+            ClientStateInFile state = new ClientStateInFile(
+                    clientState != null ? clientState.getParentUid() : StandardUUIDs.TEST_UID,
+                    List.of(URI.create("tcp://registration.aethernet.io:9010")),
+                    stateFile);
+            client = AetherCloudClient.asServer(state, "SmartHub",
+                    SmartHomeHubRegistryApi.META,
+                    this::createHubRegistryApi);
         }
         return client.startFuture;
     }
+
 
     private void initDatabase() throws SQLException {
         try {
@@ -115,117 +103,72 @@ public class SmartHubService {
         }
     }
 
-    private void registerApis() {
+
+    private SmartHomeHubRegistryApi createHubRegistryApi(MetaContext rootCtx) {
         Log.info("SmartHub: Registry API starting...");
-        client.onClientStream(node -> {
-            var deviceUid = node.getConsumerUUID();
-            node.toApiR(SmartHomeHubRegistryApi.META, rootCtx -> new SmartHomeHubRegistryApi() {
+        return new SmartHomeHubRegistryApi() {
 
+            SmartHomeClientDeviceApi api2DeviceRemote;
+            SmartHomeClientGuiApiRemote api2GuiRemote;
+            SmartHomeDeviceApi api2DeviceLocal;
+            SmartHomeGuiApi api2GuiLocal;
 
-                SmartHomeClientDeviceApi api2DeviceRemote;
-                SmartHomeClientGuiApiRemote api2GuiRemote;
-                SmartHomeDeviceApi api2DeviceLocal;
-                SmartHomeGuiApi api2GuiLocal;
+            @Override
+            public void device(DeviceStream stream) {
+                Log.info("SmartHub: device method called");
+                if (api2DeviceRemote == null) {
 
-                @Override
-                public void device(DeviceStream stream) {
-                    Log.info("SmartHub: device method called");
-                    UUID devUid = node.getConsumerUUID();
-                    if (api2DeviceRemote == null) {
-
-
-                        api2DeviceLocal = (value) -> {
-                            Log.info("api2DeviceLocal called", "deviceUid", deviceUid, "value", value);
-                            boolean isNew = knownDevices.add(deviceUid);
-                            if (isNew) {
-                                Log.info("New device detected", "deviceUid", deviceUid);
-                                // Сначала регистрируем устройство в таблице devices, чтобы не нарушать Foreign Key
-                                try (Connection conn = connectionPool.getConnection();
-                                     PreparedStatement stmt = conn.prepareStatement("INSERT INTO devices (UID, NAME, TYPE, last_seen) VALUES (?, ?, ?, ?)")) {
-                                    stmt.setObject(1, deviceUid);
-                                    stmt.setString(2, "Emulator");
-                                    stmt.setString(3, "TemperatureSensor");
-                                    stmt.setTimestamp(4, new Timestamp(System.currentTimeMillis()));
-                                    stmt.executeUpdate();
-                                    Log.info("Device registered in DB", "uid", deviceUid);
-                                } catch (Exception e) {
-                                    Log.error("Failed to register device in DB", e);
-                                }
-
-                                deviceRegisteredFuture.tryDone();
-                            }
+                    api2DeviceLocal = (value) -> {
+                        Log.info("api2DeviceLocal called", "value", value);
+                        boolean isNew = knownDevices.add(UUID.randomUUID());//FIXME: use correct uid
+                        if (isNew) {
+                            Log.info("New device detected");
                             try (Connection conn = connectionPool.getConnection();
-                                 PreparedStatement stmt = conn.prepareStatement("INSERT INTO device_states (DEVICE_UID, STATE_VALUE, STATE_TIME, STATE_TIMESTAMP) VALUES (?, ?, ?, ?)")) {
-                                stmt.setObject(1, deviceUid);
-                                stmt.setShort(2, value);
-                                stmt.setNull(3, 0);//TODO
+                                 PreparedStatement stmt = conn.prepareStatement("INSERT INTO devices (UID, NAME, TYPE, last_seen) VALUES (?, ?, ?, ?)")) {
+                                stmt.setObject(1, UUID.randomUUID());//FIXME: use correct uid
+                                stmt.setString(2, "Emulator");
+                                stmt.setString(3, "TemperatureSensor");
                                 stmt.setTimestamp(4, new Timestamp(System.currentTimeMillis()));
-                                stmt.addBatch();
-                                stmt.executeBatch();
-                                Log.info("Inserted device states", "deviceUid", deviceUid, "value", value);
-
-
+                                stmt.executeUpdate();
+                                Log.info("Device registered in DB");
                             } catch (Exception e) {
-                                Log.error("SmartHub: SQL Error", e);
+                                Log.error("Failed to register device in DB", e);
                             }
-                        };
 
-
-                    }
-                    Log.info("SmartHub: Device stream connected", "uid", devUid);
-                    stream.asIn().accept();
-                    Log.info("SmartHub: stream.accept finished successfully");
-                }
-
-
-                public void gui(GuiStream stream) {
-                    Log.info("SmartHub: gui method entered");
-                    UUID guiUid = node.getConsumerUUID();
-                    Log.info("SmartHub: gui for consumer", "guiUid", guiUid);
-                    SmartHomeClientGuiApiRemote guiRemote = rootCtx.makeRemote(SmartHomeClientGuiApi.META);
-
-                    SmartHomeGuiApi guiLocal = new SmartHomeGuiApi() {
-                        @Override
-
-                        public void getDevices() {
-                            Log.info("getDevices called for gui", "guiUid", guiUid, "currentKnownCount", knownDevices.size());
-                            UUID[] devicesArray = knownDevices.toArray(new UUID[0]);
-                            Log.info("getDevices returning", "count", devicesArray.length);
-                            for (UUID u : devicesArray) Log.info("device", "uid", u);
-                            guiRemote.onGetDevicesResult(devicesArray);
-                            Log.info("About to call flush after onGetDevicesResult");
-
-                            Log.info("Flush completed");
+                            deviceRegisteredFuture.tryDone();
                         }
+                        try (Connection conn = connectionPool.getConnection();
+                             PreparedStatement stmt = conn.prepareStatement("INSERT INTO device_states (DEVICE_UID, STATE_VALUE, STATE_TIME, STATE_TIMESTAMP) VALUES (?, ?, ?, ?)")) {
+                            stmt.setObject(1, UUID.randomUUID());//FIXME: use correct uid
+                            stmt.setShort(2, value);
+                            stmt.setNull(3, 0);//TODO
+                            stmt.setTimestamp(4, new Timestamp(System.currentTimeMillis()));
+                            stmt.addBatch();
+                            stmt.executeBatch();
+                            Log.info("Inserted device states", "value", value);
 
-
-                        @Override
-                        public void requestDeviceHistory(UUID d, long c) {
-                            List<SensorRecord> records = new ArrayList<>();
-                            try (Connection conn = connectionPool.getConnection();
-                                 PreparedStatement stmt = conn.prepareStatement(
-                                         "SELECT STATE_VALUE, STATE_TIME FROM device_states WHERE DEVICE_UID = ? ORDER BY STATE_TIMESTAMP DESC LIMIT ?")) {
-                                stmt.setObject(1, d);
-                                stmt.setLong(2, c);
-                                try (ResultSet rs = stmt.executeQuery()) {
-                                    while (rs.next()) {
-                                        records.add(new SensorRecord((byte) rs.getShort(1), (byte) rs.getShort(2)));
-                                    }
-                                }
-                            } catch (Exception e) {
-                                Log.error(e);
-                            }
-                            guiRemote.onRequestHistoryResult(d, records.toArray(new SensorRecord[0]));
-
+                        } catch (Exception e) {
+                            Log.error("SmartHub: SQL Error", e);
                         }
                     };
-                    Log.info("SmartHub: GUI stream connected", "uid", guiUid);
-                    stream.asIn().accept();
-                }
 
-            });
-        });
+                }
+                Log.info("SmartHub: Device stream connected");
+                stream.asIn().accept();
+                Log.info("SmartHub: stream.accept finished successfully");
+            }
+
+
+            public void gui(GuiStream stream) {
+                Log.info("SmartHub: gui method entered");
+                stream.asIn()
+                        .keys(c -> new MySmartHomeGuiApi(stream.asIn().remoteApi()))
+                        .accept();
+            }
+
+        };
     }
+
 
     public AFuture getDeviceRegisteredFuture() {
         return deviceRegisteredFuture;
@@ -292,4 +235,41 @@ public class SmartHubService {
     }
 
 
+    private class MySmartHomeGuiApi implements SmartHomeGuiApi {
+        private final SmartHomeClientGuiApiRemote guiRemote;
+
+        public MySmartHomeGuiApi(SmartHomeClientGuiApiRemote guiRemote) {
+            this.guiRemote = guiRemote;
+        }
+
+        @Override
+
+        public void getDevices() {
+            Log.info("getDevices called for gui", "currentKnownCount", knownDevices.size());
+            UUID[] devicesArray = knownDevices.toArray(new UUID[0]);
+            Log.info("getDevices returning", "count", devicesArray.length);
+            for (UUID u : devicesArray) Log.info("device", "uid", u);
+            guiRemote.onGetDevicesResult(devicesArray);
+        }
+
+
+        @Override
+        public void requestDeviceHistory(UUID d, long c) {
+            List<SensorRecord> records = new ArrayList<>();
+            try (Connection conn = connectionPool.getConnection();
+                 PreparedStatement stmt = conn.prepareStatement(
+                         "SELECT STATE_VALUE, STATE_TIME FROM device_states WHERE DEVICE_UID = ? ORDER BY STATE_TIMESTAMP DESC LIMIT ?")) {
+                stmt.setObject(1, d);
+                stmt.setLong(2, c);
+                try (ResultSet rs = stmt.executeQuery()) {
+                    while (rs.next()) {
+                        records.add(new SensorRecord((byte) rs.getShort(1), (byte) rs.getShort(2)));
+                    }
+                }
+            } catch (Exception e) {
+                Log.error(e);
+            }
+            guiRemote.onRequestHistoryResult(d, records.toArray(new SensorRecord[0]));
+        }
+    }
 }

@@ -13,6 +13,9 @@ import io.aether.crypto.CryptoProviderFactory;
 import io.aether.crypto.SignedKey;
 import io.aether.logger.LNode;
 import io.aether.logger.Log;
+import io.aether.net.fastMeta.FastMetaApi;
+import io.aether.net.fastMeta.MetaContext;
+import io.aether.net.fastMeta.RemoteApi;
 import io.aether.utils.ConcurrentHashSet;
 import io.aether.utils.Destroyer;
 import io.aether.utils.RU;
@@ -39,11 +42,9 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class AetherCloudClient implements Destroyable {
 
     private static final int RECOVERY_RETRY_DELAY_MS = 10000;
-
+    private static final URI DEFAULT_REG_URI = URI.create("tcp://registration.aethernet.io:9010");
     public final AFuture startFuture = AFuture.make();
-
     public final EventConsumer<MessageNode> onClientStream = new EventConsumerWithQueue<>();
-
     public final Destroyer destroyer = new Destroyer(getClass().getSimpleName());
     public final AtomicBoolean isRecoveryInProgress = new AtomicBoolean(false);
     public final AFuture recoveryFuture = AFuture.make();
@@ -64,15 +65,10 @@ public final class AetherCloudClient implements Destroyable {
     final Map<Long, Map<UUID, ARFuture<Boolean>>> accessOperationsRemove = new ConcurrentHashMap<>();
     final BMap<AppliedConfig, Boolean> appliedConfigsRequests = new BMap<>("AppliedConfigsRequests", 5000, 10000);
     final Queue<AConsumer<AuthorizedApi>> authTasks = new ConcurrentLinkedQueue<>();
-
     final CloudPriorityManager priorityManager = new CloudPriorityManager();
-
     private final ClientState clientState;
-
     private final int timeout1 = 6;
-
     private final AtomicBoolean startScheduledTaskFlag = new AtomicBoolean();
-
     private final Set<ConnectionRegistration> connectionRegistrations = new ConcurrentHashSet<>();
     private final ARFuture<Connection<?, ?>> anyConnection = ARFuture.make();
     private boolean beginConnect;
@@ -470,7 +466,6 @@ public final class AetherCloudClient implements Destroyable {
         return connections.values();
     }
 
-
     public ARFuture<ClientCloud> getCloud(@NotNull UUID uid) {
         var r = clientState.getCloud(uid);
         if (r != null)
@@ -491,7 +486,6 @@ public final class AetherCloudClient implements Destroyable {
         return res;
     }
 
-
     public long getPingTime() {
         return clientState.getPingDuration().getNow();
     }
@@ -499,7 +493,6 @@ public final class AetherCloudClient implements Destroyable {
     public boolean isRegistered() {
         return clientState.getUid() != null;
     }
-
 
     public void confirmRegistration(FinishResult regResp) {
         if (!regStatus.compareAndSet(RegStatus.BEGIN, RegStatus.CONFIRM)) {
@@ -520,7 +513,6 @@ public final class AetherCloudClient implements Destroyable {
         }
         startFuture.done();
     }
-
 
     public MessageNode getMessageNode(@NotNull UUID uid) {
         return getMessageNode(uid, MessageEventListener.DEFAULT);
@@ -627,7 +619,6 @@ public final class AetherCloudClient implements Destroyable {
         throw new UnsupportedOperationException("getClientApi is deprecated, use getMessageNode instead");
     }
 
-
     public CryptoEngine getCryptoEngineForServer(short serverId) {
         var k = getMasterKey();
         if (k == null) {
@@ -649,7 +640,6 @@ public final class AetherCloudClient implements Destroyable {
         return 0;
     }
 
-
     public void setCloud(UUID uid, Cloud cloud) {
         ClientCloud cc = clouds.getNow(uid);
         if (cc != null) {
@@ -659,29 +649,22 @@ public final class AetherCloudClient implements Destroyable {
         }
     }
 
-
     public void requestCloudConfig(UUID subjectUid) {
         ClientCloud cc = clouds.getNow(subjectUid);
         long version = cc != null ? cc.getConfigVersion() - 1 : -1;
         appliedConfigsRequests.getFuture(new AppliedConfig(subjectUid, version));
     }
 
-
     public void putServerDescriptor(ServerDescriptor s) {
         servers.put((int) s.getId(), s);
         clientState.getServerInfo(s.getId()).setDescriptor(s);
     }
-
-
-
 
     public ARFuture<IpInfo> getMyIp() {
         ARFuture<IpInfo> result = ARFuture.make();
         getMyIp0(result);
         return result;
     }
-
-
 
     private void getMyIp0(ARFuture<IpInfo> result) {
         ARFuture<IpInfo> timeout = ARFuture.make();
@@ -701,13 +684,13 @@ public final class AetherCloudClient implements Destroyable {
             }
         }
         getAnyConnection().to(c -> {
-            if(c instanceof ConnectionWork cw && cw.isWritable()){
+            if (c instanceof ConnectionWork cw && cw.isWritable()) {
                 cw.getRootApi().getMyIp().to(r -> {
                     if (result.tryDone(r)) timeout.cancel();
                 }).onError(e -> {
                     if (!result.isDone()) retryGetMyIp(result);
                 });
-            }else if(c instanceof ConnectionRegistration cr && cr.isWritable()){
+            } else if (c instanceof ConnectionRegistration cr && cr.isWritable()) {
                 cr.getRootApi().getMyIp().to(r -> {
                     if (result.tryDone(r)) timeout.cancel();
                 }).onError(e -> {
@@ -730,11 +713,6 @@ public final class AetherCloudClient implements Destroyable {
         });
     }
 
-
-
-
-
-
     public void reportAppliedConfig(AppliedConfig[] configs) {
         for (AppliedConfig ac : configs) {
             ClientCloud cc = clouds.getNow(ac.getSubjectUid());
@@ -748,6 +726,79 @@ public final class AetherCloudClient implements Destroyable {
     public static AetherCloudClient of(ClientState state) {
         return new AetherCloudClient(state);
     }
+
+    public static <LT, RT extends RemoteApi> AetherCloudClient asClient(
+            UUID parentUid, String name,
+            FastMetaApi<LT, ? extends LT> localMeta,
+            FastMetaApi<?, RT> remoteMeta,
+            AFunction<RT, LT> localApiFactory) {
+        return asClient(parentUid, DEFAULT_REG_URI, name, localMeta, remoteMeta, localApiFactory);
+    }
+
+    public static <LT, RT extends RemoteApi> AetherCloudClient asClient(
+            UUID parentUid, URI regUri, String name,
+            FastMetaApi<LT, ? extends LT> localMeta,
+            FastMetaApi<?, RT> remoteMeta,
+            AFunction<RT, LT> localApiFactory) {
+        ClientStateInFile state = new ClientStateInFile(parentUid, List.of(regUri), new java.io.File("state-" + name + ".bin"));
+        AetherCloudClient client = new AetherCloudClient(state, name);
+        client.startFuture.to(() -> {
+            MessageNode node = client.getMessageNode(parentUid);
+            node.toApiR(localMeta, ctx -> {
+                var remoteApi = ctx.makeRemote(remoteMeta);
+                return localApiFactory.apply(remoteApi);
+            });
+        });
+        return client;
+    }
+
+    public static <LT, RT extends RemoteApi> AetherCloudClient asClient(
+            ClientState state, String name,
+            FastMetaApi<LT, ? extends LT> localMeta,
+            FastMetaApi<?, RT> remoteMeta,
+            AFunction<RT, LT> localApiFactory) {
+        AetherCloudClient client = new AetherCloudClient(state, name);
+        client.startFuture.to(() -> {
+            MessageNode node = client.getMessageNode(state.getParentUid());
+            node.toApiR(localMeta, ctx -> {
+                RT remoteApi = ctx.makeRemote(remoteMeta);
+                return localApiFactory.apply(remoteApi);
+            });
+        });
+        return client;
+    }
+
+    public static <LT> AetherCloudClient asServer(
+            ClientState state, String name,
+            FastMetaApi<LT, ? extends LT> serviceMeta,
+            AFunction<MetaContext, LT> localApiFactory) {
+        AetherCloudClient client = new AetherCloudClient(state, name);
+        client.onClientStream(node -> {
+            node.toApiR(serviceMeta, localApiFactory);
+        });
+        return client;
+    }
+
+
+    public static <LT> AetherCloudClient asServer(
+            UUID parentUid, String name,
+            FastMetaApi<LT, ? extends LT> serviceMeta,
+            AFunction<MetaContext, LT> localApiFactory) {
+        return asServer(parentUid, DEFAULT_REG_URI, name, serviceMeta, localApiFactory);
+    }
+
+    public static <LT> AetherCloudClient asServer(
+            UUID parentUid, URI regUri, String name,
+            FastMetaApi<LT, ? extends LT> serviceMeta,
+            AFunction<MetaContext, LT> localApiFactory) {
+        ClientStateInFile state = new ClientStateInFile(parentUid, List.of(regUri), new java.io.File("state-" + name + ".bin"));
+        AetherCloudClient client = new AetherCloudClient(state, name);
+        client.onClientStream(node -> {
+            node.toApiR(serviceMeta, localApiFactory);
+        });
+        return client;
+    }
+
 
     private enum RegStatus {
 

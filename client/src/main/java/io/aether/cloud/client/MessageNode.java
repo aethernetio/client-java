@@ -5,7 +5,7 @@ import io.aether.api.common.ServerDescriptor;
 import io.aether.logger.Log;
 import io.aether.net.fastMeta.MetaContext;
 import io.aether.net.fastMeta.FastMetaApi;
-import io.aether.net.fastMeta.MetaContextBase;
+import io.aether.net.fastMeta.AutoFlushContext;
 import io.aether.utils.AString;
 import io.aether.utils.ConcurrentHashSet;
 import io.aether.utils.ToString;
@@ -119,7 +119,7 @@ public class MessageNode implements ToString {
             FastMetaApi<LT, ? extends LT> metaLt,
             AFunction<MetaContext, LT> localApiFactory) {
 
-        MetaContextBase ctx = new MetaContextBase();
+        AutoFlushContext ctx = new AutoFlushContext(client.destroyer);
         ctx.localApi= localApiFactory.apply(ctx);
 
         ctx.onFlushData(data -> send(data));
@@ -140,7 +140,7 @@ public class MessageNode implements ToString {
 
 
     public <LT> MetaContext toApi(FastMetaApi<LT, ? extends LT> metaLt, LT localApi) {
-        MetaContextBase ctx = new MetaContextBase();
+        AutoFlushContext ctx = new AutoFlushContext(client.destroyer);
         ctx.localApi=localApi;
         ctx.onFlushData(this::send);
         toApi(ctx, metaLt);

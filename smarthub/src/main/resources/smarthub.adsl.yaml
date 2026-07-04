@@ -7,9 +7,11 @@ types:
   DeviceStream:
     stream:
       api: SmartHomeDeviceApi
+      remoteApi: SmartHomeClientDeviceApi
   GuiStream:
     stream:
       api: SmartHomeGuiApi
+      remoteApi: SmartHomeClientGuiApi
 
 api:
   SmartHomeHubRegistryApi:
