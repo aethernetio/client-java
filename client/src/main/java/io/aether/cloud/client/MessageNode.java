@@ -1,11 +1,10 @@
 package io.aether.cloud.client;
 
-import io.aether.api.common.Cloud;
 import io.aether.api.common.ServerDescriptor;
 import io.aether.logger.Log;
-import io.aether.net.fastMeta.MetaContext;
-import io.aether.net.fastMeta.FastMetaApi;
 import io.aether.net.fastMeta.AutoFlushContext;
+import io.aether.net.fastMeta.FastMetaApi;
+import io.aether.net.fastMeta.MetaContext;
 import io.aether.utils.AString;
 import io.aether.utils.ConcurrentHashSet;
 import io.aether.utils.ToString;
@@ -114,14 +113,11 @@ public class MessageNode implements ToString {
     }
 
 
-
     public <LT> MetaContext toApiR(
             FastMetaApi<LT, ? extends LT> metaLt,
             AFunction<MetaContext, LT> localApiFactory) {
-
-        AutoFlushContext ctx = new AutoFlushContext(client.destroyer);
-        ctx.localApi= localApiFactory.apply(ctx);
-
+        AutoFlushContext ctx = new AutoFlushContext();
+        ctx.localApi = localApiFactory.apply(ctx);
         ctx.onFlushData(data -> send(data));
         toApi(ctx, metaLt);
         return ctx;
@@ -138,14 +134,11 @@ public class MessageNode implements ToString {
     }
 
 
-
     public <LT> MetaContext toApi(FastMetaApi<LT, ? extends LT> metaLt, LT localApi) {
-        AutoFlushContext ctx = new AutoFlushContext(client.destroyer);
-        ctx.localApi=localApi;
+        AutoFlushContext ctx = new AutoFlushContext();
+        ctx.localApi = localApi;
         ctx.onFlushData(this::send);
         toApi(ctx, metaLt);
         return ctx;
     }
-
-
 }

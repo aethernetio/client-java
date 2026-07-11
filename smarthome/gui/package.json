@@ -9,18 +9,16 @@
     "protocol": "aether-protocol-gen",
     "test:e2e-node": "npm run build && jest --testTimeout=120000 test/smarthome.e2e.test.ts",
     "test:e2e-filter": "npm run build && jest --testTimeout=120000 test/smarthome.e2e.test.ts --testNamePattern \"$JEST_FILTER\"",
-
-     "download:deps": "curl -o aether-client-1.0.2.tgz -u \"deploy:1930\" \"http://nexus.aethernet.io/npm-private/aether-client-1.0.2.tgz\" && curl -o aether-protocol-generator-1.0.0.tgz -u \"deploy:1930\" \"http://nexus.aethernet.io/npm-private/aether-protocol-generator-1.0.0.tgz\"",
-     "install:deps": "npm install ./aether-client-1.0.2.tgz && npm install --save-dev ./aether-protocol-generator-1.0.0.tgz",
-     "setup": "npm run download:deps && npm run install:deps && npm run protocol"
-
+    "download:deps": "curl -o aether-client-1.0.2.tgz -u \"deploy:1930\" \"http://nexus.aethernet.io/npm-private/aether-client-1.0.2.tgz\" && curl -o aether-protocol-generator-1.0.0.tgz -u \"deploy:1930\" \"http://nexus.aethernet.io/npm-private/aether-protocol-generator-1.0.0.tgz\"",
+    "install:deps": "npm install ./aether-client-1.0.2.tgz && npm install --save-dev ./aether-protocol-generator-1.0.0.tgz",
+    "setup": "npm run download:deps && npm run install:deps && npm run protocol"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
-     "aether-client": "file:aether-client-1.0.2.tgz",
+    "aether-client": "file:aether-client-1.0.2.tgz",
     "chart.js": "^4.5.1",
     "chartjs-adapter-date-fns": "^3.0.0",
     "date-fns": "^4.1.0",

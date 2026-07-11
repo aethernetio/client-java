@@ -16,9 +16,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class PointToPointTest {
@@ -41,14 +41,12 @@ public class PointToPointTest {
         clientConfig2.getPingDuration().set(100L);
         AetherCloudClient client1 = new AetherCloudClient(clientConfig1, "client1");
         AetherCloudClient client2 = new AetherCloudClient(clientConfig2, "client2");
-
         AFuture testDoneFuture = AFuture.make();
         client1.startFuture.to(() -> Log.info("client is registered uid1: $uid1", "uid1", client1.getUid()));
         client2.startFuture.to(() -> Log.info("client is registered uid2: $uid2", "uid2", client2.getUid()));
         client1.startFuture.onError(Log::error);
         client2.startFuture.onError(Log::error);
         AFuture.all(client1.startFuture, client2.startFuture).to(() -> {
-
             Log.info("clients is registered uid1: $uid1 uid2: $uid2", "uid1", client1.getUid(), "uid2", client2.getUid());
             AFuture checkReceiveMessage = AFuture.make();
             var message = new byte[]{1, 2, 3, 4};
@@ -65,7 +63,7 @@ public class PointToPointTest {
             Log.info("START two clients!");
             Thread.currentThread().setName("MAIN THREAD");
             sendTime.set(System.currentTimeMillis());
-            client1.sendMessage(client2.getUid(), message).to(()->{
+            client1.sendMessage(client2.getUid(), message).to(() -> {
                 client1.destroy(false).onError(testDoneFuture::error);
             });
             checkReceiveMessage.to(() -> {
@@ -74,10 +72,7 @@ public class PointToPointTest {
                         .to(testDoneFuture)
                         .onError(testDoneFuture::error);
             }).onError(testDoneFuture::error);
-
         }).onError(testDoneFuture::error);
-
-
         return testDoneFuture;
     }
 
@@ -92,18 +87,15 @@ public class PointToPointTest {
         clientConfig2.getPingDuration().set(100L);
         AetherCloudClient client1 = new AetherCloudClient(clientConfig1, "client1");
         AetherCloudClient client2 = new AetherCloudClient(clientConfig2, "client2");
-
         AFuture testDoneFuture = AFuture.make();
         client1.startFuture.onError(Log::error);
         client2.startFuture.onError(Log::error);
-
         // Setup message handler BEFORE start to catch all messages
         AtomicLong msgCounter = new AtomicLong(0);
         AtomicLong totalDeliveryTime = new AtomicLong(0);
         AtomicLong minTime = new AtomicLong(Long.MAX_VALUE);
         AtomicLong maxTime = new AtomicLong(0);
         ConcurrentHashMap<Integer, Long> sendTimes = new ConcurrentHashMap<>();
-
         client2.onClientStream((st) -> {
             st.toConsumer(msg -> {
                 long receiveTime = System.currentTimeMillis();
@@ -116,7 +108,6 @@ public class PointToPointTest {
                     totalDeliveryTime.addAndGet(deliveryTime);
                     minTime.updateAndGet(v -> Math.min(v, deliveryTime));
                     maxTime.updateAndGet(v -> Math.max(v, deliveryTime));
-
                     if (count == 50) {
                         long avgTime = totalDeliveryTime.get() / 50;
                         Log.info("Batch test complete. Avg: $avg ms, Min: $min ms, Max: $max ms",
@@ -126,7 +117,6 @@ public class PointToPointTest {
                 }
             });
         });
-
         AFuture.all(client1.startFuture, client2.startFuture).to(() -> {
             Log.info("clients registered. Starting warmup + timed batch (50 messages)...");
             // Warmup: 10 messages
@@ -144,15 +134,13 @@ public class PointToPointTest {
             }
             Log.info("All 60 messages sent!");
         }).onError(testDoneFuture::error);
-
         testDoneFuture.to(() -> {
             Log.info("BATCH TEST DONE!");
-            client1.destroy(false).to(() -> client2.destroy(false).to(() -> {}));
+            client1.destroy(false).to(() -> client2.destroy(false).to(() -> {
+            }));
         });
-
         return testDoneFuture;
     }
-
 
 
     //    @Test
@@ -164,9 +152,7 @@ public class PointToPointTest {
             clientConfig2 = new ClientStateInMemory(parent, registrationUri, null, CryptoLib.HYDROGEN);
         AetherCloudClient client1 = new AetherCloudClient(clientConfig1);
         AetherCloudClient client2 = new AetherCloudClient(clientConfig2);
-
         AFuture testDoneFuture = AFuture.make();
-
         AFuture.all(client1.startFuture, client2.startFuture).to(() -> {
             var ch1 = client1.getMessageNode(client2.getUid());
             final var total = 1000000L;
@@ -178,7 +164,6 @@ public class PointToPointTest {
             });
             var data = new byte[10000];
             var timeBegin = RU.time();
-
             while (receiveCounter.get() < total) {
                 boolean[] abortFlag = new boolean[1];
                 ch1.send(data).onError((e) -> {
@@ -195,11 +180,8 @@ public class PointToPointTest {
                     "timeBegin", timeBegin,
                     "timeEnd", timeEnd,
                     "speed", (total * data.length * 8.0) / (duration / 1000.0) / 1024.0);
-
             testDoneFuture.done();
-
         }).onError(testDoneFuture::error);
-
         return testDoneFuture;
     }
 
@@ -211,9 +193,7 @@ public class PointToPointTest {
             clientConfig2 = new ClientStateInMemory(parent, registrationUri, null, CryptoLib.HYDROGEN);
         AetherCloudClient client1 = new AetherCloudClient(clientConfig1, "client1");
         AetherCloudClient client2 = new AetherCloudClient(clientConfig2, "client2");
-
         AFuture testDoneFuture = AFuture.make();
-
         AFuture.all(client1.startFuture, client2.startFuture).to(() -> {
             Log.info("clients is registered uid1: $uid1 uid2: $uid2", "uid1", client1.getUid(), "uid2", client2.getUid());
             AFuture checkReceiveMessageBack = AFuture.make();
@@ -233,7 +213,6 @@ public class PointToPointTest {
             var chToc2 = client1.getMessageNode(client2.getUid());
             Thread.currentThread().setName("MAIN THREAD");
             chToc2.send(message);
-
             checkReceiveMessageBack.to(() -> {
                 Log.info("TEST IS DONE!");
                 client1.destroy(true).to(() -> {
@@ -241,9 +220,7 @@ public class PointToPointTest {
                             .onError(testDoneFuture::error);
                 }).onError(testDoneFuture::error);
             }).onError(testDoneFuture::error);
-
         }).onError(testDoneFuture::error);
-
         return testDoneFuture;
     }
 
@@ -252,9 +229,7 @@ public class PointToPointTest {
         if (serviceConfig == null)
             serviceConfig = new ClientStateInMemory(parent, registrationUri);
         AetherCloudClient service = new AetherCloudClient(serviceConfig);
-
         AFuture testDoneFuture = AFuture.make();
-
         service.startFuture.to(() -> {
             Log.info("service is registered");
             Set<UUID> allChildren = new ConcurrentHashSet<>();
@@ -276,7 +251,6 @@ public class PointToPointTest {
             if (clientConfig2 == null) clientConfig2 = new ClientStateInMemory(parentUid, registrationUri);
             AetherCloudClient client1 = new AetherCloudClient(clientConfig1);
             AetherCloudClient client2 = new AetherCloudClient(clientConfig2);
-
             AFuture.all(client1.startFuture, client2.startFuture).to(() -> {
                 Log.info("clients is registered");
                 AFuture checkReceiveMessage = AFuture.make();
@@ -289,7 +263,6 @@ public class PointToPointTest {
                 Log.info("START!");
                 var chToc2 = client1.getMessageNode(client2.getUid());
                 chToc2.send(message);
-
                 checkReceiveMessage.to(() -> {
                     client1.destroy(true).to(() -> {
                         client2.destroy(true).to(testDoneFuture::done)
@@ -298,7 +271,6 @@ public class PointToPointTest {
                 }).onError(testDoneFuture::error);
             }).onError(testDoneFuture::error);
         }).onError(testDoneFuture::error);
-
         return testDoneFuture;
     }
 
@@ -312,7 +284,6 @@ public class PointToPointTest {
                 clientConfig2 = new ClientStateInMemory(StandardUUIDs.TEST_UID, registrationUri, null, CryptoLib.HYDROGEN);
             AetherCloudClient client1 = new AetherCloudClient(clientConfig1, "client1_2");
             AetherCloudClient client2 = new AetherCloudClient(clientConfig2, "client2_2");
-
             AFuture.all(client1.startFuture, client2.startFuture).to(() -> {
                 Log.info("clients is registered uid1: $uid1 uid2: $uid2", "uid1", client1.getUid(), "uid2", client2.getUid());
                 AFuture checkReceiveMessage = AFuture.make();
@@ -326,7 +297,6 @@ public class PointToPointTest {
                 var chToc2 = client1.getMessageNode(client2.getUid());
                 Thread.currentThread().setName("MAIN THREAD");
                 chToc2.send(message);
-
                 checkReceiveMessage.to(() -> {
                     Log.info("TEST IS DONE!");
                     AFuture.all(client1.destroy(true), client2.destroy(true)).to(iteration2DoneFuture::done)
@@ -341,9 +311,7 @@ public class PointToPointTest {
         var parent = UUID.fromString("84AE8BD0-2BE4-FF65-406C-B1B655444D54");
         clientConfig1 = new ClientStateInMemory(parent, registrationUri);
         clientConfig2 = new ClientStateInMemory(parent, registrationUri);
-
         AFuture testDoneFuture = AFuture.make();
-
         {//iteration 1
             if (clientConfig1 == null)
                 clientConfig1 = new ClientStateInMemory(StandardUUIDs.TEST_UID, registrationUri, null, CryptoLib.HYDROGEN);
@@ -351,7 +319,6 @@ public class PointToPointTest {
                 clientConfig2 = new ClientStateInMemory(StandardUUIDs.TEST_UID, registrationUri, null, CryptoLib.HYDROGEN);
             AetherCloudClient client1 = new AetherCloudClient(clientConfig1, "client1");
             AetherCloudClient client2 = new AetherCloudClient(clientConfig2, "client2");
-
             AFuture.all(client1.startFuture, client2.startFuture).to(() -> {
                 Log.info("clients is registered uid1: $uid1 uid2: $uid2", "uid1", client1.getUid(), "uid2", client2.getUid());
                 AFuture checkReceiveMessage = AFuture.make();
@@ -365,7 +332,6 @@ public class PointToPointTest {
                 var chToc2 = client1.getMessageNode(client2.getUid());
                 Thread.currentThread().setName("MAIN THREAD");
                 var sendFuture = chToc2.send(message);
-
                 checkReceiveMessage.to(() -> {
                     if (!sendFuture.isDone()) {
                         throw new IllegalStateException();
@@ -373,7 +339,6 @@ public class PointToPointTest {
                     Log.info("TEST IS DONE!");
                     var f1 = client1.destroy(true);
                     var f2 = client2.destroy(true);
-
                     AFuture.all(f1, f2).onError(t -> {
                         testDoneFuture.error(new IllegalStateException("Failed to destroy clients after iteration 1: " + f1 + ":" + f2, t));
                     }).to(() -> {
@@ -384,7 +349,6 @@ public class PointToPointTest {
                 }).onError(testDoneFuture::error);
             }).onError(testDoneFuture::error);
         }
-
         return testDoneFuture;
     }
 
@@ -392,9 +356,8 @@ public class PointToPointTest {
         var parent = UUID.fromString("84AE8BD0-2BE4-FF65-406C-B1B655444D54");
         clientConfig1 = new ClientStateInMemory(parent, registrationUri);
         clientConfig2 = new ClientStateInMemory(parent, registrationUri);
-
         AFuture testDoneFuture = AFuture.make();
-        AFuture iteration2=AFuture.make();
+        AFuture iteration2 = AFuture.make();
         {//iteration 1
             if (clientConfig1 == null)
                 clientConfig1 = new ClientStateInMemory(StandardUUIDs.TEST_UID, registrationUri, null, CryptoLib.HYDROGEN);
@@ -402,7 +365,6 @@ public class PointToPointTest {
                 clientConfig2 = new ClientStateInMemory(StandardUUIDs.TEST_UID, registrationUri, null, CryptoLib.HYDROGEN);
             AetherCloudClient client1 = new AetherCloudClient(clientConfig1, "client1");
             AetherCloudClient client2 = new AetherCloudClient(clientConfig2, "client2");
-
             AFuture.all(client1.startFuture, client2.startFuture).to(() -> {
                 Log.info("clients is registered uid1: $uid1 uid2: $uid2", "uid1", client1.getUid(), "uid2", client2.getUid());
                 AFuture checkReceiveMessage = AFuture.make();
@@ -416,7 +378,6 @@ public class PointToPointTest {
                 var chToc2 = client1.getMessageNode(client2.getUid());
                 Thread.currentThread().setName("MAIN THREAD");
                 var sendFuture = chToc2.send(message);
-
                 checkReceiveMessage.to(() -> {
                     if (!sendFuture.isDone()) {
                         throw new IllegalStateException();
@@ -424,7 +385,6 @@ public class PointToPointTest {
                     Log.info("TEST 1 IS DONE!");
                     var f1 = client1.destroy(true);
                     var f2 = client2.destroy(true);
-
                     AFuture.all(f1, f2).onError(t -> {
                         testDoneFuture.error(new IllegalStateException("Failed to destroy clients after iteration 1: " + f1 + ":" + f2, t));
                     }).to(() -> {
@@ -437,7 +397,6 @@ public class PointToPointTest {
                 Log.info("clients is registered uid1: $uid1 uid2: $uid2", "uid1", client1.getUid(), "uid2", client2.getUid());
                 var client1_2 = new AetherCloudClient(clientConfig1, "client1_1");
                 var client2_2 = new AetherCloudClient(clientConfig2, "client2_2");
-
                 AFuture checkReceiveMessage = AFuture.make();
                 var message = new byte[]{1, 1, 1, 1};
                 client2_2.onClientStream((st) -> {
@@ -449,7 +408,6 @@ public class PointToPointTest {
                 var chToc2 = client1_2.getMessageNode(client2_2.getUid());
                 Thread.currentThread().setName("MAIN THREAD");
                 var sendFuture = chToc2.send(message);
-
                 checkReceiveMessage.to(() -> {
                     if (!sendFuture.isDone()) {
                         throw new IllegalStateException();
@@ -457,7 +415,6 @@ public class PointToPointTest {
                     Log.info("TEST 2 IS DONE!");
                     var f1 = client1_2.destroy(true);
                     var f2 = client2_2.destroy(true);
-
                     AFuture.all(f1, f2).onError(t -> {
                         testDoneFuture.error(new IllegalStateException("Failed to destroy clients after iteration 1: " + f1 + ":" + f2, t));
                     }).to(() -> {
@@ -466,10 +423,8 @@ public class PointToPointTest {
                 }).onError(testDoneFuture::error);
             }).onError(testDoneFuture::error);
         }
-
         return testDoneFuture;
     }
-
 
 
     public AFuture p2pPeriodicSend() {
@@ -480,26 +435,21 @@ public class PointToPointTest {
             clientConfig2 = new ClientStateInMemory(parent, registrationUri, null, CryptoLib.HYDROGEN);
         clientConfig1.getPingDuration().set(100L);
         clientConfig2.getPingDuration().set(100L);
-        
         AetherCloudClient client1 = new AetherCloudClient(clientConfig1, "periodicClient1");
         AetherCloudClient client2 = new AetherCloudClient(clientConfig2, "periodicClient2");
-        
         AFuture testDoneFuture = AFuture.make();
         AtomicLong messageCounter = new AtomicLong(0);
         AtomicLong lastReceivedCounter = new AtomicLong(0);
         AtomicReference<Throwable> errorRef = new AtomicReference<>();
         AtomicReference<ScheduledFuture<?>> schedulerRef = new AtomicReference<>();
-        
         client2.onMessage((uid, msg) -> {
             long received = lastReceivedCounter.incrementAndGet();
             long sent = messageCounter.get();
             Log.info("Received message #$received from $uid, sent: $sent");
         });
-        
         AFuture.all(client1.startFuture, client2.startFuture).to(() -> {
-            Log.info("Both clients registered. UID1: $uid1, UID2: $uid2", 
-                     "uid1", client1.getUid(), "uid2", client2.getUid());
-            
+            Log.info("Both clients registered. UID1: $uid1, UID2: $uid2",
+                    "uid1", client1.getUid(), "uid2", client2.getUid());
             // Периодическая отправка раз в секунду через RU.scheduleAtFixedRate
             ScheduledFuture<?> scheduler = RU.scheduleAtFixedRate(1000, () -> {
                 if (testDoneFuture.isDone()) {
@@ -507,20 +457,17 @@ public class PointToPointTest {
                     if (s != null) s.cancel(false);
                     return;
                 }
-                
                 long idx = messageCounter.incrementAndGet();
                 byte[] msg = new byte[8];
-                msg[0] = (byte)(idx & 0xFF);
-                msg[1] = (byte)((idx >> 8) & 0xFF);
-                msg[2] = (byte)((idx >> 16) & 0xFF);
-                msg[3] = (byte)((idx >> 24) & 0xFF);
+                msg[0] = (byte) (idx & 0xFF);
+                msg[1] = (byte) ((idx >> 8) & 0xFF);
+                msg[2] = (byte) ((idx >> 16) & 0xFF);
+                msg[3] = (byte) ((idx >> 24) & 0xFF);
                 msg[4] = 1;
                 msg[5] = 2;
                 msg[6] = 3;
                 msg[7] = 4;
-                
                 Log.info("Sending message #$idx", "idx", idx);
-                
                 client1.sendMessage(client2.getUid(), msg).onError(e -> {
                     Log.error("Failed to send message #$idx", e);
                     errorRef.set(e);
@@ -529,40 +476,31 @@ public class PointToPointTest {
                     if (s != null) s.cancel(false);
                 });
             });
-                client1.flush();
-            
+            client1.flush();
             schedulerRef.set(scheduler);
-            
             // Таймаут - 2 минуты
             AFuture timeout = AFuture.make();
             timeout.timeoutMs(1800000, () -> {
                 if (!testDoneFuture.isDone()) {
                     Log.info("Test timeout reached. Sent: $sent, Received: $received",
-                             "sent", messageCounter.get(), "received", lastReceivedCounter.get());
+                            "sent", messageCounter.get(), "received", lastReceivedCounter.get());
                     testDoneFuture.done();
                     ScheduledFuture<?> s = schedulerRef.get();
                     if (s != null) s.cancel(false);
                 }
             });
-            
         }).onError(e -> {
             Log.error("Failed to start clients", e);
             testDoneFuture.error(e);
         });
-        
         testDoneFuture.to(() -> {
             Log.info("Periodic test completed. Sent: $sent, Received: $received",
-                     "sent", messageCounter.get(), "received", lastReceivedCounter.get());
+                    "sent", messageCounter.get(), "received", lastReceivedCounter.get());
             ScheduledFuture<?> s = schedulerRef.get();
             if (s != null) s.cancel(false);
             client1.destroy(true);
             client2.destroy(true);
         });
-        
         return testDoneFuture;
     }
-
-
-
-
 }

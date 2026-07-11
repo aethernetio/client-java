@@ -1,4 +1,3 @@
-
 types:
   SensorRecord:
     fields:
@@ -61,4 +60,4 @@ api:
           deviceUid: uuid
           records: SensorRecord[]
   SmartHomeClientDeviceApi:
-    # Пустой интерфейс для устройства
+  # Пустой интерфейс для устройства

@@ -1,23 +1,23 @@
 //if (gradle.parent != null) {
-    tasks.register("updateVersion") {
-        doLast {
-            var fVersion = new File(projectDir, "version");
-            var v = fVersion.getText('UTF-8').toInteger();
-            v++;
-            fVersion.write(v.toString());
-            rootProject.version '0.0.' + v
-            subprojects {
-                version rootProject.version
-            }
+tasks.register("updateVersion") {
+    doLast {
+        var fVersion = new File(projectDir, "version");
+        var v = fVersion.getText('UTF-8').toInteger();
+        v++;
+        fVersion.write(v.toString());
+        rootProject.version '0.0.' + v
+        subprojects {
+            version rootProject.version
         }
     }
-    tasks.register("publishAll") {
-        dependsOn("updateVersion")
-        dependsOn(":client:publish")
-        dependsOn(":pointToPoint:publish")
-        dependsOn(":cli:publish")
-        dependsOn(":chat:publish")
-    }
+}
+tasks.register("publishAll") {
+    dependsOn("updateVersion")
+    dependsOn(":client:publish")
+    dependsOn(":pointToPoint:publish")
+    dependsOn(":cli:publish")
+    dependsOn(":chat:publish")
+}
 //}
 
 group = "io.aether"

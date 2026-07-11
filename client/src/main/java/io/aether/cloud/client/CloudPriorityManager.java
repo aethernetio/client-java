@@ -1,8 +1,9 @@
-
 package io.aether.cloud.client;
 
 import io.aether.api.common.Cloud;
-import java.util.*;
+
+import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class CloudPriorityManager {

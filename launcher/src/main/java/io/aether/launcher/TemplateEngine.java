@@ -12,7 +12,8 @@ public class TemplateEngine {
 
     /**
      * Loads a template from classpath resources and replaces placeholders.
-     * @param path resource path relative to /templates/ (without leading slash)
+     *
+     * @param path      resource path relative to /templates/ (without leading slash)
      * @param variables map of key-value pairs to substitute
      * @return processed string
      * @throws IOException if resource not found

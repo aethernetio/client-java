@@ -34,5 +34,4 @@ public abstract class AccessGroupImpl implements AccessGroupI {
     public ARFuture<Boolean> contains(UUID uid) {
         return ARFuture.of(data.contains(uid));
     }
-
 }

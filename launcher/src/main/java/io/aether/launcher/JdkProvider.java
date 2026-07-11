@@ -2,9 +2,7 @@ package io.aether.launcher;
 
 import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -20,7 +18,6 @@ public class JdkProvider extends ToolProvider {
     @Override
     public Path find() {
         reportProgress("Searching for JDK " + REQUIRED_MAJOR + "...");
-
         // 1. Check JAVA_HOME
         // 0. Check workspace/tools first (portable installation)
         Path toolsDir = Launcher.workspace.resolve("tools");
@@ -35,9 +32,7 @@ public class JdkProvider extends ToolProvider {
             } catch (IOException e) {
                 System.err.println("[JdkProvider] Error listing tools directory: " + e.getMessage());
             }
-
         }
-
         String javaHome = System.getenv("JAVA_HOME");
         if (javaHome != null) {
             Path home = Path.of(javaHome);
@@ -46,7 +41,6 @@ public class JdkProvider extends ToolProvider {
                 return home;
             }
         }
-
         // 2. Check PATH for javac
         String javacPath = which("javac");
         if (javacPath != null) {
@@ -59,7 +53,6 @@ public class JdkProvider extends ToolProvider {
                 }
             }
         }
-
         // 3. Search standard directories
         List<Path> searchDirs = new ArrayList<>();
         searchDirs.add(Path.of("/usr/lib/jvm"));
@@ -69,7 +62,6 @@ public class JdkProvider extends ToolProvider {
             searchDirs.add(Path.of(userHome, ".sdkman/candidates/java"));
             searchDirs.add(Path.of(userHome, "Downloads"));
         }
-
         for (Path dir : searchDirs) {
             if (!Files.exists(dir)) continue;
             try (var stream = Files.list(dir)) {
@@ -82,9 +74,7 @@ public class JdkProvider extends ToolProvider {
             } catch (IOException e) {
                 System.err.println("[JdkProvider] Error listing standard directory: " + e.getMessage());
             }
-
         }
-
         reportProgress("JDK " + REQUIRED_MAJOR + " not found locally.");
         return null;
     }
@@ -131,7 +121,6 @@ public class JdkProvider extends ToolProvider {
         } catch (Exception e) {
             System.err.println("[JdkProvider] Error checking javac version: " + e.getMessage());
         }
-
         return false;
     }
 
@@ -148,7 +137,6 @@ public class JdkProvider extends ToolProvider {
         } catch (Exception e) {
             System.err.println("[JdkProvider] Error running which: " + e.getMessage());
         }
-
         return null;
     }
 }

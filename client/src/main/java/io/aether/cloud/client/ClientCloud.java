@@ -5,29 +5,29 @@ import io.aether.api.common.Cloud;
 import io.aether.api.common.CloudConfig;
 import io.aether.utils.rcollections.BMap;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class ClientCloud {
 
     private final UUID uid;
-
-    public UUID getUid() {
-        return uid;
-    }
-
-
+    private final Map<Short, Long> weights = new ConcurrentHashMap<>();
     private volatile long configVersion;
     private volatile long confirmedConfigVersion;
 
     private short[] sids;
 
-    private final Map<Short, Long> weights = new ConcurrentHashMap<>();
-
     public ClientCloud(UUID uid, Cloud cloud) {
         this.uid = uid;
         this.sids = cloud.getData();
         for (short sid : sids) weights.putIfAbsent(sid, 0L);
+    }
+
+    public UUID getUid() {
+        return uid;
     }
 
     public synchronized short[] getOrderedSids() {
@@ -58,24 +58,19 @@ public class ClientCloud {
 
     public synchronized void smartMerge(Cloud newCloud) {
         short[] newData = newCloud.getData();
-        
         // 1. Применяем механизм "забывания" (снижаем веса на 10% при каждом обновлении)
-        weights.replaceAll((sid, weight) -> (long)(weight * 0.92));
-
+        weights.replaceAll((sid, weight) -> (long) (weight * 0.92));
         // 2. Расчет среднего балла для новичков
         long avg = weights.values().stream().mapToLong(Long::longValue).sum() / Math.max(1, weights.size());
-
         // 3. Интеграция новых и удаление старых
         for (short sid : newData) weights.putIfAbsent(sid, avg);
         weights.keySet().removeIf(sid -> {
             for (short n : newData) if (n == sid) return false;
             return true;
         });
-
         // 4. Нормализация (вычитаем минимум, чтобы держать значения в узком диапазоне)
         long min = weights.values().stream().mapToLong(Long::longValue).min().orElse(0L);
         if (min != 0) weights.replaceAll((sid, weight) -> weight - min);
-
         this.sids = newData;
     }
 
@@ -100,8 +95,6 @@ public class ClientCloud {
     }
 
 
-
-
     public void applyCloudConfig(CloudConfig config, BMap<AppliedConfig, Boolean> requestsBMap) {
         if (config.getConfigVersion() > this.configVersion) {
             smartMerge(config.getCloud());
@@ -111,13 +104,9 @@ public class ClientCloud {
     }
 
 
-
-
-
     public void updateConfirmedConfigVersion(long version) {
         if (version > this.confirmedConfigVersion) {
             this.confirmedConfigVersion = version;
         }
     }
-
 }

@@ -8,8 +8,8 @@ plugins {
 application {
     mainClass = 'io.aether.cli.CLI'
     applicationDefaultJvmArgs = [
-        '--add-opens=java.base/jdk.internal.misc=ALL-UNNAMED',
-        '--add-opens=java.base/sun.nio.ch=ALL-UNNAMED'
+            '--add-opens=java.base/jdk.internal.misc=ALL-UNNAMED',
+            '--add-opens=java.base/sun.nio.ch=ALL-UNNAMED'
     ]
     applicationName = 'aether-cli'
 }
@@ -78,18 +78,17 @@ distributions {
 }
 
 
-
 // Создаём установочные скрипты в папке дистрибутива
 tasks.register('createSetupScripts') {
     dependsOn installDist
     doLast {
         def installDir = file("$buildDir/install/cli")
-        
+
         // Linux/macOS скрипт для добавления в PATH
         def setupSh = file("$installDir/setup.sh")
         setupSh.text = '#!/bin/bash\n# Adds bin to PATH\nSCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)\nexport PATH="$SCRIPT_DIR/bin:$PATH"\necho "export PATH=\"$SCRIPT_DIR/bin:\\$PATH\"" >> ~/.bashrc\necho "Added $SCRIPT_DIR/bin to PATH. Restart terminal or source ~/.bashrc"\n'
         setupSh.setExecutable(true)
-        
+
         // Windows скрипт для добавления в PATH
         def setupBat = file("$installDir/setup.bat")
         setupBat.text = '@echo off\r\nsetx PATH "%~dp0bin;%PATH%"\r\necho Added %~dp0bin to PATH. Restart command prompt.\r\n'

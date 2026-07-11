@@ -18,6 +18,11 @@ import java.util.UUID;
  * Implements the ClientApiSafe interface to handle responses from the server.
  */
 class ClientApiSafeImpl implements ClientApiSafe {
+        @Override
+    public void sendWebRtcSession(UUID uid, io.aether.api.clientserverapi.WebRtcSession session) {
+            Log.debug("Received WebRTC session from $uid", "uid", uid);
+        }
+
 
     private final AetherCloudClient client;
 
@@ -166,7 +171,6 @@ class ClientApiSafeImpl implements ClientApiSafe {
     }
 
     @Override
-
     public void sendCloud(UUIDAndCloud uidAndCloud) {
         client.setCloud(uidAndCloud.getUid(), uidAndCloud.getCloud());
     }
@@ -194,10 +198,6 @@ class ClientApiSafeImpl implements ClientApiSafe {
     }
 
 
-
-
-
-
     @Override
     public void sendCloudConfigs(CloudConfig[] configs) {
         for (CloudConfig cc : configs) {
@@ -213,8 +213,4 @@ class ClientApiSafeImpl implements ClientApiSafe {
             client.clouds.put(cc.getSubjectUid(), new ClientCloud(cc.getSubjectUid(), cc.getCloud()));
         }
     }
-
-
-
-
 }

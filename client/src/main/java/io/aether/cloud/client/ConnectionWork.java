@@ -40,7 +40,6 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
     public ConnectionWork(AetherCloudClient client, ServerDescriptor s) {
         super(client, s.getIpAddress().getURI(AetherCodec.UDP), ClientApiUnsafe.META, LoginApi.META);
         cryptoEngine = client.getCryptoEngineForServer(s.getId());
-
         if (cryptoEngine == null) {
             Log.error("ConnectionWork: cryptoEngine is null for server " + s.getId() + ". Authentication will fail.");
         }
@@ -72,25 +71,19 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
     }
 
 
-
     public void flushBackgroundRequests() {
         var a = authorizedApi;
         // Запросы облаков через новый механизм
-
         for (UUID uid : client.clouds.pollAllRequests()) {
             ClientCloud cc = client.clouds.getNow(uid);
             long version = cc != null ? cc.getConfigVersion() - 1 : -1;
             client.appliedConfigsRequests.getFuture(new AppliedConfig(uid, version));
         }
-
-
         for (ClientCloud cc : client.clouds.values()) {
             if (cc.getConfigVersion() > cc.getConfirmedConfigVersion()) {
                 client.appliedConfigsRequests.getFuture(new AppliedConfig(cc.getUid(), cc.getConfigVersion()));
             }
         }
-
-
         List<AppliedConfig> pendingList = new ArrayList<>();
         AppliedConfig req;
         while ((req = client.appliedConfigsRequests.pollNextRequest()) != null) {
@@ -99,12 +92,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         if (!pendingList.isEmpty()) {
             a.reportAppliedConfig(pendingList.toArray(new AppliedConfig[0]));
         }
-
-
-
-
         Integer[] requestServers = client.servers.pollAllRequests().toArray(new Integer[0]);
-
         if (requestServers.length > 0) {
             short[] serverIds = new short[requestServers.length];
             for (int i = 0; i < requestServers.length; i++) {
@@ -187,8 +175,6 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             }
             batcher.flush(a);
         }
-
-
         if (!firstAuth) {
             firstAuth = true;
             a.ping(0, 0).to(() -> {
@@ -198,8 +184,6 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                 firstAuth = false;
             });
         }
-
-
     }
 
     @Override
@@ -243,5 +227,4 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             Log.warn("connection work flush 1 timeout");
         });
     }
-
 }

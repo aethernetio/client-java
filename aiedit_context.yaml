@@ -6,7 +6,7 @@
   ]
   ,
   outputFilters: [
-    ],
+  ],
   ignore: [
     '*/.git/*',
     '*/build/*',
@@ -40,5 +40,5 @@
     '*.yml',
     '*.yaml'
   ]
-  
+
 }

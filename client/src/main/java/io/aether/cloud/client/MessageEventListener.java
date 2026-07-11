@@ -1,6 +1,6 @@
 package io.aether.cloud.client;
 
-import io.aether.api.common.*;
+import io.aether.api.common.ServerDescriptor;
 
 public interface MessageEventListener {
     MessageEventListener DEFAULT = new MessageEventListener() {
@@ -25,5 +25,4 @@ public interface MessageEventListener {
     void onResolveConsumerServer(MessageNode messageNode, ServerDescriptor serverDescriptor);
 
     void onResolveConsumerConnection(MessageNode messageNode, ConnectionWork connection);
-
 }

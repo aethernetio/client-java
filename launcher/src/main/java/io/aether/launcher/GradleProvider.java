@@ -1,11 +1,15 @@
 package io.aether.launcher;
 
-import java.io.*;
-import java.net.URL;
-import java.nio.file.*;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 
 public class GradleProvider extends ToolProvider {
-    public GradleProvider() { super("Gradle"); }
+    public GradleProvider() {
+        super("Gradle");
+    }
 
     @Override
     public Path find() {
@@ -26,9 +30,7 @@ public class GradleProvider extends ToolProvider {
             } catch (IOException e) {
                 System.err.println("[GradleProvider] Error listing tools directory: " + e.getMessage());
             }
-
         }
-
         String p = which("gradle");
         if (p != null) {
             Path bin = Path.of(p).getParent();
@@ -49,7 +51,8 @@ public class GradleProvider extends ToolProvider {
                     reportProgress("Found Gradle via SDKMAN: " + latest);
                     return latest;
                 }
-            } catch (IOException ignored) {}
+            } catch (IOException ignored) {
+            }
         }
         reportProgress("Gradle not found locally.");
         return null;
@@ -59,11 +62,9 @@ public class GradleProvider extends ToolProvider {
     public Path download(Path toolsDir) throws Exception {
         reportProgress("Downloading Gradle 9.1.0...");
         Files.createDirectories(toolsDir);
-
         String url = "https://services.gradle.org/distributions/gradle-9.1.0-bin.zip";
         Path archive = toolsDir.resolve("gradle.zip");
         downloadWithProgress(url, archive, pct -> reportProgress("Downloading... " + pct + "%"));
-
         Path destDir = toolsDir.resolve("gradle-temp");
         try (java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(new FileInputStream(archive.toFile()))) {
             java.util.zip.ZipEntry entry;

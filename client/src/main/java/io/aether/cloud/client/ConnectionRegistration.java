@@ -17,6 +17,7 @@ import java.net.URI;
 import java.util.Arrays;
 
 public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, RegistrationRootApiRemote> implements ClientApiRegUnsafe {
+    final AFuture connectFuture = AFuture.make();
     private final AKey.Symmetric tempKey = CryptoProviderFactory.getProvider(client.getCryptLib().name()).createSymmetricKey();
     private final KeySymmetric tempKeyNative = CryptoUtils.of(tempKey);
     private final CryptoEngine tempKeyCp = tempKey.toCryptoEngine();
@@ -39,7 +40,7 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
             return kk.key().asAsymmetric().toCryptoEngine();
         });
     }
-    final AFuture connectFuture=AFuture.make();
+
     public AFuture registration() {
         Log.debug("RegConn: Starting async registration process.", "uri", uri);
         getAsymmetricPublicKey().to(this::regProcess);
@@ -64,10 +65,9 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
                         throw new RuntimeException();
                     }
                     gcp = CryptoEngine.of(CryptoUtils.of(wpd.getGlobalKey().getKey()).asAsymmetric().toCryptoEngine(), client.getMasterKey().toCryptoEngine());
-
                     safeApi.setReturnKey(tempKeyNative);
                     globalApi = safeApi.openRegistration(wpd.getSalt(), wpd.getSuffix(), passwords, client.getParent(), r -> GlobalRegClientApi.EMPTY, gcp::encrypt, "global");
-                    try(var l=globalApi.getFastMetaContext().lock()) {
+                    try (var l = globalApi.getFastMetaContext().lock()) {
                         globalApi.setMasterKey(CryptoUtils.of(client.getMasterKey()));
                         globalApi.finish()
                                 .to(d -> {
@@ -103,7 +103,6 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
         }
         AFuture result = client.recoveryFuture;
         Log.debug("Resolving cloud: " + cloud);
-
         Log.trace("RegConn: registration step resolve servers: $servers", "servers", cloud);
         safeApi.resolveServers(cloud)
                 .to(ss -> {
@@ -138,5 +137,4 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
                 .convert(tempKeyCp::decrypt)
                 .accept();
     }
-
 }

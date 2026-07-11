@@ -346,7 +346,6 @@ public final class AetherCloudClient implements Destroyable {
         var regs = makeConnectionReg();
         var cloudData = clientState.getCloud(getUid());
         var cloud = (cloudData != null) ? cloudData.toCloud() : null;
-
         AFuture recoveryFutureLocal;
         if (cloud != null) {
             // Есть облако в кэше - пытаемся разрешить сервера
@@ -360,7 +359,6 @@ public final class AetherCloudClient implements Destroyable {
             recoveryFutureLocal = regDone.to(clouds.getFuture(getUid()).toFuture());
             Log.info("TriggerRecovery: re-registration done, new uid=$uid, waiting for cloud in cache.", "uid", getUid());
         }
-
         recoveryFutureLocal.to(() -> {
             Log.info("Recovery successful.");
             isRecoveryInProgress.set(false);
@@ -828,9 +826,5 @@ public final class AetherCloudClient implements Destroyable {
         public ClientTimeoutException(String message) {
             super(message);
         }
-
-
     }
-
-
 }

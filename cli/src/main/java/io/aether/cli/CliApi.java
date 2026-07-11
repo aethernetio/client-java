@@ -12,7 +12,6 @@ import io.aether.utils.Destroyer;
 import io.aether.utils.RU;
 import io.aether.utils.ToString;
 import io.aether.utils.consoleCanonical.ConsoleMgrCanonical.*;
-import io.aether.utils.consoleCanonical.ConsoleMgrCanonical.Optional;
 import io.aether.utils.flow.Flow;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
@@ -25,7 +24,9 @@ import java.io.FileInputStream;
 import java.io.InputStreamReader;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
@@ -34,19 +35,12 @@ import java.util.concurrent.Executors;
  */
 @Doc("Command Line Interface API for Aether Cloud Client operations.")
 public class CliApi {
-    static {
-        // Устанавливаем глобальный контекст для всех логов CLI
-        io.aether.logger.Log.of(io.aether.logger.Log.SYSTEM_COMPONENT, "CLI").context();
-    }
-
     private static final Executor CLI_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
         var t = new Thread(r, "CLI-Async-Worker");
         t.setDaemon(true);
         return t;
     });
-
     private static final Executor DESTROY_EXECUTOR = Executors.newSingleThreadExecutor(r -> new Thread(r, "CLI-Destroy-Worker"));
-
     public final Destroyer destroyer = new Destroyer("CliApi");
     private final CliState cliState;
     /**
@@ -60,7 +54,6 @@ public class CliApi {
     public CreateApi createApi;
     public ShowApi showApi;
     public SetApi setApi;
-
     /**
      * Constructor receiving the persistent state
      *
@@ -82,17 +75,14 @@ public class CliApi {
         if (uuidOrAlias == null) {
             return null;
         }
-
         // 1. Check user-defined aliases (case-sensitive and then uppercase)
         if (cliState.hasAlias(uuidOrAlias)) {
             return UUID.fromString(cliState.getUuidForAlias(uuidOrAlias));
         }
-
         String upper = uuidOrAlias.toUpperCase();
         if (cliState.hasAlias(upper)) {
             return UUID.fromString(cliState.getUuidForAlias(upper));
         }
-
         // 2. Check static aliases
         switch (upper) {
             case "TEST":
@@ -102,7 +92,6 @@ public class CliApi {
             case "ANONYMOUS":
                 return StandardUUIDs.ANONYMOUS_UID;
         }
-
         // 3. Try to parse as a raw UUID
         try {
             return UUID.fromString(uuidOrAlias);
@@ -119,7 +108,7 @@ public class CliApi {
         AFuture destroyFuture = AFuture.make();
         DESTROY_EXECUTOR.execute(() -> {
             try {
-                                Log.info("Starting safe destroy of CLI resources");
+                Log.info("Starting safe destroy of CLI resources");
                 destroyer.destroy(true).timeout(10, () -> {
                     Log.warn("Timeout during safe destroy");
                 }).to(destroyFuture);
@@ -134,7 +123,7 @@ public class CliApi {
     @Doc("Show version of cli instrument")
     @Example("$exCmd version")
     public String version() {
-                Log.info("Executing command: version");
+        Log.info("Executing command: version");
         try (var is = new BufferedReader(new InputStreamReader(getClass().getResourceAsStream("/aether-cli-version.txt")))) {
             return is.readLine();
         } catch (Exception e) {
@@ -149,7 +138,7 @@ public class CliApi {
             @Doc("Specify a time limit for the object creation")
             @Optional("10")
             int timeout) {
-                Log.info("Executing command: create", "timeout", timeout);
+        Log.info("Executing command: create", "timeout", timeout);
         createApi = new CreateApi();
         return createApi;
     }
@@ -160,15 +149,13 @@ public class CliApi {
             @Doc("Previously saved client state file")
             @Optional(value = "state.bin")
             File state) {
-                Log.info("Executing command: change", "stateFile", state);
-
+        Log.info("Executing command: change", "stateFile", state);
         ClientStateInMemory loadedState = ClientStateInMemory.load(state);
         if (loadedState == null) {
             throw new IllegalStateException("Command requires a valid state file, but it was not found or was corrupted. " +
                                             "Default path is '" + state.getName() + "'. " +
                                             "Please run 'create client' first, or specify a valid state file with --state.");
         }
-
         // Create client locally
         var client = new AetherCloudClient(loadedState);
         destroyer.add(client);
@@ -185,25 +172,21 @@ public class CliApi {
             UUID uid1,
             @Doc("Client 2 UUID or alias. \n" + UUID_ALIASES_DOC)
             UUID uid2) {
-                Log.info("Executing command: checkAccess", "stateFile", state, "uid1", uid1, "uid2", uid2);
-
+        Log.info("Executing command: checkAccess", "stateFile", state, "uid1", uid1, "uid2", uid2);
         ClientStateInMemory loadedState = ClientStateInMemory.load(state);
         if (loadedState == null) {
             return ARFuture.doThrow(new IllegalStateException("Command requires a valid state file, but it was not found or was corrupted. " +
                                                               "Default path is '" + state.getName() + "'. " +
                                                               "Please run 'create client' first, or specify a valid state file with --state."));
         }
-
         // Create client locally
         var client = new AetherCloudClient(loadedState);
         destroyer.add(client);
-
         // Capture client for use in lambda expression
         AetherCloudClient finalClient = client;
-
         // Explicitly specify the generic type for ARFuture.run to avoid error
         return ARFuture.<Boolean>run2(CLI_EXECUTOR, () -> finalClient.checkAccess(uid1, uid2))
-                                .apply(() -> {
+                .apply(() -> {
                     destroyer.remove(finalClient);
                     finalClient.destroy(true);
                 });
@@ -217,22 +200,18 @@ public class CliApi {
             File state,
             @Doc("Destination UUID address or alias. \n" + UUID_ALIASES_DOC)
             UUID address) {
-                Log.info("Executing command: send", "stateFile", state, "address", address);
-
+        Log.info("Executing command: send", "stateFile", state, "address", address);
         ClientStateInMemory loadedState = ClientStateInMemory.load(state);
         if (loadedState == null) {
             throw new IllegalStateException("Command requires a valid state file, but it was not found or was corrupted. " +
                                             "Default path is '" + state.getName() + "'. " +
                                             "Please run 'create client' first, or specify a valid state file with --state.");
         }
-
         // Create client locally
         var client = new AetherCloudClient(loadedState);
         destroyer.add(client);
-
         // Wait for client to be fully connected before allowing message sending
         ARFuture<AetherCloudClient> readyClient = client.connect().mapRFuture(() -> client);
-
         var st = client.getMessageNode(address, MessageEventListener.DEFAULT);
         return new SendApi(st, client, readyClient);
     }
@@ -240,7 +219,7 @@ public class CliApi {
     @Api
     @Doc("Show client state, groups, aliases, and incoming messages")
     public ShowApi show(/* --- state parameter removed --- */) {
-                Log.info("Executing command: show");
+        Log.info("Executing command: show");
         showApi = new ShowApi(this.cliState);
         return showApi;
     }
@@ -248,12 +227,15 @@ public class CliApi {
     @Api
     @Doc("Set properties, like user-defined aliases")
     public SetApi set() {
-                Log.info("Executing command: set");
+        Log.info("Executing command: set");
         setApi = new SetApi(this.cliState);
         return setApi;
     }
 
-    
+    static {
+        // Устанавливаем глобальный контекст для всех логов CLI
+        io.aether.logger.Log.of(io.aether.logger.Log.SYSTEM_COMPONENT, "CLI").context();
+    }
 
     /**
      * Message container class.
@@ -317,20 +299,17 @@ public class CliApi {
             public AFuture add(
                     @Doc("Set of client UUIDs or aliases to add. \n" + UUID_ALIASES_DOC)
                     @StdIn Set<UUID> uid) {
-                                Log.info("ChangeGroupApi: add started", "groupId", id);
+                Log.info("ChangeGroupApi: add started", "groupId", id);
                 AFuture res = AFuture.make();
-
                 // CAPTURE: Capture the reference to the Destroyer in the outer (safe) scope
                 Destroyer apiDestroyer = CliApi.this.destroyer;
-
                 AFuture.run(CLI_EXECUTOR, () -> {
                     client.getAuthApi(a -> {
-                                                Log.info("ChangeGroupApi: got AuthApi, starting add op");
+                        Log.info("ChangeGroupApi: got AuthApi, starting add op");
                         AFuture.all(Flow.flow(uid).map(u -> a.addToAccessGroup(id, u)).map(ARFuture::toFuture).toList()).to(res);
                     });
                 });
-
-                                return res.apply(() -> {
+                return res.apply(() -> {
                     apiDestroyer.remove(client);
                     client.destroy(true);
                 });
@@ -341,20 +320,17 @@ public class CliApi {
             public AFuture remove(
                     @Doc("Set of client UUIDs or aliases to remove. \n" + UUID_ALIASES_DOC)
                     Set<UUID> uid) {
-                                Log.info("ChangeGroupApi: remove started", "groupId", id);
+                Log.info("ChangeGroupApi: remove started", "groupId", id);
                 AFuture res = AFuture.make();
-
                 // CAPTURE: Capture the reference to the Destroyer in the outer (safe) scope
                 Destroyer apiDestroyer = CliApi.this.destroyer;
-
                 AFuture.run(CLI_EXECUTOR, () -> {
                     client.getAuthApi(a -> {
-                                                Log.info("ChangeGroupApi: got AuthApi, starting remove op");
+                        Log.info("ChangeGroupApi: got AuthApi, starting remove op");
                         AFuture.all(Flow.flow(uid).map(u -> a.removeFromAccessGroup(id, u)).map(ARFuture::toFuture).toList()).to(res);
                     });
                 });
-
-                                return res.apply(() -> {
+                return res.apply(() -> {
                     Log.info("ChangeGroupApi: remove finished.");
                     apiDestroyer.remove(client);
                     client.destroy(true);
@@ -423,7 +399,6 @@ public class CliApi {
                 @Optional
                 @Alias("c")
                 UUID targetClient) {
-
             // --- LOAD AND CHECK HERE ---
             ClientStateInMemory requiredState;
             try {
@@ -432,21 +407,18 @@ public class CliApi {
                 return ARFuture.doThrow(e); // Return error if state.bin is missing
             }
             // -------------------------
-
             // Create client locally
             var client = AetherCloudClient.of(requiredState); // Use the checked state
             CliApi.this.destroyer.add(client); // Add to the root destroyer
-
             UUID targetUuid = targetClient;
             if (targetUuid == null) {
                 targetUuid = client.getUid();
             }
             UUID finalTargetClient = targetUuid;
             ARFuture<Set<Long>> res = ARFuture.make();
-                        CLI_EXECUTOR.execute(() -> {
+            CLI_EXECUTOR.execute(() -> {
                 client.getClientGroups(finalTargetClient).to(res);
             });
-
             return res.apply(() -> {
                 CliApi.this.destroyer.remove(client);
                 client.destroy(true);
@@ -462,7 +434,6 @@ public class CliApi {
                 File state,
                 @Doc("IDs of access groups, separated by comma")
                 Set<Long> ids) {
-
             // --- LOAD AND CHECK HERE ---
             ClientStateInMemory requiredState;
             try {
@@ -471,13 +442,11 @@ public class CliApi {
                 return ARFuture.doThrow(e);
             }
             // -------------------------
-
             // Create client locally
             var client = AetherCloudClient.of(requiredState);
             CliApi.this.destroyer.add(client); // Add to the root destroyer
-
             ARFuture<List<AccessGroup>> res = ARFuture.make();
-                        CLI_EXECUTOR.execute(() -> {
+            CLI_EXECUTOR.execute(() -> {
                 ARFuture.all(Flow.flow(ids)
                         .map(groupId -> client.getGroup(groupId).map(v -> v))
                         .toList()).to(res);
@@ -497,7 +466,6 @@ public class CliApi {
                 File state,
                 @Doc("Specified client UID or alias. Defaults to client's UID from state file.\n" + UUID_ALIASES_DOC)
                 @Optional @Alias("c") UUID targetClient) {
-
             // --- LOAD AND CHECK HERE ---
             ClientStateInMemory requiredState;
             try {
@@ -506,21 +474,18 @@ public class CliApi {
                 return ARFuture.doThrow(e);
             }
             // -------------------------
-
             // Create client locally
             var client = AetherCloudClient.of(requiredState);
             CliApi.this.destroyer.add(client); // Add to the root destroyer
-
             UUID targetUuid = targetClient;
             if (targetUuid == null) {
                 targetUuid = client.getUid();
             }
             UUID finalTargetClient = targetUuid;
             ARFuture<Set<UUID>> res = ARFuture.make();
-                        CLI_EXECUTOR.execute(() -> {
+            CLI_EXECUTOR.execute(() -> {
                 client.getAllAccessedClients(finalTargetClient).to(res);
             });
-
             return res.apply(() -> {
                 CliApi.this.destroyer.remove(client);
                 client.destroy(true);
@@ -557,60 +522,51 @@ public class CliApi {
             // (This command does not return an AFuture, so it throws an exception directly)
             ClientStateInMemory requiredState = loadRequiredState(state);
             // -------------------------
-
-                        Log.info("ShowApi: messages command started", "waitTimeMs", waitTime, "filterUids", filter, "notUids", not);
+            Log.info("ShowApi: messages command started", "waitTimeMs", waitTime, "filterUids", filter, "notUids", not);
             // Create client locally
             var client = new AetherCloudClient(requiredState); // Use the checked state
             CliApi.this.destroyer.add(client);
-                        Log.info("ShowApi: Client instance created", "clientUid", client.getUid());
-
+            Log.info("ShowApi: Client instance created", "clientUid", client.getUid());
             // CAPTURE: Capture the reference to the Destroyer in the outer (safe) scope
             Destroyer apiDestroyer = CliApi.this.destroyer;
-
             client.onClientStream(m -> {
                 UUID consumerUid = m.getConsumerUUID();
-                                Log.info("ShowApi: received new MessageNode stream", "consumerUid", consumerUid);
-
+                Log.info("ShowApi: received new MessageNode stream", "consumerUid", consumerUid);
                 m.toConsumer(d -> {
-                                        Log.info("ShowApi: Message data received from stream", "from", consumerUid, "dataLength", d.length);
-
+                    Log.info("ShowApi: Message data received from stream", "from", consumerUid, "dataLength", d.length);
                     boolean isFiltered = false;
                     if (filter != null && !filter.contains(consumerUid)) {
-                                                Log.info("ShowApi: Message SKIPPED (Filter check failed)", "from", consumerUid);
+                        Log.info("ShowApi: Message SKIPPED (Filter check failed)", "from", consumerUid);
                         isFiltered = true;
                     }
                     if (!isFiltered && not != null && not.contains(consumerUid)) {
-                                                Log.info("ShowApi: Message SKIPPBLED (Exclude check failed)", "from", consumerUid);
+                        Log.info("ShowApi: Message SKIPPBLED (Exclude check failed)", "from", consumerUid);
                         isFiltered = true;
                     }
-
                     if (!isFiltered) {
                         var msg = new Msg(consumerUid, d);
                         messages.fire(msg);
-                                                Log.info("ShowApi: Message PROCESSED and fired to console", "from", consumerUid, "dataLength", d.length);
+                        Log.info("ShowApi: Message PROCESSED and fired to console", "from", consumerUid, "dataLength", d.length);
                     }
                 });
             });
-
             // Start connection in CLI_EXECUTOR
             AFuture.run(CLI_EXECUTOR, client::connect)
                     .to(() -> {
-                                                Log.info("ShowApi: Client connect successful. Scheduling timeout.", "clientUid", client.getUid());
-
+                        Log.info("ShowApi: Client connect successful. Scheduling timeout.", "clientUid", client.getUid());
                         // Schedule forced termination after waitTime.
                         RU.schedule(waitTime, () -> {
-                                                        Log.info("ShowApi: Timeout triggered after %s ms. Starting client destroy.", waitTime);
+                            Log.info("ShowApi: Timeout triggered after %s ms. Starting client destroy.", waitTime);
                             apiDestroyer.destroy(true);
                         });
-                                                Log.info("ShowApi: Timeout scheduled", "waitTimeMs", waitTime);
+                        Log.info("ShowApi: Timeout scheduled", "waitTimeMs", waitTime);
                     }).onError(e -> {
-                                                Log.info("ShowApi: Client connect FAILED. Scheduling exit.", "error", e.getMessage());
+                        Log.info("ShowApi: Client connect FAILED. Scheduling exit.", "error", e.getMessage());
                         RU.schedule(10, () -> {
-                                                        Log.info("ShowApi: Client connect failed, completing session.");
+                            Log.info("ShowApi: Client connect failed, completing session.");
                             apiDestroyer.destroy(true);
                         });
                     });
-
             return messages;
         }
     }
@@ -646,8 +602,7 @@ public class CliApi {
                 @Doc("A custom alias to save for the new client's UUID in ~/.aether-cli-state.json")
                 String alias
         ) {
-                    Log.info("CreateApi: client creation started", "parent", parent, "alias", alias);
-
+            Log.info("CreateApi: client creation started", "parent", parent, "alias", alias);
             if (dev) {
                 regUri = URI.create("tcp://reg-dev.aethernet.io:9010");
             }
@@ -656,7 +611,7 @@ public class CliApi {
             CliApi.this.destroyer.add(client);
             ARFuture<ClientState> result = ARFuture.make();
             Log.debug("Wait start client");
-                        client.startFuture.to(() -> {
+            client.startFuture.to(() -> {
                 client.forceUpdateStateFromCache()
                         .to(() -> {
                             // Закрываем регистрационное соединение после успеха
@@ -686,36 +641,30 @@ public class CliApi {
                 UUID owner,
                 @Doc("Set of client UUIDs or aliases to initially include in the group. \n" + UUID_ALIASES_DOC)
                 @Optional Set<UUID> uids) {
-                        Log.info("CreateApi: group creation started");
-
+            Log.info("CreateApi: group creation started");
             ClientStateInMemory loadedState = ClientStateInMemory.load(state);
             if (loadedState == null) {
                 return ARFuture.doThrow(new IllegalStateException("Command requires a valid state file, but it was not found or was corrupted. " +
                                                                   "Default path is '" + state.getName() + "'. " +
                                                                   "Please run 'create client' first, or specify a valid state file with --state."));
             }
-
             // Create client locally
             var client = new AetherCloudClient(loadedState); // Use the loaded state
             CliApi.this.destroyer.add(client);
-
             UUID ownerUuid = owner;
             if (ownerUuid == null) {
                 ownerUuid = client.getUid();
             }
-
             if (uids == null) {
                 uids = Set.of();
             }
-
             UUID finalOwner = ownerUuid;
             Set<UUID> finalUids = uids;
             // CAPTURE: Capture the reference to the Destroyer in the outer (safe) scope
             Destroyer apiDestroyer = CliApi.this.destroyer;
-
             return ARFuture.<AccessGroupI>run(CLI_EXECUTOR, () ->
                     client.createAccessGroupWithOwner(finalOwner, finalUids.toArray(new UUID[0])).get()
-                        ).apply(() -> {
+            ).apply(() -> {
                 Log.info("CreateApi: group creation finished.");
                 apiDestroyer.remove(client);
                 client.destroy(true);
@@ -740,20 +689,17 @@ public class CliApi {
 
         @Doc("Send a text message")
         @Example("$exCmd send TEST text \"Hello, world!\"")
-                public AFuture text(
+        public AFuture text(
                 @Doc("Text content to send")
                 String text) {
             Log.info("SendApi: sending text message", "textLength", text.length());
             AFuture res = AFuture.make();
-
             // Wait for client to be ready before sending
             readyClient.to2(CLI_EXECUTOR, ready -> {
                 st.send(text.getBytes(StandardCharsets.UTF_8)).to(res);
             });
-
             // CAPTURE: Ссылка на Destroyer для очистки после отправки
             Destroyer apiDestroyer = CliApi.this.destroyer;
-
             return res.apply(() -> {
                 Log.info("SendApi: send text finished.");
                 apiDestroyer.remove(client);
@@ -766,9 +712,8 @@ public class CliApi {
         public AFuture file(
                 @Doc("File to send")
                 File file) {
-                        Log.info("SendApi: sending file", "fileName", file.getName());
+            Log.info("SendApi: sending file", "fileName", file.getName());
             AFuture res = AFuture.make();
-
             // Wait for client to be ready before sending
             readyClient.to2(CLI_EXECUTOR, ready -> {
                 // Execute send via executor
@@ -780,11 +725,9 @@ public class CliApi {
                     res.error(e);
                 }
             }).onError(res::error);
-
             // CAPTURE: Capture the reference to the Destroyer in the outer (safe) scope
             Destroyer apiDestroyer = CliApi.this.destroyer;
-
-                        return res.apply(() -> {
+            return res.apply(() -> {
                 Log.info("SendApi: send file finished.");
                 apiDestroyer.remove(client);
                 client.destroy(true);
@@ -796,19 +739,16 @@ public class CliApi {
         public AFuture stdIn(
                 @Doc("Data read from standard input")
                 @StdIn byte[] data) {
-                        Log.info("SendApi: sending stdin data", "dataLength", data.length);
+            Log.info("SendApi: sending stdin data", "dataLength", data.length);
             AFuture res = AFuture.make();
-
             // Wait for client to be ready before sending
             readyClient.to2(CLI_EXECUTOR, ready -> {
                 // Execute send via executor
                 st.send(data).to(res);
             }).onError(res::error);
-
             // CAPTURE: Capture the reference to the Destroyer in the outer (safe) scope
             Destroyer apiDestroyer = CliApi.this.destroyer;
-
-                        return res.apply(() -> {
+            return res.apply(() -> {
                 Log.info("SendApi: send (stdin) finished.");
                 apiDestroyer.remove(client);
                 client.destroy(true);
@@ -842,15 +782,13 @@ public class CliApi {
             if (uuid == null) {
                 throw new IllegalArgumentException("UUID cannot be null.");
             }
-
             // Check if the name conflicts with static aliases
             String upperName = aliasName.toUpperCase();
             if (upperName.equals("TEST") || upperName.equals("ROOT") || upperName.equals("ANONYMOUS")) {
                 throw new IllegalArgumentException("Alias name '" + aliasName + "' conflicts with a built-in static alias and cannot be used.");
             }
-
             cliState.addAlias(aliasName, uuid.toString());
-                        Log.info("SetApi: Saved alias '" + aliasName + "' for UUID " + uuid);
+            Log.info("SetApi: Saved alias '" + aliasName + "' for UUID " + uuid);
             // Returns void, as the operation is synchronous
         }
     }

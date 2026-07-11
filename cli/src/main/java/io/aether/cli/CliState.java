@@ -18,12 +18,6 @@ public class CliState {
     private static final String STATE_FILE_NAME = ".aether-cli-state.json";
     private final Path stateFilePath;
     private final Gson gson = new GsonBuilder().setPrettyPrinting().create();
-
-    // This structure is directly serialized to/from JSON
-    public static class StateData {
-        public Map<String, String> aliases = new ConcurrentHashMap<>();
-    }
-
     private StateData data = new StateData();
 
     public CliState() {
@@ -42,10 +36,8 @@ public class CliState {
                     save(); // Save empty default state
                     return;
                 }
-
                 // Parse JSON
                 StateData loadedData = gson.fromJson(json, StateData.class);
-
                 if (loadedData != null) {
                     this.data = loadedData;
                     if (this.data.aliases == null) {
@@ -76,8 +68,9 @@ public class CliState {
 
     /**
      * Adds a new alias and persists it to disk.
+     *
      * @param alias The alias name.
-     * @param uuid The UUID string.
+     * @param uuid  The UUID string.
      */
     public void addAlias(String alias, String uuid) {
         if (alias == null || alias.isBlank() || uuid == null || uuid.isBlank()) {
@@ -96,6 +89,7 @@ public class CliState {
 
     /**
      * Checks if a given alias exists.
+     *
      * @param alias The alias name.
      * @return true if the alias exists.
      */
@@ -105,10 +99,16 @@ public class CliState {
 
     /**
      * Gets the UUID string for a given alias.
+     *
      * @param alias The alias name.
      * @return The UUID string or null if not found.
      */
     public String getUuidForAlias(String alias) {
         return data.aliases.get(alias);
+    }
+
+    // This structure is directly serialized to/from JSON
+    public static class StateData {
+        public Map<String, String> aliases = new ConcurrentHashMap<>();
     }
 }

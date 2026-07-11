@@ -1,26 +1,16 @@
 package io.aether.launcher;
+
 import java.io.*;
-import java.net.*;
-import java.nio.file.*;
-import java.util.List;
+import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.function.Consumer;
-import java.util.concurrent.TimeUnit;
 import java.util.List;
-import java.util.ArrayList;
-import java.util.function.Consumer;
 import java.util.concurrent.TimeUnit;
-import java.util.List;
-import java.util.ArrayList;
 import java.util.function.Consumer;
-import java.util.concurrent.TimeUnit;
 
 
-
-
-
-
-/** Abstraction for a tool (JDK, Gradle, Git) that can be found or downloaded. */
+/**
+ * Abstraction for a tool (JDK, Gradle, Git) that can be found or downloaded.
+ */
 public abstract class ToolProvider {
     protected final String name;
     private final List<Consumer<String>> progressListeners = new ArrayList<>();
@@ -43,7 +33,8 @@ public abstract class ToolProvider {
                 p.waitFor(3, TimeUnit.SECONDS);
                 if (p.exitValue() == 0 && line != null) return line.trim();
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
         return null;
     }
 
@@ -58,13 +49,19 @@ public abstract class ToolProvider {
         }
     }
 
-    /** Try to find the tool on the system. Returns the path or null. */
+    /**
+     * Try to find the tool on the system. Returns the path or null.
+     */
     public abstract Path find();
 
-    /** Download and install the tool into the given workspace tools directory. Returns the path or null. */
+    /**
+     * Download and install the tool into the given workspace tools directory. Returns the path or null.
+     */
     public abstract Path download(Path toolsDir) throws Exception;
 
-    /** Return a human-readable status string for UI. */
+    /**
+     * Return a human-readable status string for UI.
+     */
     public String getStatus() {
         Path found = find();
         if (found != null) return "Found: " + found.toString();
@@ -83,12 +80,10 @@ public abstract class ToolProvider {
                 out.write(buf, 0, n);
                 downloaded += n;
                 if (total > 0) {
-                    int pct = (int)(downloaded * 100 / total);
+                    int pct = (int) (downloaded * 100 / total);
                     onProgress.accept(pct);
                 }
             }
         }
     }
-
-
 }

@@ -37,11 +37,8 @@ public class ClientStateInMemory implements ClientState, ToString {
     private final Map<UUID, ClientInfoMutable> clients = new ConcurrentHashMap<>();
 
     private final Set<SignChecker> rootSigners = new ConcurrentHashSet<>();
-
-    private CryptoLib cryptoLib;
-
     private final AMFuture<Long> pingDuration = new AMFuture<>(1000L);
-
+    private CryptoLib cryptoLib;
     private UUID parentUid;
 
     private int countServersForRegistration = 1;
@@ -125,7 +122,6 @@ public class ClientStateInMemory implements ClientState, ToString {
 
     @Override
     public void saveState() {
-
     }
 
     @Override
@@ -252,10 +248,12 @@ public class ClientStateInMemory implements ClientState, ToString {
             RU.error(e);
         }
     }
+
     public void loadState(byte[] data) {
         var dto = ClientStateForSave.META.deserialize(MetaContext.STUB, new DataInOutStatic(data));
         loadState(dto);
     }
+
     public void loadState(ClientStateForSave dto) {
         try {
             this.uid = dto.getUid();

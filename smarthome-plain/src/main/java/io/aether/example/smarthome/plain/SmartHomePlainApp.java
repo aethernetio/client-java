@@ -9,20 +9,16 @@ public class SmartHomePlainApp {
         Log.printConsoleColored();
         MockCommutatorClientPlain mockCommutator = null;
         try {
-
             mockCommutator = new MockCommutatorClientPlain("ManualCommutator", "tcp://dbservice.aethernet.io:9010");
             MockCommutatorClientPlain finalMockCommutator = mockCommutator;
-            mockCommutator.start().to(()->{
+            mockCommutator.start().to(() -> {
                 UUID commutatorUuid = finalMockCommutator.client.getUid();
-
                 Log.info("==================================================================");
                 Log.info("MANUAL TEST READY.");
                 Log.info("1. Commutator UUID: " + commutatorUuid);
                 Log.info("==================================================================");
             });
-
             Thread.currentThread().join();
-
         } catch (Exception e) {
             Log.error("Manual Probe Failed", e);
         } finally {

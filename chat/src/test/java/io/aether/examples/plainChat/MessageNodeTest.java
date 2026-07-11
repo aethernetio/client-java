@@ -31,5 +31,4 @@ class MessageNodeTest {
         Assertions.assertTrue(AFuture.all(client1.startFuture, client2.startFuture).waitDoneSeconds(1000));
         MessageNode mn = client1.openStreamToClientDetails(client2.getUid(), MessageEventListener.DEFAULT);
     }
-
 }

@@ -54,7 +54,6 @@ public class SmartHubService {
             Log.info("Starting SmartHub Service...");
             initDatabase();
             loadKnownDevicesFromDb();
-
             java.io.File stateFile = new java.io.File(STATE_PATH);
             ClientStateInFile state = new ClientStateInFile(
                     clientState != null ? clientState.getParentUid() : StandardUUIDs.TEST_UID,
@@ -74,13 +73,9 @@ public class SmartHubService {
         } catch (java.io.IOException e) {
             throw new SQLException("Failed to create database directory", e);
         }
-
-
         String url = "jdbc:h2:./" + DB_PATH + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1;AUTO_SERVER=TRUE";
         connectionPool = JdbcConnectionPool.create(url, "sa", "");
-
         connectionPool.setMaxConnections(10);
-
         try (Connection conn = connectionPool.getConnection();
              Statement stmt = conn.createStatement()) {
             stmt.execute("SET MODE PostgreSQL");
@@ -117,7 +112,6 @@ public class SmartHubService {
             public void device(DeviceStream stream) {
                 Log.info("SmartHub: device method called");
                 if (api2DeviceRemote == null) {
-
                     api2DeviceLocal = (value) -> {
                         Log.info("api2DeviceLocal called", "value", value);
                         boolean isNew = knownDevices.add(UUID.randomUUID());//FIXME: use correct uid
@@ -134,7 +128,6 @@ public class SmartHubService {
                             } catch (Exception e) {
                                 Log.error("Failed to register device in DB", e);
                             }
-
                             deviceRegisteredFuture.tryDone();
                         }
                         try (Connection conn = connectionPool.getConnection();
@@ -146,12 +139,10 @@ public class SmartHubService {
                             stmt.addBatch();
                             stmt.executeBatch();
                             Log.info("Inserted device states", "value", value);
-
                         } catch (Exception e) {
                             Log.error("SmartHub: SQL Error", e);
                         }
                     };
-
                 }
                 Log.info("SmartHub: Device stream connected");
                 stream.asIn().accept();
@@ -165,7 +156,6 @@ public class SmartHubService {
                         .keys(c -> new MySmartHomeGuiApi(stream.asIn().remoteApi()))
                         .accept();
             }
-
         };
     }
 
@@ -243,7 +233,6 @@ public class SmartHubService {
         }
 
         @Override
-
         public void getDevices() {
             Log.info("getDevices called for gui", "currentKnownCount", knownDevices.size());
             UUID[] devicesArray = knownDevices.toArray(new UUID[0]);

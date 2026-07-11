@@ -1,9 +1,7 @@
-
 package io.aether.cloud.client;
 
 import io.aether.api.clientserverapi.AuthorizedApi;
 import io.aether.api.clientserverapi.Message;
-import io.aether.logger.Log;
 
 import java.util.*;
 

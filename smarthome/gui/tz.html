@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
     <title>ТЗ: Интерфейс GUI "Умный Дом"</title>
     <style>
         :root {
@@ -93,24 +93,34 @@
 
 <header>
     <h1>Техническое Задание: GUI "Умный Дом"</h1>
-    <p>Описание функциональных требований к клиентскому интерфейсу (GUI) для управления системой "Умный Дом" на платформе Aether.</p>
+    <p>Описание функциональных требований к клиентскому интерфейсу (GUI) для управления системой "Умный Дом" на
+        платформе Aether.</p>
 </header>
 
 <section>
     <h2>1. 🏠 Общая Концепция</h2>
     <p>
-        GUI (Графический Интерфейс Пользователя) является "Спицей" (Spoke) в архитектуре "Хаб и Спицы" (Hub-and-Spoke). Он представляет собой веб-страницу, которая подключается к центральному "Хабу" (SmartHomeService) через библиотеку Aether Cloud Client.
+        GUI (Графический Интерфейс Пользователя) является "Спицей" (Spoke) в архитектуре "Хаб и Спицы" (Hub-and-Spoke).
+        Он представляет собой веб-страницу, которая подключается к центральному "Хабу" (SmartHomeService) через
+        библиотеку Aether Cloud Client.
     </p>
     <p>
-        Интерфейс должен предоставлять пользователю возможность просматривать все подключенные устройства, управлять ими и одобрять (сопрягать) новое оборудование.
+        Интерфейс должен предоставлять пользователю возможность просматривать все подключенные устройства, управлять ими
+        и одобрять (сопрягать) новое оборудование.
     </p>
 
     <h3>1.1. Ключевые Сущности</h3>
     <ul>
-        <li><strong>Устройство (Device):</strong> Логическая сущность, известная сервису (например, "Лампа в спальне" или "Датчик температуры на кухне").</li>
+        <li><strong>Устройство (Device):</strong> Логическая сущность, известная сервису (например, "Лампа в спальне"
+            или "Датчик температуры на кухне").
+        </li>
         <li><strong>Исполнитель (Actor):</strong> Тип Устройства, которым можно управлять (реле, диммер).</li>
-        <li><strong>Сенсор (Sensor):</strong> Тип Устройства, которое только сообщает данные (датчик температуры, влажности).</li>
-        <li><strong>Ожидающее Сопряжение (Pending Pairing):</strong> Новый Коммутатор, который подключился к сервису, но еще не одобрен пользователем.</li>
+        <li><strong>Сенсор (Sensor):</strong> Тип Устройства, которое только сообщает данные (датчик температуры,
+            влажности).
+        </li>
+        <li><strong>Ожидающее Сопряжение (Pending Pairing):</strong> Новый Коммутатор, который подключился к сервису, но
+            еще не одобрен пользователем.
+        </li>
     </ul>
 </section>
 
@@ -126,7 +136,8 @@
     </p>
 
     <div class="note">
-        <strong>Логика Загрузки:</strong> При открытии этого экрана, GUI должен вызвать метод <code>SmartHomeServiceApi.getAllDevices()</code>, чтобы получить полный список устройств <code>Device[]</code>.
+        <strong>Логика Загрузки:</strong> При открытии этого экрана, GUI должен вызвать метод <code>SmartHomeServiceApi.getAllDevices()</code>,
+        чтобы получить полный список устройств <code>Device[]</code>.
     </div>
 
     <div class="card">
@@ -147,10 +158,12 @@
             <li><strong>Отображает:</strong> <code>name</code> (например, "Свет на кухне").</li>
             <li><strong>Отображает:</strong> <code>lastState</code> (например, "ON" / "OFF" / "75%").</li>
             <li>
-                <strong>Элементы управления:</strong> Должен содержать интерактивные элементы (кнопка, переключатель, слайдер).
+                <strong>Элементы управления:</strong> Должен содержать интерактивные элементы (кнопка, переключатель,
+                слайдер).
             </li>
             <li>
-                <strong>Действие:</strong> При взаимодействии с элементом управления (например, нажатии кнопки "ВКЛ"), GUI должен вызвать метод <code>SmartHomeServiceApi.executeActorCommand(actorId, command)</code>.
+                <strong>Действие:</strong> При взаимодействии с элементом управления (например, нажатии кнопки "ВКЛ"),
+                GUI должен вызвать метод <code>SmartHomeServiceApi.executeActorCommand(actorId, command)</code>.
             </li>
         </ul>
     </div>
@@ -158,7 +171,9 @@
     <div class="push">
         <strong>📡 Требование к PUSH-Обновлению (Состояние):</strong><br>
         GUI <b>должен</b> реализовывать <code>SmartHomeClientApi</code>.
-        При получении PUSH-события <code>deviceStateUpdated(device)</code>, GUI должен найти соответствующую карточку устройства на этом экране и немедленно обновить ее поля <code>lastState</code> и <code>lastUpdated</code> без перезагрузки страницы.
+        При получении PUSH-события <code>deviceStateUpdated(device)</code>, GUI должен найти соответствующую карточку
+        устройства на этом экране и немедленно обновить ее поля <code>lastState</code> и <code>lastUpdated</code> без
+        перезагрузки страницы.
     </div>
 </section>
 
@@ -169,7 +184,8 @@
     </p>
 
     <div class="note">
-        <strong>Логика Загрузки:</strong> При открытии этого экрана, GUI должен вызвать метод <code>SmartHomeServiceApi.getPendingPairings()</code>, чтобы получить список <code>PendingPairing[]</code>.
+        <strong>Логика Загрузки:</strong> При открытии этого экрана, GUI должен вызвать метод <code>SmartHomeServiceApi.getPendingPairings()</code>,
+        чтобы получить список <code>PendingPairing[]</code>.
     </div>
 
     <div class="card">
@@ -177,12 +193,15 @@
         <p>Визуальный блок для каждого <code>PendingPairing</code>.</p>
         <ul>
             <li><strong>Отображает:</strong> <code>commutatorId</code> (UUID коммутатора).</li>
-            <li><strong>Отображает:</strong> Список <code>devices</code> (например, "Обнаружено: 1 Датчик (SENSOR), 2 Исполнителя (ACTOR)").</li>
+            <li><strong>Отображает:</strong> Список <code>devices</code> (например, "Обнаружено: 1 Датчик (SENSOR), 2
+                Исполнителя (ACTOR)").
+            </li>
             <li>
                 <strong>Элементы управления:</strong> Кнопка "Одобрить".
             </li>
             <li>
-                <strong>Действие:</strong> При нажатии кнопки "Одобрить", GUI должен вызвать метод <code>SmartHomeServiceApi.approvePairing(commutatorUuid)</code>. После успешного вызова, этот запрос должен исчезнуть из списка.
+                <strong>Действие:</strong> При нажатии кнопки "Одобрить", GUI должен вызвать метод <code>SmartHomeServiceApi.approvePairing(commutatorUuid)</code>.
+                После успешного вызова, этот запрос должен исчезнуть из списка.
             </li>
         </ul>
     </div>
@@ -190,7 +209,9 @@
     <div class="push">
         <strong>📡 Требование к PUSH-Обновлению (Сопряжение):</strong><br>
         GUI <b>должен</b> реализовывать <code>SmartHomeClientApi</code>.
-        При получении PUSH-события <code>pairingRequested(pairingInfo)</code>, GUI должен немедленно добавить новый "Запрос на Сопряжение" в этот список, а также показать пользователю уведомление (например, индикатор "!" на иконке Настроек).
+        При получении PUSH-события <code>pairingRequested(pairingInfo)</code>, GUI должен немедленно добавить новый
+        "Запрос на Сопряжение" в этот список, а также показать пользователю уведомление (например, индикатор "!" на
+        иконке Настроек).
     </div>
 </section>
 
@@ -201,7 +222,9 @@
     <ul>
         <li>GUI должен инициализировать <code>AetherCloudClient</code>, используя предоставленную библиотеку.</li>
         <li>При запуске клиент должен подключиться к SmartHomeService (Хабу).</li>
-        <li>Сразу после подключения клиент <b>должен</b> вызвать <code>SmartHomeServiceApi.register()</code>, указав <code>type: ClientType.GUI_CLIENT</code>.</li>
+        <li>Сразу после подключения клиент <b>должен</b> вызвать <code>SmartHomeServiceApi.register()</code>, указав
+            <code>type: ClientType.GUI_CLIENT</code>.
+        </li>
     </ul>
 
     <h3>4.2. Таблица Взаимодействия с API</h3>

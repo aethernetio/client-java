@@ -1,8 +1,10 @@
-Here are the updated documentation files that fully reflect the current P2P architecture, the file structure provided, and the specific features (Charts, Persistence, Java/TCP Mock) we have implemented.
+Here are the updated documentation files that fully reflect the current P2P architecture, the file structure provided,
+and the specific features (Charts, Persistence, Java/TCP Mock) we have implemented.
 
 ### 1\. `PROJECT_CONTEXT.MD`
 
-This file has been rewritten to serve as the definitive guide to the project's architecture, directory structure, and protocols.
+This file has been rewritten to serve as the definitive guide to the project's architecture, directory structure, and
+protocols.
 
 ````markdown
 # 🏠 SmartHome P2P: Project Context & Architecture
@@ -55,13 +57,14 @@ The project is a hybrid **Java (Backend/Test)** and **TypeScript (Frontend)** mo
 
 ## 3\. 📡 API Protocol (`smarthome.adsl.yaml`)
 
-Communication is defined by the ADSL schema. The Aether Generator creates type-safe classes for both Java and TypeScript from this file.
+Communication is defined by the ADSL schema. The Aether Generator creates type-safe classes for both Java and TypeScript
+from this file.
 
 ### 3.1. Data Types
 
 * **`HardwareDevice`**: Abstract base for all devices.
-  * `HardwareSensor`: Read-only device (e.g., Temperature). Contains `unit`.
-  * `HardwareActor`: Controllable device (e.g., Light Switch).
+    * `HardwareSensor`: Read-only device (e.g., Temperature). Contains `unit`.
+    * `HardwareActor`: Controllable device (e.g., Light Switch).
 * **`DeviceStateData`**: Snapshot of a device's status (`payload` + `timestamp`).
 * **`VariantData`**: Tagged union for polymorphic values (Double, Bool, String).
 
@@ -69,19 +72,19 @@ Communication is defined by the ADSL schema. The Aether Generator creates type-s
 
 *Called by the GUI Client via P2P.*
 
-| Method | Description |
-| :--- | :--- |
-| `getSystemStructure()` | Returns the full list of devices (`HardwareDevice[]`). |
-| `executeActorCommand(id, cmd)` | Sends a control command to an actor. |
-| `queryState(id)` | **Synchronous** request for a specific device state. Used for polling/RTT. |
-| `queryAllSensorStates()` | **Asynchronous** trigger. Asks Commutator to PUSH all sensor data. |
+| Method                         | Description                                                                |
+|:-------------------------------|:---------------------------------------------------------------------------|
+| `getSystemStructure()`         | Returns the full list of devices (`HardwareDevice[]`).                     |
+| `executeActorCommand(id, cmd)` | Sends a control command to an actor.                                       |
+| `queryState(id)`               | **Synchronous** request for a specific device state. Used for polling/RTT. |
+| `queryAllSensorStates()`       | **Asynchronous** trigger. Asks Commutator to PUSH all sensor data.         |
 
 ### 3.3. `SmartHomeClientApi` (Implemented by GUI)
 
 *Called by the Commutator via P2P (PUSH).*
 
-| Method | Description |
-| :--- | :--- |
+| Method                          | Description                                                         |
+|:--------------------------------|:--------------------------------------------------------------------|
 | `deviceStateUpdated(id, state)` | Real-time callback. Fired whenever a physical device changes state. |
 
 -----
@@ -100,14 +103,19 @@ Used for E2E testing and development.
 
 The "Brain" of the frontend.
 
-1.  **Session Management:**
-  * Connects to Aether Core via WebSocket.
-  * **Persistence:** Saves/Restores session keys and UUID to `LocalStorage` to allow page reloads without re-registration.
-2.  **P2P Management:**
-  * Establishes a direct encrypted stream to the target Commutator UUID.
-  * Exposes methods to query structure and state.
-3.  **Event Handling:**
-  * Dispatches events for UI updates (`onDeviceListUpdate`, `onDeviceStateChanged`).
+1. **Session Management:**
+
+* Connects to Aether Core via WebSocket.
+* **Persistence:** Saves/Restores session keys and UUID to `LocalStorage` to allow page reloads without re-registration.
+
+2. **P2P Management:**
+
+* Establishes a direct encrypted stream to the target Commutator UUID.
+* Exposes methods to query structure and state.
+
+3. **Event Handling:**
+
+* Dispatches events for UI updates (`onDeviceListUpdate`, `onDeviceStateChanged`).
 
 ### C. Polling & Metrics (`PollingManager.ts`)
 
@@ -127,19 +135,27 @@ Implements network diagnostics requirements.
 
 ## 5\. 🔄 Workflow
 
-1.  **Startup:**
-  * GUI checks `LocalStorage`. If a session exists, it restores the Aether connection immediately.
-  * If not, user enters Registration URI and connects.
-2.  **Connection:**
-  * User enters Commutator UUID.
-  * `SmartHomeController` opens P2P channel.
-  * GUI requests `getSystemStructure()`.
-3.  **Operation:**
-  * **Passive:** GUI listens for `deviceStateUpdated` PUSH messages to update cards.
-  * **Active (Polling):** `PollingManager` pings a specific device every `N` ms to update RTT charts and detect packet loss.
-4.  **Control:**
-  * User clicks "ON". GUI sends `executeActorCommand`.
-  * Commutator processes command, changes state, and sends PUSH update back to GUI.
+1. **Startup:**
+
+* GUI checks `LocalStorage`. If a session exists, it restores the Aether connection immediately.
+* If not, user enters Registration URI and connects.
+
+2. **Connection:**
+
+* User enters Commutator UUID.
+* `SmartHomeController` opens P2P channel.
+* GUI requests `getSystemStructure()`.
+
+3. **Operation:**
+
+* **Passive:** GUI listens for `deviceStateUpdated` PUSH messages to update cards.
+* **Active (Polling):** `PollingManager` pings a specific device every `N` ms to update RTT charts and detect packet
+  loss.
+
+4. **Control:**
+
+* User clicks "ON". GUI sends `executeActorCommand`.
+* Commutator processes command, changes state, and sends PUSH update back to GUI.
 
 <!-- end list -->
 

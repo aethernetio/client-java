@@ -1,10 +1,10 @@
 package io.aether.cli;
 
 import io.aether.api.common.CryptoLib;
-import io.aether.logger.LogFilter;
 import io.aether.api.common.ServerDescriptor;
 import io.aether.cloud.client.ClientStateInMemory;
 import io.aether.logger.Log;
+import io.aether.logger.LogFilter;
 import io.aether.utils.AString;
 import io.aether.utils.CTypeI;
 import io.aether.utils.HexUtils;
@@ -22,32 +22,26 @@ public class CLI {
     private final ARFuture<Object> resultFuture;
     private final CliState cliState;
 
-        public CLI(String... aa) {
+    public CLI(String... aa) {
         // Проверяем наличие флага подробного логирования
         boolean verbose = java.util.Arrays.asList(aa).contains("--verbose") || java.util.Arrays.asList(aa).contains("-v");
-        
         // Создаем и настраиваем фильтр
         LogFilter filter = new LogFilter();
         if (!verbose) {
             // В обычном режиме показываем только логи самого CLI (согласно правилам фильтрации)
-            filter.filter(n -> n.check(Log.SYSTEM_COMPONENT,"CLI"));
+            filter.filter(n -> n.check(Log.SYSTEM_COMPONENT, "CLI"));
         }
-        
         // Включаем цветной вывод в консоль с применением фильтра
         Log.printConsoleColored(filter);
-
         this.cliState = new CliState();
         this.cliState.load();
-
         this.api = new CliApi(this.cliState);
-
         var consoleMgr = new ConsoleMgrCanonical(aa) {
             @Override
             public String getAppName() {
                 return "aether-cli";
             }
         };
-
         consoleMgr.footer = "For more information, please visit the website https://aethernet.io";
         consoleMgr.regConverter(CTypeI.of(CryptoLib.class), CryptoLib::valueOf);
         consoleMgr.regConverter(CTypeI.of(UUID.class), s -> {
@@ -57,7 +51,7 @@ public class CLI {
         consoleMgr.regResultConverter("bin", CTypeI.of(ClientStateInMemory.class), ClientStateInMemory::save);
         setupMsgConverters(consoleMgr);
         setupClientStateJsonConverter(consoleMgr);
-                this.resultFuture = consoleMgr.execute(api);
+        this.resultFuture = consoleMgr.execute(api);
         // Гарантируем закрытие всех ресурсов после завершения работы ConsoleMgr
         resultFuture.toFuture().apply(() -> api.destroyer.destroy(true));
     }
@@ -69,7 +63,6 @@ public class CLI {
             }
             return v.data;
         });
-
         consoleMgr.regResultConverterCtx("json", CTypeI.of(CliApi.Msg.class), (ctx, v) -> {
             if (ctx.isToFile() && ctx.getFileName() == null) {
                 ctx.setFileName(v.address.toString());
@@ -77,14 +70,12 @@ public class CLI {
             Map<String, Object> m = Map.of("uid", v.address, "data", v.data);
             return RU.toJson(m).toString().getBytes(StandardCharsets.UTF_8);
         });
-
         consoleMgr.regResultConverterCtx("hex", CTypeI.of(CliApi.Msg.class), (ctx, v) -> {
             if (ctx.isToFile() && ctx.getFileName() == null) {
                 ctx.setFileName(v.address.toString());
             }
             return HexUtils.toHexString(v.data).getBytes();
         });
-
         consoleMgr.regResultConverterCtx("utf8", CTypeI.of(CliApi.Msg.class), (ctx, v) -> {
             var s = AString.of();
             s.add(v.address).add(" -> ").add(new String(v.data));
@@ -111,7 +102,7 @@ public class CLI {
         return resultFuture;
     }
 
-                        public static void main(String... aa) {
+    public static void main(String... aa) {
         var cli = new CLI(aa);
         try {
             // Блокируем основной поток до завершения асинхронной команды.

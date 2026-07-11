@@ -1,6 +1,8 @@
 # Aether Cloud Client
 
-The Aether Cloud Client is the official Java library for connecting to the Aether network. Aether is a secure, high-performance communication platform designed for efficient, stateful client-to-client and client-to-server interactions.
+The Aether Cloud Client is the official Java library for connecting to the Aether network. Aether is a secure,
+high-performance communication platform designed for efficient, stateful client-to-client and client-to-server
+interactions.
 
 This library is designed to abstract the significant complexity of the Aether binary protocol. It automatically handles:
 
@@ -8,7 +10,8 @@ This library is designed to abstract the significant complexity of the Aether bi
 * **End-to-End Encryption:** Manages all symmetric and asymmetric cryptography for all communications.
 * **Binary Serialization:** Handles the complex binary serialization format.
 * **Connection Management:** Maintains persistent connections to "Work Servers" and handles automatic recovery.
-* **Automatic Request Batching:** Intelligently batches data requests (like fetching user info or access rights) to minimize network overhead.
+* **Automatic Request Batching:** Intelligently batches data requests (like fetching user info or access rights) to
+  minimize network overhead.
 * **Client-to-Client Messaging:** Provides a simple API for sending and receiving messages via `MessageNode` streams.
 
 ## Features
@@ -60,9 +63,11 @@ Add the `cloud-client` library to your project's `build.gradle` file.
 
 ### Step 3: Add Cryptography Dependencies
 
-The Aether Cloud Client delegates all cryptographic operations to external modules. You must include at least one of the following dependencies in your project for the client to function.
+The Aether Cloud Client delegates all cryptographic operations to external modules. You must include at least one of the
+following dependencies in your project for the client to function.
 
-These modules are loaded automatically at runtime. By simply adding the dependency, the crypto provider registers itself with the `CryptoProviderFactory` using the `ModuleAutoRun` system.
+These modules are loaded automatically at runtime. By simply adding the dependency, the crypto provider registers itself
+with the `CryptoProviderFactory` using the `ModuleAutoRun` system.
 
 #### Cryptographic Module Options
 
@@ -80,7 +85,8 @@ You can choose a module depending on your JDK requirements and performance needs
 
 ##### 2. Hydrogen (FFM / "Fast")
 
-**Description:** Uses the modern Java Foreign Function & Memory (FFM) API (JEP 454) for high-performance native calls to libhydrogen without JNI.
+**Description:** Uses the modern Java Foreign Function & Memory (FFM) API (JEP 454) for high-performance native calls to
+libhydrogen without JNI.
 
 **Compatibility:** JDK 22+ (or JDK 21 with preview flags)
 
@@ -94,28 +100,35 @@ You can include both libraries. The client will use the one specified in `Client
 
 ### AetherCloudClient
 
-This is the main class and entry point for the entire library. You create one instance of this class for your application. It manages the client state, network connections, and all API interactions.
+This is the main class and entry point for the entire library. You create one instance of this class for your
+application. It manages the client state, network connections, and all API interactions.
 
 ### ClientState
 
-The client requires a `ClientState` implementation to store its identity (UID, alias, master key), information about known servers, and registration URI.
+The client requires a `ClientState` implementation to store its identity (UID, alias, master key), information about
+known servers, and registration URI.
 
-The library provides `ClientStateInMemory` for quick startup, which also supports saving and loading state from a file, allowing the client to persist its UID between restarts.
+The library provides `ClientStateInMemory` for quick startup, which also supports saving and loading state from a file,
+allowing the client to persist its UID between restarts.
 
 ### Parent UUID
 
-Parent UUID defines the application or service namespace that your clients are part of. When creating `ClientState`, you must specify a Parent UUID.
+Parent UUID defines the application or service namespace that your clients are part of. When creating `ClientState`, you
+must specify a Parent UUID.
 
-For development and testing, you can use public UIDs from the `io.aether.StandardUUIDs` class, such as `StandardUUIDs.TEST_UID` or `StandardUUIDs.ROOT_UID`.
+For development and testing, you can use public UIDs from the `io.aether.StandardUUIDs` class, such as
+`StandardUUIDs.TEST_UID` or `StandardUUIDs.ROOT_UID`.
 
 ### MessageNode
 
-To send a message to another client, you use a `MessageNode`. `AetherCloudClient` manages them for you. When you call `client.sendMessage()`, the client gets or creates a `MessageNode` that manages the data flow to that specific client UUID.
-
+To send a message to another client, you use a `MessageNode`. `AetherCloudClient` manages them for you. When you call
+`client.sendMessage()`, the client gets or creates a `MessageNode` that manages the data flow to that specific client
+UUID.
 
 ## Quick Start: Using asClient / asServer
 
-The library provides static factory methods `asClient` and `asServer` that encapsulate all the boilerplate: creating `ClientState`, connecting, setting up `MessageNode` and API bindings.
+The library provides static factory methods `asClient` and `asServer` that encapsulate all the boilerplate: creating
+`ClientState`, connecting, setting up `MessageNode` and API bindings.
 
 ### Client (asClient)
 
@@ -132,7 +145,8 @@ A client connects to a parent service and communicates via strongly-typed genera
         remoteApi -> new MyServiceClientApiImpl(remoteApi)
     );
 
-The client is now connected and ready. `remoteApi` is fully wired — just call its methods. State auto-saved to `state-MyChatClient.bin`.
+The client is now connected and ready. `remoteApi` is fully wired — just call its methods. State auto-saved to
+`state-MyChatClient.bin`.
 
 ### Server (asServer)
 
@@ -219,7 +233,6 @@ The original manual approach is still available for advanced use cases:
         client1.sendMessage(targetUid, message);
     });
 
-
 ## Advanced Usage
 
 ### Access Control Example
@@ -290,7 +303,8 @@ The library uses `AFuture` for asynchronous operations with comprehensive error 
 
 ### Logging
 
-The library uses the `io.aether.logger.Log` class for logging. Ensure your logging configuration is set to an appropriate level (INFO or DEBUG) to see detailed operation logs.
+The library uses the `io.aether.logger.Log` class for logging. Ensure your logging configuration is set to an
+appropriate level (INFO or DEBUG) to see detailed operation logs.
 
 ## Support
 
@@ -298,4 +312,5 @@ For issues and questions, please refer to the official Aether documentation or c
 
 ---
 
-*This documentation covers the basic usage of the Aether Cloud Client. For advanced features and detailed API reference, please see the JavaDoc documentation.*
+*This documentation covers the basic usage of the Aether Cloud Client. For advanced features and detailed API reference,
+please see the JavaDoc documentation.*

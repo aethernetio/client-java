@@ -1,24 +1,23 @@
 {
- "compilerOptions": {
- "outDir": "./dist/",
- "noImplicitAny": true,
- "module": "CommonJS",
- "target": "ES2022",
- "jsx": "react",
- "moduleResolution": "node",
- "esModuleInterop": true,
- "skipLibCheck": true,
-
- "lib": [
- "ES2024",
- "DOM",
- "ScriptHost"
- ],
- "types": [
- "node"
- ]
- },
- "include": [
- "src/**/*"
- ]
+  "compilerOptions": {
+    "outDir": "./dist/",
+    "noImplicitAny": true,
+    "module": "CommonJS",
+    "target": "ES2022",
+    "jsx": "react",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "lib": [
+      "ES2024",
+      "DOM",
+      "ScriptHost"
+    ],
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "src/**/*"
+  ]
 }

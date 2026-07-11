@@ -1,17 +1,12 @@
 package io.aether.smarthub;
 
-import io.aether.api.smarthub.*;
+import io.aether.api.smarthub.SmartHomeClientDeviceApi;
+import io.aether.api.smarthub.SmartHomeHubRegistryApi;
 import io.aether.cloud.client.AetherCloudClient;
-import io.aether.cloud.client.ClientStateInFile;
 import io.aether.logger.Log;
-import io.aether.net.fastMeta.MetaContextBase;
-import io.aether.net.fastMeta.MetaContext;
-import io.aether.net.fastMeta.FutureRec;
 import io.aether.utils.futures.AFuture;
 
-import java.io.File;
 import java.net.URI;
-import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -40,7 +35,6 @@ public class SmartDeviceEmulator {
     }
 
 
-
     public void start(String regUri) throws Exception {
         Log.info("SmartDeviceEmulator.start() called", "regUri", regUri, "serviceUid", serviceUid);
         URI uri = URI.create(regUri);
@@ -59,13 +53,11 @@ public class SmartDeviceEmulator {
                             remoteDeviceApi.reportState(rawTemp);
                         }, 0, 1, TimeUnit.SECONDS);
                         return SmartHomeClientDeviceApi.EMPTY;
-                    },d->d);
-
+                    }, d -> d);
                     ready.done();
                     return SmartHomeClientDeviceApi.EMPTY;
                 });
     }
-
 
 
     public void stop() {
@@ -94,5 +86,4 @@ public class SmartDeviceEmulator {
         // Block main thread indefinitely
         Thread.currentThread().join();
     }
-
 }

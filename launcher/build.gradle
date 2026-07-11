@@ -35,7 +35,7 @@ fi
 exec "$$JRE_DIR/bin/java" -cp "$$DIR/lib/*" io.aether.launcher.Launcher "$$@"/$
 
 
-def startBatScript =$/@echo off
+def startBatScript = $/@echo off
 set DIR=%~dp0
 set JRE_DIR=%DIR%jre
 if not exist "%JRE_DIR%\bin\java.exe" (
@@ -47,8 +47,6 @@ if not exist "%JRE_DIR%\bin\java.exe" (
     echo Java ready.
 )
 "%JRE_DIR%\bin\java" -cp "%DIR%lib\*" io.aether.launcher.Launcher %*/$
-
-
 
 
 application {
@@ -71,8 +69,6 @@ tasks.register('runtimeZipLinux', Zip) {
         sh.setExecutable(true)
         sh
     }
-
-
 
 
     into 'launcher'
@@ -100,12 +96,6 @@ tasks.register('runtimeZipWin', Zip) {
     }
 
 
-
-
-
-
-
-
     into 'launcher'
     archiveFileName = "aether-launcher-win.zip"
     destinationDirectory = layout.buildDirectory.dir("dist")
@@ -126,11 +116,6 @@ tasks.register('runtimeZipMac', Zip) {
     }
 
 
-
-
-
-
-
     into 'launcher'
     archiveFileName = "aether-launcher-mac.zip"
     destinationDirectory = layout.buildDirectory.dir("dist")
@@ -149,7 +134,7 @@ java {
 
 publishing {
     publications {
-        mavenPublication(MavenPublication){
+        mavenPublication(MavenPublication) {
             from components.java
             groupId = "io.aether"
             artifactId = "launcher"

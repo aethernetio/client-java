@@ -27,12 +27,12 @@ public class ChatClient implements ServiceClientApi {
         aether.startFuture.to(() -> {
             try {
                 var s = aether.getMessageNode(chatService)
-                        .toApiR(ServiceClientApi.META, c->{
+                        .toApiR(ServiceClientApi.META, c -> {
                             service.done(c.makeRemote(ServiceServerApi.META));
                             return this;
                         });
-                service.to(a->{
-                        a.registration(name).timeout(3, () -> Log.warn("registration timeout: $name", "name", name));
+                service.to(a -> {
+                    a.registration(name).timeout(3, () -> Log.warn("registration timeout: $name", "name", name));
                 });
             } catch (Exception e) {
                 Log.error(e);

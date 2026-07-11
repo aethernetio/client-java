@@ -18,7 +18,7 @@ application {
 }
 publishing {
     publications {
-        mavenPublication(MavenPublication){
+        mavenPublication(MavenPublication) {
             from components.java
             groupId "io.aether"
             artifactId "example-smart-home-plain"

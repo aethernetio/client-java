@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="utf-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
     <title>Aether Dashboard (Pro)</title>
     <style>
         body { font-family: -apple-system, sans-serif; background: #eaeff2; padding: 20px; margin: 0; color: #333; }
@@ -43,29 +43,38 @@
         </div>
         <div class="card">
             <h3>Connection</h3>
-            <div class="form-group"><input type="text" id="new-uuid" placeholder="Commutator UUID"></div>
+            <div class="form-group"><input id="new-uuid" placeholder="Commutator UUID" type="text"></div>
             <button id="btn-add">Add Commutator</button>
             <button id="btn-reset">Reset All Data</button>
         </div>
         <div class="card">
             <h3>Polling Logic</h3>
-            <div class="form-group"><label>Timeout (ms)</label><input type="number" id="poll-timeout" value="2000" min="100"></div>
-            <div class="form-group"><label>Period (ms)</label><input type="number" id="poll-period" value="500" min="50"></div>
-            <div class="form-group"><label>Batch Size</label><input type="number" id="req-count" value="50" min="1" max="255"></div>
+            <div class="form-group"><label>Timeout (ms)</label><input id="poll-timeout" min="100" type="number"
+                                                                      value="2000"></div>
+            <div class="form-group"><label>Period (ms)</label><input id="poll-period" min="50" type="number"
+                                                                     value="500"></div>
+            <div class="form-group"><label>Batch Size</label><input id="req-count" max="255" min="1" type="number"
+                                                                    value="50"></div>
         </div>
         <div class="card" style="flex: 1;">
             <h3>Active Devices</h3>
             <table id="device-table">
-                <thead><tr><th width="30">Plot</th><th>Device</th><th width="30">Del</th></tr></thead>
+                <thead>
+                <tr>
+                    <th width="30">Plot</th>
+                    <th>Device</th>
+                    <th width="30">Del</th>
+                </tr>
+                </thead>
                 <tbody id="device-list-body"></tbody>
             </table>
         </div>
         <div class="card">
             <h3>Chart Metrics</h3>
             <div class="options-grid">
-                <label class="cb-label"><input type="checkbox" id="show-loss-total"> Total Lost</label>
-                <label class="cb-label"><input type="checkbox" id="show-loss-win"> Window Loss</label>
-                <label class="cb-label"><input type="checkbox" id="show-rtt"> RTT</label>
+                <label class="cb-label"><input id="show-loss-total" type="checkbox"> Total Lost</label>
+                <label class="cb-label"><input id="show-loss-win" type="checkbox"> Window Loss</label>
+                <label class="cb-label"><input id="show-rtt" type="checkbox"> RTT</label>
             </div>
         </div>
     </div>
@@ -73,7 +82,7 @@
         <div class="card" style="height: 100%; display:flex; flex-direction:column;">
             <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
                 <h3>Real-time Monitor</h3>
-                <span style="color:#777; font-size:0.9rem" id="global-stats">Req: 0</span>
+                <span id="global-stats" style="color:#777; font-size:0.9rem">Req: 0</span>
             </div>
             <div style="flex: 1; position: relative;">
                 <canvas id="main-chart"></canvas>

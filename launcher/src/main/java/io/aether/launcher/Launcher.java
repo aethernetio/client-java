@@ -1,44 +1,75 @@
 package io.aether.launcher;
 
-import com.sun.net.httpserver.*;
-import java.io.*;
-import java.net.*;
-import java.nio.file.*;
-import java.util.*;
-import java.util.concurrent.*;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
+import com.sun.net.httpserver.HttpServer;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class Launcher {
     static final int PORT = Integer.getInteger("port", 29383);
     static final ExecutorService exec = Executors.newCachedThreadPool();
-    static volatile long lastHeartbeat = System.currentTimeMillis();
     static final List<SseConnection> sseConnections = Collections.synchronizedList(new ArrayList<>());
+    // -- Project Runners --
+    static final Map<String, ProjectRunner> runners = new java.util.LinkedHashMap<>();
+    // -- JDK Provider --
+    static final JdkProvider jdkProvider = new JdkProvider();
+    // -- Gradle Provider (similar) --
+    static final GradleProvider gradleProvider = new GradleProvider();
+    static volatile long lastHeartbeat = System.currentTimeMillis();
     static Path workspace = Path.of(System.getProperty("user.home"), "aether_projects");
+    static ProjectRunner activeRunner = runners.get("smarthub");
+    static volatile String jdkHome;
+    static volatile String gradleHome;
+
+    static {
+        LauncherContext ctx = new LauncherContext(workspace, null, exec, new SseBroadcaster() {
+            @Override
+            public void broadcast(String event, String data) {
+                Launcher.broadcast(event, data);
+            }
+        });
+        runners.put("smarthub", new SmartHubRunner(ctx));
+        // placeholder for chat, pointToPoint
+    }
+
+    static {
+        jdkProvider.addProgressListener(msg -> {
+            if (msg.startsWith("Downloading...")) {
+                String pct = msg.substring(msg.indexOf("...") + 3).trim().replace("%", "");
+                broadcast("download_progress", RunnerUtils.buildJsonObj("tool", "jdk", "percent", pct));
+            } else {
+                broadcast("progress", RunnerUtils.buildJsonObj("tool", "jdk", "message", msg));
+            }
+        });
+    }
+
+    static {
+        gradleProvider.addProgressListener(msg -> broadcast("progress", "{\"tool\":\"gradle\",\"message\":\"" + escapeJson(msg) + "\"}"));
+    }
 
     static String displayPath() {
         return workspace.toAbsolutePath().toString();
-    }
-
-
-
-    static class SseConnection {
-        final HttpExchange exchange;
-        volatile boolean closed;
-        SseConnection(HttpExchange t) { this.exchange = t; this.closed = false; }
-        synchronized void send(String event, String data) {
-            try {
-                OutputStream os = exchange.getResponseBody();
-                if (event != null && !event.isEmpty()) os.write(("event:" + event + "\n").getBytes());
-                os.write(("data:" + data + "\n\n").getBytes());
-                os.flush();
-            } catch (IOException e) { closed = true; }
-        }
     }
 
     static void broadcast(String event, String data) {
         for (SseConnection c : sseConnections) c.send(event, data);
     }
 
-    /** Try to open a URL in the system browser using OS-specific commands. */
+    /**
+     * Try to open a URL in the system browser using OS-specific commands.
+     */
     static void openBrowser(String url) {
         try {
             String os = System.getProperty("os.name").toLowerCase();
@@ -61,7 +92,9 @@ public class Launcher {
         }
     }
 
-    /** Open a file/folder in the system file manager (future use). */
+    /**
+     * Open a file/folder in the system file manager (future use).
+     */
     static void openPath(java.nio.file.Path path) {
         try {
             String os = System.getProperty("os.name").toLowerCase();
@@ -82,46 +115,10 @@ public class Launcher {
         }
     }
 
-
-
-
-
-    // -- Project Runners --
-    static final Map<String, ProjectRunner> runners = new java.util.LinkedHashMap<>();
-    static {
-        LauncherContext ctx = new LauncherContext(workspace, null, exec, new SseBroadcaster() {
-            @Override public void broadcast(String event, String data) {
-                Launcher.broadcast(event, data);
-            }
-        });
-        runners.put("smarthub", new SmartHubRunner(ctx));
-        // placeholder for chat, pointToPoint
-    }
-
-    static ProjectRunner activeRunner = runners.get("smarthub");
-
-
-
     static ProjectRunner getActiveRunner() {
         String project = System.getProperty("activeProject", "smarthub");
         return runners.getOrDefault(project, runners.get("smarthub"));
     }
-
-    // -- JDK Provider --
-    static final JdkProvider jdkProvider = new JdkProvider();
-    static {
-
-        jdkProvider.addProgressListener(msg -> {
-            if (msg.startsWith("Downloading...")) {
-                String pct = msg.substring(msg.indexOf("...")+3).trim().replace("%","");
-                broadcast("download_progress", RunnerUtils.buildJsonObj("tool","jdk","percent", pct));
-            } else {
-                broadcast("progress", RunnerUtils.buildJsonObj("tool","jdk","message", msg));
-            }
-        });
-
-    }
-    static volatile String jdkHome;
 
     static void ensureJdk() {
         if (jdkHome != null) {
@@ -154,7 +151,11 @@ public class Launcher {
 
     static void handleSetJdkPath(HttpExchange t) throws IOException {
         String path = new String(t.getRequestBody().readAllBytes()).trim();
-        if (path.isEmpty()) { jdkHome = null; sendOk(t, "{\"status\":\"ok\",\"jdkHome\":null}"); return; }
+        if (path.isEmpty()) {
+            jdkHome = null;
+            sendOk(t, "{\"status\":\"ok\",\"jdkHome\":null}");
+            return;
+        }
         Path p = Path.of(path);
         if (Files.exists(p.resolve("bin/javac"))) {
             jdkHome = p.toString();
@@ -173,10 +174,6 @@ public class Launcher {
         if (s == null) return "";
         return s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
-
-
-    // -- Gradle Provider (similar) --
-    static final GradleProvider gradleProvider = new GradleProvider();
 
     static void handleDownloadJdk(HttpExchange t) throws IOException {
         sendOk(t, "{\"status\":\"started\"}");
@@ -211,18 +208,12 @@ public class Launcher {
         sendOk(t, "{\"status\":\"ok\"}");
     }
 
-
     static void ensureTools() {
         if (jdkHome == null || gradleHome == null) {
             if (jdkHome == null) ensureJdk();
             if (gradleHome == null) ensureGradle();
         }
     }
-
-    static {
-        gradleProvider.addProgressListener(msg -> broadcast("progress", "{\"tool\":\"gradle\",\"message\":\"" + escapeJson(msg) + "\"}"));
-    }
-    static volatile String gradleHome;
 
     static void ensureGradle() {
         if (gradleHome != null) {
@@ -252,15 +243,21 @@ public class Launcher {
         sendOk(t, "{\"status\":\"started\"}");
         ensureGradle();
     }
+
     static void handleSetGradlePath(HttpExchange t) throws IOException {
         String path = new String(t.getRequestBody().readAllBytes()).trim();
-        if (path.isEmpty()) { gradleHome = null; sendOk(t, "{\"status\":\"ok\",\"gradleHome\":null}"); return; }
+        if (path.isEmpty()) {
+            gradleHome = null;
+            sendOk(t, "{\"status\":\"ok\",\"gradleHome\":null}");
+            return;
+        }
         Path p = Path.of(path);
         if (Files.exists(p.resolve("bin/gradle"))) {
             gradleHome = p.toString();
             sendOk(t, "{\"status\":\"ok\",\"gradleHome\":\"" + escapeJson(gradleHome) + "\"}");
         } else sendError(t, 400, "Invalid Gradle directory (no bin/gradle found)");
     }
+
     static void handleGetGradleStatus(HttpExchange t) throws IOException {
         String json = "{\"gradleHome\":\"" + (gradleHome != null ? escapeJson(gradleHome) : "") + "\",\"status\":\"" + gradleProvider.getStatus() + "\"}";
         sendOk(t, json);
@@ -281,7 +278,6 @@ public class Launcher {
         // Emulator buttons only for SmartHub
         boolean hasEmu = getActiveRunner() instanceof SmartHubRunner;
         vars.put("emulatorButtons", hasEmu ? "<button id=\"emulatorBtn\" onclick=\"api('run-emulator')\">Start Emulator</button>" : "");
-
         String sourceLinks = "";
         ProjectRunner active = getActiveRunner();
         if (active.getServiceSourcePath() != null) {
@@ -313,13 +309,16 @@ public class Launcher {
         server.createContext("/", new StaticHandler());
         server.createContext("/api/", new ApiHandler());
         server.setExecutor(exec);
-
         server.start();
         System.out.println("Launcher started on port " + PORT);
         openBrowser("http://localhost:" + PORT);
         Thread heartbeatWatchdog = new Thread(() -> {
             while (true) {
-                try { Thread.sleep(1000); } catch (InterruptedException e) { break; }
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    break;
+                }
                 if (System.currentTimeMillis() - lastHeartbeat > 3000) {
                     System.out.println("No heartbeat from browser, shutting down...");
                     System.exit(0);
@@ -328,56 +327,14 @@ public class Launcher {
         });
         heartbeatWatchdog.setDaemon(true);
         heartbeatWatchdog.start();
-
-
-
-    }
-
-    static class ApiHandler implements HttpHandler {
-        public void handle(HttpExchange t) throws IOException {
-            String path = t.getRequestURI().getPath().substring(5);
-            try {
-                if ("POST".equals(t.getRequestMethod())) {
-                    switch (path) {
-                        case "select": handleSelect(t); break;
-                        case "set-workspace": handleSetWorkspace(t); break;
-                        case "clone": activeRunner.handleClone(t); break;
-                        case "reset": activeRunner.handleReset(t); break;
-                        case "download-jdk": handleDownloadJdk(t); break;
-                        case "download-gradle": handleDownloadGradle(t); break;
-                        case "open-path": handleOpenPath(t); break;
-
-                        case "build": activeRunner.handleBuild(t); break;
-                        case "run": activeRunner.handleRun(t); break;
-                        case "stop": activeRunner.handleStop(t); break;
-                        case "run-emulator": activeRunner.handleRunEmulator(t); break;
-                        case "stop-emulator": activeRunner.handleStopEmulator(t); break;
-                        case "status": handleStatus(t); break;
-                        case "set-jdk-path": handleSetJdkPath(t); break;
-                        case "set-gradle-path": handleSetGradlePath(t); break;
-                        default: send404(t);
-                    }
-                } else if ("GET".equals(t.getRequestMethod())) {
-                    switch (path) {
-                        case "logs": handleSse(t); break;
-                        case "status": handleStatus(t); break;
-                        case "ensure-jdk": handleEnsureJdk(t); break;
-                        case "get-jdk-status": handleGetJdkStatus(t); break;
-                        case "ensure-gradle": handleEnsureGradle(t); break;
-                        case "heartbeat": sendOk(t, "{\"status\":\"ok\"}"); lastHeartbeat = System.currentTimeMillis(); break;
-                        case "get-gradle-status": handleGetGradleStatus(t); break;
-                        default: send404(t);
-                    }
-                } else send404(t);
-            } catch (Exception e) {
-                sendError(t, 500, e.getMessage());
-            }
-        }
     }
 
     static void handleSelect(HttpExchange t) throws IOException {
         String project = new String(t.getRequestBody().readAllBytes()).trim();
-        if (!runners.containsKey(project)) { sendError(t, 400, "Unknown project"); return; }
+        if (!runners.containsKey(project)) {
+            sendError(t, 400, "Unknown project");
+            return;
+        }
         activeRunner = runners.get(project);
         sendOk(t, "{\"status\":\"ok\",\"project\":\"" + project + "\"}");
     }
@@ -403,7 +360,6 @@ public class Launcher {
         sendOk(t, "{\"status\":\"ok\",\"workspace\":\"" + displayPath() + "\"}");
     }
 
-
     static void handleSse(HttpExchange t) throws IOException {
         t.getResponseHeaders().set("Content-Type", "text/event-stream");
         t.getResponseHeaders().set("Cache-Control", "no-cache");
@@ -425,12 +381,13 @@ public class Launcher {
                 conn.send("emulator_started", "{}");
             }
         }
-
         while (!conn.closed) {
             try {
                 conn.send("", "heartbeat");
                 Thread.sleep(15000);
-            } catch (InterruptedException e) { break; }
+            } catch (InterruptedException e) {
+                break;
+            }
         }
         sseConnections.remove(conn);
     }
@@ -448,7 +405,6 @@ public class Launcher {
         }
     }
 
-
     static void handleStatus(HttpExchange t) throws IOException {
         boolean cloned = Files.exists(workspace.resolve("client-java/.git"));
         boolean srvRunning = false;
@@ -462,29 +418,6 @@ public class Launcher {
         String json = "{\"cloned\":" + cloned + ",\"serviceRunning\":" + srvRunning + ",\"emulatorRunning\":" + emRunning + ",\"serviceUuid\":\"" + (svcUuid != null ? svcUuid : "") + "\",\"workspace\":\"" + displayPath() + "\"}";
         sendOk(t, json);
     }
-
-
-
-    // -- Modified StaticHandler --
-    static class StaticHandler implements HttpHandler {
-        public void handle(HttpExchange t) throws IOException {
-            String path = t.getRequestURI().getPath();
-            if (path.equals("/") || path.equals("/index.html")) {
-                handleIndex(t);
-                return;
-            }
-            // for static resources, fallback to classpath resources (css/js)
-            try (InputStream is = Launcher.class.getResourceAsStream(path.substring(1))) {
-                if (is == null) { send404(t); return; }
-                byte[] bytes = is.readAllBytes();
-                t.getResponseHeaders().set("Content-Type", getContentType(path));
-                t.sendResponseHeaders(200, bytes.length);
-                t.getResponseBody().write(bytes);
-            }
-            t.getResponseBody().close();
-        }
-    }
-
 
     static void sendOk(HttpExchange t, String json) throws IOException {
         t.getResponseHeaders().set("Content-Type", "application/json");
@@ -510,5 +443,137 @@ public class Launcher {
         if (path.endsWith(".js")) return "application/javascript";
         if (path.endsWith(".css")) return "text/css";
         return "application/octet-stream";
+    }
+
+    static class SseConnection {
+        final HttpExchange exchange;
+        volatile boolean closed;
+
+        SseConnection(HttpExchange t) {
+            this.exchange = t;
+            this.closed = false;
+        }
+
+        synchronized void send(String event, String data) {
+            try {
+                OutputStream os = exchange.getResponseBody();
+                if (event != null && !event.isEmpty()) os.write(("event:" + event + "\n").getBytes());
+                os.write(("data:" + data + "\n\n").getBytes());
+                os.flush();
+            } catch (IOException e) {
+                closed = true;
+            }
+        }
+    }
+
+    static class ApiHandler implements HttpHandler {
+        public void handle(HttpExchange t) throws IOException {
+            String path = t.getRequestURI().getPath().substring(5);
+            try {
+                if ("POST".equals(t.getRequestMethod())) {
+                    switch (path) {
+                        case "select":
+                            handleSelect(t);
+                            break;
+                        case "set-workspace":
+                            handleSetWorkspace(t);
+                            break;
+                        case "clone":
+                            activeRunner.handleClone(t);
+                            break;
+                        case "reset":
+                            activeRunner.handleReset(t);
+                            break;
+                        case "download-jdk":
+                            handleDownloadJdk(t);
+                            break;
+                        case "download-gradle":
+                            handleDownloadGradle(t);
+                            break;
+                        case "open-path":
+                            handleOpenPath(t);
+                            break;
+                        case "build":
+                            activeRunner.handleBuild(t);
+                            break;
+                        case "run":
+                            activeRunner.handleRun(t);
+                            break;
+                        case "stop":
+                            activeRunner.handleStop(t);
+                            break;
+                        case "run-emulator":
+                            activeRunner.handleRunEmulator(t);
+                            break;
+                        case "stop-emulator":
+                            activeRunner.handleStopEmulator(t);
+                            break;
+                        case "status":
+                            handleStatus(t);
+                            break;
+                        case "set-jdk-path":
+                            handleSetJdkPath(t);
+                            break;
+                        case "set-gradle-path":
+                            handleSetGradlePath(t);
+                            break;
+                        default:
+                            send404(t);
+                    }
+                } else if ("GET".equals(t.getRequestMethod())) {
+                    switch (path) {
+                        case "logs":
+                            handleSse(t);
+                            break;
+                        case "status":
+                            handleStatus(t);
+                            break;
+                        case "ensure-jdk":
+                            handleEnsureJdk(t);
+                            break;
+                        case "get-jdk-status":
+                            handleGetJdkStatus(t);
+                            break;
+                        case "ensure-gradle":
+                            handleEnsureGradle(t);
+                            break;
+                        case "heartbeat":
+                            sendOk(t, "{\"status\":\"ok\"}");
+                            lastHeartbeat = System.currentTimeMillis();
+                            break;
+                        case "get-gradle-status":
+                            handleGetGradleStatus(t);
+                            break;
+                        default:
+                            send404(t);
+                    }
+                } else send404(t);
+            } catch (Exception e) {
+                sendError(t, 500, e.getMessage());
+            }
+        }
+    }
+
+    // -- Modified StaticHandler --
+    static class StaticHandler implements HttpHandler {
+        public void handle(HttpExchange t) throws IOException {
+            String path = t.getRequestURI().getPath();
+            if (path.equals("/") || path.equals("/index.html")) {
+                handleIndex(t);
+                return;
+            }
+            // for static resources, fallback to classpath resources (css/js)
+            try (InputStream is = Launcher.class.getResourceAsStream(path.substring(1))) {
+                if (is == null) {
+                    send404(t);
+                    return;
+                }
+                byte[] bytes = is.readAllBytes();
+                t.getResponseHeaders().set("Content-Type", getContentType(path));
+                t.sendResponseHeaders(200, bytes.length);
+                t.getResponseBody().write(bytes);
+            }
+            t.getResponseBody().close();
+        }
     }
 }

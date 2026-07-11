@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport">
     <title>SmartHub Monitor</title>
     <style>
         body { 
@@ -176,14 +176,14 @@
     <div id="screen-connect">
         <h2 style="margin-top:0">Connect to SmartHub</h2>
         <button id="btn-connect">Connect</button>
-        <button id="btn-restore" class="secondary">Restore Session</button>
+        <button class="secondary" id="btn-restore">Restore Session</button>
     </div>
 
     <!-- Экран отображения данных -->
     <div id="screen-display">
         <div class="status-bar">
             <div class="status-indicator">
-                <span id="status-dot" class="status-dot gray"></span>
+                <span class="status-dot gray" id="status-dot"></span>
                 <span id="status-text">Disconnected</span>
             </div>
             <div>
@@ -214,13 +214,13 @@
             </div>
 
             <div style="display: flex; gap: 10px; margin-top: 20px;">
-                <button id="btn-refresh" class="secondary" style="flex: 1">Refresh</button>
+                <button class="secondary" id="btn-refresh" style="flex: 1">Refresh</button>
             </div>
         </div>
 
         <div class="logs" id="event-log"></div>
 
-        <button id="btn-disconnect" class="secondary" style="margin-top: 10px;">Disconnect</button>
+        <button class="secondary" id="btn-disconnect" style="margin-top: 10px;">Disconnect</button>
     </div>
 </div>
 
