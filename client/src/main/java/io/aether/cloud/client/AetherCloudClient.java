@@ -607,6 +607,20 @@ public final class AetherCloudClient implements Destroyable {
         return CryptoUtils.verifySign(signedKey, clientState.getRootSigners());
     }
 
+    public ARFuture<io.aether.api.clientserverapi.WebRtcSession> requestWebRtcSession(UUID uid) {
+        ARFuture<io.aether.api.clientserverapi.WebRtcSession> res = ARFuture.make();
+        getServerDescriptorForUid(uid, sd -> {
+            ConnectionWork cw = connections.get(sd.getId());
+            if (cw != null) {
+                cw.authorizedApi.requestWebRtcSession(uid).to(res::done).onError(res::error);
+            } else {
+                getConnection(sd).authorizedApi.requestWebRtcSession(uid).to(res::done).onError(res::error);
+            }
+        });
+        return res;
+    }
+
+
     public AFuture sendMessage(UUID uid, byte[] message) {
         return getMessageNode(uid, MessageEventListener.DEFAULT).send(message);
     }

@@ -18,10 +18,7 @@ import java.util.UUID;
  * Implements the ClientApiSafe interface to handle responses from the server.
  */
 class ClientApiSafeImpl implements ClientApiSafe {
-        @Override
-    public void sendWebRtcSession(UUID uid, io.aether.api.clientserverapi.WebRtcSession session) {
-            Log.debug("Received WebRTC session from $uid", "uid", uid);
-        }
+
 
 
     private final AetherCloudClient client;
