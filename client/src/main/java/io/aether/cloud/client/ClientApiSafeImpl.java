@@ -4,21 +4,16 @@ import io.aether.api.clientserverapi.ClientApiSafe;
 import io.aether.api.clientserverapi.Message;
 import io.aether.api.common.*;
 import io.aether.logger.Log;
+import io.aether.utils.RU;
 import io.aether.utils.futures.ARFuture;
-import it.unimi.dsi.fastutil.longs.LongArraySet;
-import it.unimi.dsi.fastutil.longs.LongSet;
 import it.unimi.dsi.fastutil.objects.ObjectSet;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 
 /**
  * Implements the ClientApiSafe interface to handle responses from the server.
  */
 class ClientApiSafeImpl implements ClientApiSafe {
-
 
 
     private final AetherCloudClient client;
@@ -53,13 +48,13 @@ class ClientApiSafeImpl implements ClientApiSafe {
     }
 
     @Override
-    public void sendAccessGroupForClient(UUID uid, long[] groups) {
+    public void sendAccessGroupForClient(UUID uid, UUID[] groups) {
         Log.debug("Received AccessGroups for client $uid", "uid", uid);
-        client.clientGroups.put(uid, LongSet.of(groups));
+        client.clientGroups.put(uid, Set.of(groups));
     }
 
     @Override
-    public void addItemsToAccessGroup(long id, UUID[] groups) {
+    public void addItemsToAccessGroup(UUID id, UUID[] groups) {
         Log.debug("Server confirmed ADD items to group $id", "id", id);
         Map<UUID, ARFuture<Boolean>> futures = client.accessOperationsAdd.get(id);
         if (futures != null) {
@@ -77,14 +72,14 @@ class ClientApiSafeImpl implements ClientApiSafe {
             if (group != null) {
                 List<UUID> newUuids = new ArrayList<>(List.of(group.getData()));
                 newUuids.addAll(List.of(groups));
-                AccessGroup newGroup = new AccessGroup(group.getOwner(), group.getId(), newUuids.stream().distinct().toArray(UUID[]::new));
+                AccessGroup newGroup = new AccessGroup(group.getId(), RU.timeSeconds(), group.getOwner(), newUuids.stream().distinct().toArray(UUID[]::new));
                 client.accessGroups.put(id, newGroup);
             }
         });
     }
 
     @Override
-    public void removeItemsFromAccessGroup(long id, UUID[] groups) {
+    public void removeItemsFromAccessGroup(UUID id, UUID[] groups) {
         Log.debug("Server confirmed REMOVE items from group $id", "id", id);
         Map<UUID, ARFuture<Boolean>> futures = client.accessOperationsRemove.get(id);
         if (futures != null) {
@@ -102,29 +97,25 @@ class ClientApiSafeImpl implements ClientApiSafe {
             if (group != null) {
                 List<UUID> newUuids = new ArrayList<>(List.of(group.getData()));
                 newUuids.removeAll(List.of(groups));
-                AccessGroup newGroup = new AccessGroup(group.getOwner(), group.getId(), newUuids.toArray(new UUID[0]));
+                AccessGroup newGroup = new AccessGroup(group.getId(), RU.timeSeconds(), group.getOwner(), newUuids.toArray(new UUID[0]));
                 client.accessGroups.put(id, newGroup);
             }
         });
     }
 
     @Override
-    public void addAccessGroupsToClient(UUID uid, long[] groups) {
+    public void addAccessGroupsToClient(UUID uid, UUID[] groups) {
         Log.debug("Server pushed ADD groups to client $uid", "uid", uid);
         client.clientGroups.getFuture(uid).to(existingGroups -> {
-            var newGroups = (existingGroups == null) ? LongSet.of() : new LongArraySet(existingGroups);
-            for (long g : groups) newGroups.add(g);
+            //TODO
         });
     }
 
     @Override
-    public void removeAccessGroupsFromClient(UUID uid, long[] groups) {
+    public void removeAccessGroupsFromClient(UUID uid, UUID[] groups) {
         Log.debug("Server pushed REMOVE groups from client $uid", "uid", uid);
         client.clientGroups.getFuture(uid).to(existingGroups -> {
-            if (existingGroups != null) {
-                var newGroups = new LongArraySet(existingGroups);
-                for (long g : groups) newGroups.remove(g);
-            }
+            //TODO
         });
     }
 
@@ -197,6 +188,7 @@ class ClientApiSafeImpl implements ClientApiSafe {
 
     @Override
     public void sendCloudConfigs(CloudConfig[] configs) {
+        Log.debug("receive clouds");
         for (CloudConfig cc : configs) {
             sendCloudConfig(cc);
         }

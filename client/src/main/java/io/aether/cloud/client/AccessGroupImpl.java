@@ -10,7 +10,7 @@ import java.util.Set;
 import java.util.UUID;
 
 public abstract class AccessGroupImpl implements AccessGroupI {
-    protected final long id;
+    protected final UUID id;
     protected final Set<UUID> data;
     protected final UUID owner;
 
@@ -21,7 +21,7 @@ public abstract class AccessGroupImpl implements AccessGroupI {
     }
 
     @Override
-    public long getId() {
+    public UUID getId() {
         return id;
     }
 

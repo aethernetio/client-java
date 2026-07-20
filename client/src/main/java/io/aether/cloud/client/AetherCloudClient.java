@@ -3,8 +3,8 @@ package io.aether.cloud.client;
 import io.aether.StandardUUIDs;
 import io.aether.api.CryptoUtils;
 import io.aether.api.clientserverapi.AuthorizedApi;
+import io.aether.api.clientserverapi.FinishResult;
 import io.aether.api.clientserverapi.ServerApiByUid;
-import io.aether.api.clientserverregapi.FinishResult;
 import io.aether.api.common.*;
 import io.aether.common.AccessGroupI;
 import io.aether.crypto.AKey;
@@ -53,16 +53,16 @@ public final class AetherCloudClient implements Destroyable {
     final BMap<UUID, ClientCloud> clouds = RCol.bMap("CloudCache");
     final AtomicReference<RegStatus> regStatus = new AtomicReference<>(RegStatus.NO);
     final BMap<Integer, ServerDescriptor> servers = RCol.bMap("ServerCache");
-    final BMap<UUID, Set<Long>> clientGroups = RCol.bMap("ClientGroupsCache");
-    final BMap<Long, AccessGroup> accessGroups = RCol.bMap("AccessGroupsCache");
+    final BMap<UUID, Set<UUID>> clientGroups = RCol.bMap("ClientGroupsCache");
+    final BMap<UUID, AccessGroup> accessGroups = RCol.bMap("AccessGroupsCache");
     final BMap<UUID, Set<UUID>> allAccessedClients = RCol.bMap("AllAccessedClientsCache");
     final BMap<AccessCheckPair, Boolean> accessCheckCache = RCol.bMap("AccessCheckCache");
     final long lastSecond;
     final Map<UUID, MessageNode> messageNodeMap = new ConcurrentHashMap<>();
     final EventConsumer<UUID> onNewChild = new EventConsumer<>();
     final EventBiConsumer<UUID, ServerApiByUid> onNewChildApi = new EventBiConsumer<>();
-    final Map<Long, Map<UUID, ARFuture<Boolean>>> accessOperationsAdd = new ConcurrentHashMap<>();
-    final Map<Long, Map<UUID, ARFuture<Boolean>>> accessOperationsRemove = new ConcurrentHashMap<>();
+    final Map<UUID, Map<UUID, ARFuture<Boolean>>> accessOperationsAdd = new ConcurrentHashMap<>();
+    final Map<UUID, Map<UUID, ARFuture<Boolean>>> accessOperationsRemove = new ConcurrentHashMap<>();
     final BMap<AppliedConfig, Boolean> appliedConfigsRequests = new BMap<>("AppliedConfigsRequests", 5000, 10000);
     final Queue<AConsumer<AuthorizedApi>> authTasks = new ConcurrentLinkedQueue<>();
     final CloudPriorityManager priorityManager = new CloudPriorityManager();
@@ -131,7 +131,7 @@ public final class AetherCloudClient implements Destroyable {
         }
     }
 
-    public ARFuture<Set<Long>> getClientGroups(UUID uid) {
+    public ARFuture<Set<UUID>> getClientGroups(UUID uid) {
         return clientGroups.getFuture(uid);
     }
 
@@ -143,7 +143,7 @@ public final class AetherCloudClient implements Destroyable {
         return accessCheckCache.getFuture(new AccessCheckPair(uid1, uid2));
     }
 
-    public ARFuture<AccessGroup> getGroup(long groupId) {
+    public ARFuture<AccessGroup> getGroup(UUID groupId) {
         return accessGroups.getFuture(groupId);
     }
 
@@ -509,7 +509,7 @@ public final class AetherCloudClient implements Destroyable {
                 getServer(serverId).to(this::getConnection);
             }
         }
-        startFuture.done();
+        startFuture.tryDone();
     }
 
     public MessageNode getMessageNode(@NotNull UUID uid) {
@@ -581,7 +581,7 @@ public final class AetherCloudClient implements Destroyable {
     }
 
     public ARFuture<AccessGroupI> createAccessGroupWithOwner(UUID owner, UUID... uids) {
-        return getAuthApi1(c -> c.createAccessGroup(owner, uids)).map(id -> new AccessGroupImpl(new AccessGroup(owner, id, new UUID[0])) {
+        return getAuthApi1(c -> c.createAccessGroup(owner, uids)).map(id -> new AccessGroupImpl(new AccessGroup(id, RU.timeSeconds(), owner, new UUID[0])) {
 
             @Override
             public ARFuture<Boolean> add(UUID uuid) {
@@ -670,6 +670,7 @@ public final class AetherCloudClient implements Destroyable {
     public void putServerDescriptor(ServerDescriptor s) {
         servers.put((int) s.getId(), s);
         clientState.getServerInfo(s.getId()).setDescriptor(s);
+        Log.debug("putServerDescriptor is done", "descriptor", s);
     }
 
     public ARFuture<IpInfo> getMyIp() {

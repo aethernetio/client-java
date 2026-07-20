@@ -32,6 +32,7 @@ public class PointToPointTest {
     }
 
     public AFuture p2p() {
+//        var parent = StandardUUIDs.TEST_UID;
         var parent = UUID.fromString("B1AC52C8-8D94-BD39-4C01-A631AC594165");
         if (clientConfig1 == null)
             clientConfig1 = new ClientStateInMemory(parent, registrationUri, null, CryptoLib.SODIUM);

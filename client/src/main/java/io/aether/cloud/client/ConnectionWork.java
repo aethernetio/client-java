@@ -104,9 +104,9 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         if (requestClientGroups.length > 0) {
             a.requestAccessGroupsForClients(requestClientGroups);
         }
-        Long[] requestAccessGroups = client.accessGroups.pollAllRequests().toArray(new Long[0]);
+        UUID[] requestAccessGroups = client.accessGroups.pollAllRequests().toArray(new UUID[0]);
         if (requestAccessGroups.length > 0) {
-            long[] groupIds = new long[requestAccessGroups.length];
+            UUID[] groupIds = new UUID[requestAccessGroups.length];
             for (int i = 0; i < requestAccessGroups.length; i++) {
                 groupIds[i] = requestAccessGroups[i];
             }
@@ -120,16 +120,16 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         if (requestAccessCheck.length > 0) {
             a.requestAccessCheck(requestAccessCheck);
         }
-        for (Map.Entry<Long, Map<UUID, ARFuture<Boolean>>> entry : client.accessOperationsAdd.entrySet()) {
-            long groupId = entry.getKey();
+        for (Map.Entry<UUID, Map<UUID, ARFuture<Boolean>>> entry : client.accessOperationsAdd.entrySet()) {
+            UUID groupId = entry.getKey();
             UUID[] uidsToAdd = entry.getValue().keySet().toArray(new UUID[0]);
             if (uidsToAdd.length > 0) {
                 Log.debug("Flushing ADD request for group $gid: $uids", "gid", groupId, "uids", uidsToAdd);
                 a.addItemsToAccessGroup(groupId, uidsToAdd);
             }
         }
-        for (Map.Entry<Long, Map<UUID, ARFuture<Boolean>>> entry : client.accessOperationsRemove.entrySet()) {
-            long groupId = entry.getKey();
+        for (Map.Entry<UUID, Map<UUID, ARFuture<Boolean>>> entry : client.accessOperationsRemove.entrySet()) {
+            UUID groupId = entry.getKey();
             UUID[] uidsToRemove = entry.getValue().keySet().toArray(new UUID[0]);
             if (uidsToRemove.length > 0) {
                 Log.debug("Flushing REMOVE request for group $gid: $uids", "gid", groupId, "uids", uidsToRemove);

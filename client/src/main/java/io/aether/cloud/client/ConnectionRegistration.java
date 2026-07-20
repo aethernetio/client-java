@@ -1,7 +1,7 @@
 package io.aether.cloud.client;
 
 import io.aether.api.CryptoUtils;
-import io.aether.api.clientserverregapi.*;
+import io.aether.api.clientserverapi.*;
 import io.aether.api.common.Cloud;
 import io.aether.api.common.KeySymmetric;
 import io.aether.api.common.PowMethod;
@@ -72,10 +72,10 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
                         globalApi.finish()
                                 .to(d -> {
                                     Log.trace("RegConn: registration step finish.");
-                                    client.confirmRegistration(d);
                                     Log.info("RegConn: Registration confirmed.");
                                     resolveCloud(d.getCloud(), asymCE).to(() -> {
                                         Log.info("RegConn: resolve cloud.");
+                                        client.confirmRegistration(d);
                                     });
                                 }).addListener((f) -> {
                                     if (!f.isDone()) {

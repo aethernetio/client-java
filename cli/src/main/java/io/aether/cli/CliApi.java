@@ -277,7 +277,7 @@ public class CliApi {
         @Doc("Change an access group")
         public ChangeGroupApi group(
                 @Doc("Access group ID")
-                long id) {
+                UUID id) {
             return new ChangeGroupApi(id, client);
         }
 
@@ -286,10 +286,10 @@ public class CliApi {
          */
         @Doc("API for changing a specific access group.")
         public class ChangeGroupApi {
-            private final long id;
+            private final UUID id;
             private final AetherCloudClient client;
 
-            public ChangeGroupApi(long id, AetherCloudClient client) {
+            public ChangeGroupApi(UUID id, AetherCloudClient client) {
                 this.id = id;
                 this.client = client;
             }
@@ -391,7 +391,7 @@ public class CliApi {
         @Doc("Show all access groups for a client")
         @Example("$exCmd show groups -c TEST")
         @Alias("g")
-        public ARFuture<Set<Long>> groups(
+        public ARFuture<Set<UUID>> groups(
                 @Doc("Previously saved client state file")
                 @Optional(value = "state.bin")
                 File state,
@@ -415,7 +415,7 @@ public class CliApi {
                 targetUuid = client.getUid();
             }
             UUID finalTargetClient = targetUuid;
-            ARFuture<Set<Long>> res = ARFuture.make();
+            ARFuture<Set<UUID>> res = ARFuture.make();
             CLI_EXECUTOR.execute(() -> {
                 client.getClientGroups(finalTargetClient).to(res);
             });
@@ -433,7 +433,7 @@ public class CliApi {
                 @Optional(value = "state.bin")
                 File state,
                 @Doc("IDs of access groups, separated by comma")
-                Set<Long> ids) {
+                Set<UUID> ids) {
             // --- LOAD AND CHECK HERE ---
             ClientStateInMemory requiredState;
             try {
@@ -632,7 +632,7 @@ public class CliApi {
 
         @Doc("Create a new access group")
         @Example("$exCmd create group --owner TEST TEST,ROOT,my-friend-alias")
-        public ARFuture<Long> group(
+        public ARFuture<UUID> group(
                 @Optional(value = "state.bin")
                 @Doc("Client state file used for operation")
                 File state,
