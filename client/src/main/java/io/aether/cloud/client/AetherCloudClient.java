@@ -258,12 +258,55 @@ public final class AetherCloudClient implements Destroyable {
                 var regs = makeConnectionReg();
                 var timeoutForConnect = clientState.getTimeoutForConnectToRegistrationServer();
                 try {
-                    var anyFuture = AFuture.any(regs.map(ConnectionRegistration::registration));
-                    anyFuture.to(this::startScheduledTask).onError(startFuture::error);
-                    anyFuture.timeoutMs(timeoutForConnect, () -> {
-                        Log.warn("Failed to connect to registration server: $uris", "uris", clientState.getRegistrationUri());
-                        RU.schedule(5000, () -> connect(step));
+
+                    var anyFuture =
+                            AFuture.any(
+                                    regs.map(
+                                            ConnectionRegistration
+                                                    ::registration
+                                    )
+                            );
+
+                    anyFuture.to(
+                            this::startScheduledTask
+                    );
+
+                    anyFuture.onError(error -> {
+                        if (
+                                !(error instanceof
+                                        java.util.concurrent
+                                                .TimeoutException)
+                        ) {
+                            startFuture.tryError(error);
+                        }
                     });
+
+                    anyFuture.timeoutMs(
+                            timeoutForConnect,
+                            () -> {
+                                regStatus.compareAndSet(
+                                        RegStatus.BEGIN,
+                                        RegStatus.NO
+                                );
+
+                                Log.warn(
+                                        "Failed to connect to "
+                                                + "registration server: "
+                                                + "$uris",
+                                        "uris",
+                                        clientState
+                                                .getRegistrationUri()
+                                );
+
+
+                                RU.schedule(
+                                        100,
+                                        () -> connect(step)
+                                );
+
+                            }
+                    );
+
                 } catch (Exception e) {
                     Log.error("Fatal error during registration setup.", e);
                     if (!startFuture.isFinalStatus()) {

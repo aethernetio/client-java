@@ -141,40 +141,70 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             if (t == null) break;
             t.accept(a);
         }
-        List<Message> messagesForSend = null;
-        List<Runnable> tasksForCancelMessages = new ArrayList<>();
-        List<Tuple2<byte[], AFuture>> messagesForSend2 = new ArrayList<>();
-        for (var m : client.messageNodeMap.values()) {
-            if (m.connectionsOut.contains(this)) {
-                List<Tuple2<byte[], AFuture>> nodeMessages = new ArrayList<>();
-                int currentBatchSize = 0;
-                final int MAX_BATCH_BYTES = 512 * 1024; // 512 KB для Java
-                while (true) {
-                    var entry = m.bufferOut.peekFirst();
-                    if (entry == null || (currentBatchSize + entry.val1().length > MAX_BATCH_BYTES)) break;
-                    nodeMessages.add(m.bufferOut.pollFirst());
-                    currentBatchSize += nodeMessages.get(nodeMessages.size() - 1).val1().length;
+
+
+        for (var messageNode : client.messageNodeMap.values()) {
+            if (!messageNode.connectionsOut.contains(this)) {
+                continue;
+            }
+
+            List<Tuple2<byte[], AFuture>> nodeMessages =
+                    new ArrayList<>();
+            int currentBatchSize = 0;
+            final int maxBatchBytes = 512 * 1024;
+
+            while (true) {
+                Tuple2<byte[], AFuture> pending =
+                        messageNode.bufferOut.peekFirst();
+
+                if (pending == null
+                    || currentBatchSize
+                       + pending.val1().length
+                       > maxBatchBytes) {
+                    break;
                 }
-                if (!nodeMessages.isEmpty()) {
-                    Log.debug("message send client to server: $uidFrom -> $uidTo", "uidFrom", client.getUid(), "uidTo", m.consumer);
-                    if (messagesForSend == null) {
-                        messagesForSend = new ObjectArrayList<>();
-                    }
-                    Flow.flow(nodeMessages).map(v -> new Message(m.consumer, v.val1())).toCollection(messagesForSend);
-                    messagesForSend2.addAll(nodeMessages);
-                    tasksForCancelMessages.add(() -> {
-                        m.bufferOut.addAll(nodeMessages);
-                    });
+
+                pending = messageNode.bufferOut.pollFirst();
+                if (pending == null) {
+                    break;
+                }
+
+                nodeMessages.add(pending);
+                currentBatchSize += pending.val1().length;
+            }
+
+            if (nodeMessages.isEmpty()) {
+                continue;
+            }
+
+            Log.debug(
+                    "message send client to server: $uidFrom -> $uidTo",
+                    "uidFrom", client.getUid(),
+                    "uidTo", messageNode.consumer
+            );
+
+            for (Tuple2<byte[], AFuture> pending : nodeMessages) {
+                AFuture messageFuture = pending.val2();
+
+                try {
+                    a.sendMessageWithResult(
+                            new Message(
+                                    messageNode.consumer,
+                                    pending.val1()
+                            )
+                    ).to(
+                            messageFuture::tryDone
+                    ).onError(
+                            messageFuture::tryError
+                    );
+                } catch (Throwable error) {
+                    messageFuture.tryError(error);
                 }
             }
         }
-        if (messagesForSend != null && !messagesForSend.isEmpty()) {
-            MessageBatcher batcher = new MessageBatcher();
-            for (var msg : messagesForSend) {
-                batcher.add(msg.getUid(), msg.getData());
-            }
-            batcher.flush(a);
-        }
+
+
+
         if (!firstAuth) {
             firstAuth = true;
             a.ping(0, 0).to(() -> {

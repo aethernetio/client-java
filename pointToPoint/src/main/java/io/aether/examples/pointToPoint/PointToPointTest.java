@@ -192,40 +192,80 @@ public class PointToPointTest {
             clientConfig1 = new ClientStateInMemory(parent, registrationUri, null, CryptoLib.HYDROGEN);
         if (clientConfig2 == null)
             clientConfig2 = new ClientStateInMemory(parent, registrationUri, null, CryptoLib.HYDROGEN);
+
         AetherCloudClient client1 = new AetherCloudClient(clientConfig1, "client1");
         AetherCloudClient client2 = new AetherCloudClient(clientConfig2, "client2");
         AFuture testDoneFuture = AFuture.make();
+
         AFuture.all(client1.startFuture, client2.startFuture).to(() -> {
-            Log.info("clients is registered uid1: $uid1 uid2: $uid2", "uid1", client1.getUid(), "uid2", client2.getUid());
+            Log.info(
+                    "clients is registered uid1: $uid1 uid2: $uid2",
+                    "uid1",
+                    client1.getUid(),
+                    "uid2",
+                    client2.getUid()
+            );
+
             AFuture checkReceiveMessageBack = AFuture.make();
             var message = new byte[]{1, 2, 3, 4};
             var messageBack = new byte[]{1, 1, 1, 1};
-            client2.onClientStream((st) -> {
+
+            client2.onClientStream(st -> {
                 st.toConsumer(newMessage -> {
                     st.send(messageBack);
                 });
             });
-            client1.onClientStream((st) -> {
+
+            client1.onClientStream(st -> {
                 st.toConsumer(newMessage -> {
-                    checkReceiveMessageBack.done();
+                    checkReceiveMessageBack.tryDone();
                 });
             });
+
             Log.info("START two clients!");
+
             var chToc2 = client1.getMessageNode(client2.getUid());
-            Thread.currentThread().setName("MAIN THREAD");
-            chToc2.send(message);
+            AtomicReference<ScheduledFuture<?>> resendTask =
+                    new AtomicReference<>();
+
+            ScheduledFuture<?> scheduledTask = RU.scheduleAtFixedRate(
+                    250,
+                    () -> {
+                        if (!checkReceiveMessageBack.isFinalStatus()) {
+                            chToc2.send(message);
+                        }
+                    }
+            );
+
+            resendTask.set(scheduledTask);
+
+            // scheduleAtFixedRate запускает первое выполнение немедленно.
+            // Ответ теоретически может прийти ещё до установки ссылки.
+            if (checkReceiveMessageBack.isFinalStatus()) {
+                scheduledTask.cancel(false);
+            }
+
             checkReceiveMessageBack.to(() -> {
+                ScheduledFuture<?> task = resendTask.getAndSet(null);
+                if (task != null) {
+                    task.cancel(false);
+                }
+
                 Log.info("TEST IS DONE!");
+
                 client1.destroy(true).to(() -> {
-                    client2.destroy(true).to(testDoneFuture::done)
+                    client2.destroy(true)
+                            .to(testDoneFuture::done)
                             .onError(testDoneFuture::error);
                 }).onError(testDoneFuture::error);
             }).onError(testDoneFuture::error);
         }).onError(testDoneFuture::error);
+
         return testDoneFuture;
     }
 
-    public AFuture pointToPointWithService() { // ИСПРАВЛЕНО: удален дженерик
+    @SuppressWarnings("deprecation")
+    public AFuture pointToPointWithService() {
         var parent = UUID.fromString("A8348A48-64CC-A8EF-6902-090F446247C8");
         if (serviceConfig == null)
             serviceConfig = new ClientStateInMemory(parent, registrationUri);
