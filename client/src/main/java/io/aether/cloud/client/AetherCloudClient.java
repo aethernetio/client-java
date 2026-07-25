@@ -508,23 +508,49 @@ public final class AetherCloudClient implements Destroyable {
     }
 
     public ARFuture<ClientCloud> getCloud(@NotNull UUID uid) {
-        var r = clientState.getCloud(uid);
-        if (r != null)
-            return ARFuture.of(r);
-        var res = ARFuture.<ClientCloud>make();
-        clouds.get(uid, 10, new Future<>() {
+        var cached = clientState.getCloud(uid);
+        if (cached != null) {
+            return ARFuture.of(cached);
+        }
+
+        ARFuture<ClientCloud> result = ARFuture.make();
+
+        Future<ClientCloud> request = new Future<>() {
             @Override
             public void onResolved(ClientCloud value) {
-                res.done(value);
+                result.tryDone(value);
             }
 
             @Override
             public void onError(int time, Exception error) {
-                Log.error("timeout get cloud: $uid", "uid", uid);
-                res.error(new ClientTimeoutException("Timeout getting cloud for: " + uid));
+                if (destroyer.isDestroyed()) {
+                    result.cancel();
+                    return;
+                }
+
+                Log.warn(
+                        "Timeout getting cloud, retrying: $uid",
+                        "uid", uid
+                );
+
+                RU.schedule(1000, () -> {
+                    if (result.isFinalStatus() || destroyer.isDestroyed()) {
+                        return;
+                    }
+
+                    ClientCloud current = clientState.getCloud(uid);
+                    if (current != null) {
+                        result.tryDone(current);
+                        return;
+                    }
+
+                    clouds.get(uid, 10, this);
+                });
             }
-        });
-        return res;
+        };
+
+        clouds.get(uid, 10, request);
+        return result;
     }
 
     public long getPingTime() {
