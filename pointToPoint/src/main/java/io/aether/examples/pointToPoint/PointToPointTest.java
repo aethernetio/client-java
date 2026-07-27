@@ -193,57 +193,140 @@ public class PointToPointTest {
         if (clientConfig2 == null)
             clientConfig2 = new ClientStateInMemory(parent, registrationUri, null, CryptoLib.HYDROGEN);
 
+
+        long scenarioStartTimeMs = System.currentTimeMillis();
         AetherCloudClient client1 = new AetherCloudClient(clientConfig1, "client1");
         AetherCloudClient client2 = new AetherCloudClient(clientConfig2, "client2");
         AFuture testDoneFuture = AFuture.make();
 
+
         AFuture.all(client1.startFuture, client2.startFuture).to(() -> {
             Log.info(
                     "clients is registered uid1: $uid1 uid2: $uid2",
-                    "uid1",
-                    client1.getUid(),
-                    "uid2",
-                    client2.getUid()
+                    "uid1", client1.getUid(),
+                    "uid2", client2.getUid()
             );
 
+
             AFuture checkReceiveMessageBack = AFuture.make();
-            var message = new byte[]{1, 2, 3, 4};
-            var messageBack = new byte[]{1, 1, 1, 1};
+            AFuture checkReceiveWarmMessage = AFuture.make();
 
-            client2.onClientStream(st -> {
-                st.toConsumer(newMessage -> {
-                    st.send(messageBack);
-                });
-            });
+            byte[] message = new byte[]{1, 2, 3, 4};
+            byte[] messageBack = new byte[]{1, 1, 1, 1};
+            byte[] warmMessage = new byte[]{2, 2, 2, 2};
 
-            client1.onClientStream(st -> {
-                st.toConsumer(newMessage -> {
-                    checkReceiveMessageBack.tryDone();
-                });
-            });
+            AtomicLong firstSendTimeMs = new AtomicLong();
+            AtomicLong client2ReceiveTimeMs = new AtomicLong();
+            AtomicLong client1ReceiveTimeMs = new AtomicLong();
+            AtomicLong warmSendTimeMs = new AtomicLong();
+            AtomicLong warmReceiveTimeMs = new AtomicLong();
+            AtomicLong aToBAttempts = new AtomicLong();
+            AtomicLong warmAttempts = new AtomicLong();
 
-            Log.info("START two clients!");
-
-            var chToc2 = client1.getMessageNode(client2.getUid());
-            AtomicReference<ScheduledFuture<?>> resendTask =
+            AtomicReference<ScheduledFuture<?>> replyResendTask =
+                    new AtomicReference<>();
+            AtomicReference<ScheduledFuture<?>> warmResendTask =
                     new AtomicReference<>();
 
+
+
+
+
+            client2.onClientStream(st -> st.toConsumer(newMessage -> {
+                if (java.util.Arrays.equals(newMessage, warmMessage)) {
+                    long receiveTimeMs = System.currentTimeMillis();
+                    if (!warmReceiveTimeMs.compareAndSet(0, receiveTimeMs)) {
+                        return;
+                    }
+
+                    long registrationAndDeliveryMs =
+                            client2ReceiveTimeMs.get() - scenarioStartTimeMs;
+                    long deliveryAfterRegistrationMs =
+                            client2ReceiveTimeMs.get() - firstSendTimeMs.get();
+                    long warmDeliveryMs =
+                            receiveTimeMs - warmSendTimeMs.get();
+                    long roundTripMs =
+                            client1ReceiveTimeMs.get() - firstSendTimeMs.get();
+
+                    System.out.println(
+                            "AETHER_JAVA_CLIENT_METRICS"
+                                    + " aether_java_client_registration_and_delivery_ms="
+                                    + registrationAndDeliveryMs
+                                    + " aether_java_client_delivery_after_registration_ms="
+                                    + deliveryAfterRegistrationMs
+                                    + " aether_java_client_warm_delivery_ms="
+                                    + warmDeliveryMs
+                                    + " aether_java_client_round_trip_ms="
+                                    + roundTripMs
+                                    + " aether_java_client_delivery_after_registration_attempts="
+                                    + aToBAttempts.get()
+                                    + " aether_java_client_warm_delivery_attempts="
+                                    + warmAttempts.get()
+                    );
+
+                    checkReceiveWarmMessage.tryDone();
+                    return;
+                }
+
+                if (!java.util.Arrays.equals(newMessage, message)) {
+                    return;
+                }
+
+                long receiveTimeMs = System.currentTimeMillis();
+                if (!client2ReceiveTimeMs.compareAndSet(0, receiveTimeMs)) {
+                    return;
+                }
+
+                ScheduledFuture<?> replyTask = RU.scheduleAtFixedRate(
+                        250,
+                        () -> {
+                            if (checkReceiveMessageBack.isFinalStatus()) {
+                                return;
+                            }
+
+                            st.send(messageBack);
+                        }
+                );
+                replyResendTask.set(replyTask);
+
+                if (checkReceiveMessageBack.isFinalStatus()) {
+                    replyTask.cancel(false);
+                }
+            }));
+
+
+
+
+            client1.onClientStream(st -> st.toConsumer(newMessage -> {
+                if (!java.util.Arrays.equals(newMessage, messageBack)) {
+                    return;
+                }
+
+                long receiveTimeMs = System.currentTimeMillis();
+                if (!client1ReceiveTimeMs.compareAndSet(0, receiveTimeMs)) {
+                    return;
+                }
+
+                checkReceiveMessageBack.tryDone();
+            }));
+
+
+            Log.info("START two clients!");
+            var chToc2 = client1.getMessageNode(client2.getUid());
+            AtomicReference<ScheduledFuture<?>> resendTask = new AtomicReference<>();
             ScheduledFuture<?> scheduledTask = RU.scheduleAtFixedRate(
                     250,
                     () -> {
-                        if (!checkReceiveMessageBack.isFinalStatus()) {
-                            chToc2.send(message);
-                        }
+                        if (checkReceiveMessageBack.isFinalStatus()) return;
+                        firstSendTimeMs.compareAndSet(0, System.currentTimeMillis());
+                        aToBAttempts.incrementAndGet();
+                        chToc2.send(message);
                     }
             );
-
             resendTask.set(scheduledTask);
 
-            // scheduleAtFixedRate запускает первое выполнение немедленно.
-            // Ответ теоретически может прийти ещё до установки ссылки.
-            if (checkReceiveMessageBack.isFinalStatus()) {
-                scheduledTask.cancel(false);
-            }
+            if (checkReceiveMessageBack.isFinalStatus()) scheduledTask.cancel(false);
+
 
             checkReceiveMessageBack.to(() -> {
                 ScheduledFuture<?> task = resendTask.getAndSet(null);
@@ -251,14 +334,61 @@ public class PointToPointTest {
                     task.cancel(false);
                 }
 
+                ScheduledFuture<?> replyTask =
+                        replyResendTask.getAndSet(null);
+                if (replyTask != null) {
+                    replyTask.cancel(false);
+                }
+
+                ScheduledFuture<?> warmTask = RU.scheduleAtFixedRate(
+                        250,
+                        () -> {
+                            if (checkReceiveWarmMessage.isFinalStatus()) {
+                                return;
+                            }
+
+                            warmSendTimeMs.compareAndSet(
+                                    0,
+                                    System.currentTimeMillis()
+                            );
+                            warmAttempts.incrementAndGet();
+                            chToc2.send(warmMessage);
+                        }
+                );
+                warmResendTask.set(warmTask);
+
+                if (checkReceiveWarmMessage.isFinalStatus()) {
+                    warmTask.cancel(false);
+                }
+            }).onError(testDoneFuture::error);
+
+            checkReceiveWarmMessage.to(() -> {
+                ScheduledFuture<?> task = resendTask.getAndSet(null);
+                if (task != null) {
+                    task.cancel(false);
+                }
+
+                ScheduledFuture<?> replyTask =
+                        replyResendTask.getAndSet(null);
+                if (replyTask != null) {
+                    replyTask.cancel(false);
+                }
+
+                ScheduledFuture<?> warmTask =
+                        warmResendTask.getAndSet(null);
+                if (warmTask != null) {
+                    warmTask.cancel(false);
+                }
+
                 Log.info("TEST IS DONE!");
 
-                client1.destroy(true).to(() -> {
-                    client2.destroy(true)
-                            .to(testDoneFuture::done)
-                            .onError(testDoneFuture::error);
-                }).onError(testDoneFuture::error);
+                client1.destroy(true).to(() ->
+                        client2.destroy(true)
+                                .to(testDoneFuture::done)
+                                .onError(testDoneFuture::error)
+                ).onError(testDoneFuture::error);
             }).onError(testDoneFuture::error);
+
         }).onError(testDoneFuture::error);
 
         return testDoneFuture;
