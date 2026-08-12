@@ -7,6 +7,7 @@ import io.aether.api.clientserverapi.AuthorizedApi;
 import io.aether.api.clientserverapi.AuthorizedApiRemote;
 import io.aether.api.clientserverapi.FinishResult;
 import io.aether.api.clientserverapi.ServerApiByUid;
+import io.aether.api.clientserverapi.ServerApiByUidClient;
 
 import io.aether.api.common.*;
 import io.aether.common.AccessGroupI;
@@ -725,7 +726,7 @@ public final class AetherCloudClient implements Destroyable {
         getAuthApiRemote(api -> callback.accept(
                 api.openClient(
                         uid,
-                        remote -> remote,
+                        remote -> ServerApiByUidClient.EMPTY,
                         data -> data,
                         "byClient",
                         uid

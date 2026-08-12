@@ -1,6 +1,10 @@
 package io.aether.cloud.client;
 
 import io.aether.api.clientserverapi.ClientApiSafe;
+
+import io.aether.api.clientserverapi.ClientInteractionClientStream;
+import io.aether.api.clientserverapi.ServerApiByUidClient;
+
 import io.aether.api.clientserverapi.Message;
 import io.aether.api.common.*;
 import io.aether.logger.Log;
@@ -193,6 +197,24 @@ class ClientApiSafeImpl implements ClientApiSafe {
             sendCloudConfig(cc);
         }
     }
+
+
+    @Override
+    public void clientInteraction(
+            UUID uid,
+            ClientInteractionClientStream stream
+    ) {
+        stream
+                .asIn()
+                .keys(
+                        ctx -> ServerApiByUidClient.EMPTY,
+                        "byClient",
+                        uid
+                )
+                .accept();
+    }
+
+
 
     private void sendCloudConfig(CloudConfig cc) {
         client.applyCloudConfig(cc);
