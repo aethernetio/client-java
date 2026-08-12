@@ -54,19 +54,30 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
      *
      * @param isWritable True if the connection is active and writable, false otherwise.
      */
+
     @Override
     protected void onConnectionStateChanged(boolean isWritable) {
+        firstAuth = false;
+
         if (cryptoEngine == null) {
-            Log.warn("onConnectionStateChanged called before cryptoEngine initialized, deferring flush");
+            Log.warn(
+                    "onConnectionStateChanged called before cryptoEngine initialized, deferring flush"
+            );
             stateListeners.fire(isWritable);
             return;
         }
+
         if (isWritable) {
-            Log.info("Network restored. Resetting auth state and forcing flush.", "uri", uri);
-            this.firstAuth = false;
+            lastWorkTime = 0L;
+            Log.info(
+                    "Network restored. Resetting auth state and forcing flush.",
+                    "uri",
+                    uri
+            );
         } else {
-            this.firstAuth = false;
+            inProcess.set(false);
         }
+
         stateListeners.fire(isWritable);
     }
 
@@ -205,16 +216,71 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
 
 
 
-        if (!firstAuth) {
-            firstAuth = true;
-            a.ping(0, 0).to(() -> {
-                Log.debug("First ping response received. Marking connection ready.");
-            }).onError(e -> {
-                Log.warn("First ping failed, will retry.", e);
+        sendPingIfNeeded(a);
+    }
+
+
+    private void sendPingIfNeeded(AuthorizedApiRemote api) {
+        long now = RU.time();
+        long pingInterval = client.getPingTime();
+
+        if (pingInterval <= 0) {
+            pingInterval = 6_000L;
+        }
+
+        if (lastWorkTime != 0L
+                && now - lastWorkTime < pingInterval) {
+            return;
+        }
+
+        if (!isWritable()
+                || !inProcess.compareAndSet(false, true)) {
+            return;
+        }
+
+
+        lastWorkTime = now;
+        long advertisedUapDuration = Math.max(
+                pingInterval * 5L,
+                5_000L
+        );
+
+        try {
+            api.ping(
+
+                    advertisedUapDuration,
+                    advertisedUapDuration
+
+            ).to(() -> {
+                firstAuth = true;
+                inProcess.set(false);
+                Log.debug(
+                        "Ping response received",
+
+                        "nextConnectMsDuration",
+                        advertisedUapDuration,
+                        "rxWindowMs",
+                        advertisedUapDuration
+
+                );
+            }).onError(error -> {
                 firstAuth = false;
+                inProcess.set(false);
+                Log.warn(
+                        "Ping failed, will retry after ping interval",
+                        error
+                );
             });
+        } catch (Throwable error) {
+            firstAuth = false;
+            inProcess.set(false);
+            Log.warn(
+                    "Failed to send ping, will retry after ping interval",
+                    error
+            );
         }
     }
+
 
     @Override
     public void sendSafeApiDataMulti(byte backId, LoginClientStream data) {
