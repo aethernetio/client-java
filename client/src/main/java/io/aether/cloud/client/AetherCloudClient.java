@@ -2,9 +2,12 @@ package io.aether.cloud.client;
 
 import io.aether.StandardUUIDs;
 import io.aether.api.CryptoUtils;
+
 import io.aether.api.clientserverapi.AuthorizedApi;
+import io.aether.api.clientserverapi.AuthorizedApiRemote;
 import io.aether.api.clientserverapi.FinishResult;
 import io.aether.api.clientserverapi.ServerApiByUid;
+
 import io.aether.api.common.*;
 import io.aether.common.AccessGroupI;
 import io.aether.crypto.AKey;
@@ -64,7 +67,7 @@ public final class AetherCloudClient implements Destroyable {
     final Map<UUID, Map<UUID, ARFuture<Boolean>>> accessOperationsAdd = new ConcurrentHashMap<>();
     final Map<UUID, Map<UUID, ARFuture<Boolean>>> accessOperationsRemove = new ConcurrentHashMap<>();
     final BMap<AppliedConfig, Boolean> appliedConfigsRequests = new BMap<>("AppliedConfigsRequests", 5000, 10000);
-    final Queue<AConsumer<AuthorizedApi>> authTasks = new ConcurrentLinkedQueue<>();
+    final Queue<AConsumer<AuthorizedApiRemote>> authTasks = new ConcurrentLinkedQueue<>();
     final CloudPriorityManager priorityManager = new CloudPriorityManager();
     private final ClientState clientState;
     private final int timeout1 = 6;
@@ -446,11 +449,17 @@ public final class AetherCloudClient implements Destroyable {
         return anyConnection;
     }
 
+
     public void getAuthApi(@NotNull AConsumer<AuthorizedApi> t) {
+        getAuthApiRemote(t::accept);
+    }
+
+    private void getAuthApiRemote(@NotNull AConsumer<AuthorizedApiRemote> t) {
         if (destroyer.isDestroyed())
             return;
         authTasks.add(t);
     }
+
 
     public void flush() {
         if (connections.isEmpty()) {
@@ -690,15 +699,37 @@ public final class AetherCloudClient implements Destroyable {
     }
 
 
+    public ARFuture<ServerDescriptorWithGeo[]> getServers() {
+        return getAuthApi1(AuthorizedApi::getServers);
+    }
+
+
+
     public AFuture sendMessage(UUID uid, byte[] message) {
         return getMessageNode(uid, MessageEventListener.DEFAULT).send(message);
     }
 
+
+    public ARFuture<ServerApiByUid> getClientApi(UUID uid) {
+        ARFuture<ServerApiByUid> result = ARFuture.make();
+        getClientApi(uid, result::done);
+        result.timeoutError(8, "Timeout waiting for ServerApiByUid.");
+        return result;
+    }
+
     @Deprecated
     public void getClientApi(UUID uid, AConsumer<ServerApiByUid> callback) {
-        // TODO: rewrite after Connection/ConnectionWork refactoring
-        throw new UnsupportedOperationException("getClientApi is deprecated, use getMessageNode instead");
+        getAuthApiRemote(api -> callback.accept(
+                api.openClient(
+                        uid,
+                        remote -> remote,
+                        data -> data,
+                        "byClient",
+                        uid
+                )
+        ));
     }
+
 
     public CryptoEngine getCryptoEngineForServer(short serverId) {
         var k = getMasterKey();
