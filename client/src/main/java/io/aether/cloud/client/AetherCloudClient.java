@@ -575,10 +575,13 @@ public final class AetherCloudClient implements Destroyable {
             Log.info("Already registration");
             return;
         }
+
         Log.info("confirm registration: $uid", "uid", regResp.getUid());
-        clouds.put(regResp.getUid(), new ClientCloud(regResp.getUid(), regResp.getCloud()));
-        // Сохраняем облако в персистентное состояние клиента
-        clientState.saveCloud(new ClientCloud(regResp.getUid(), regResp.getCloud()));
+        var clientCloud = new ClientCloud(regResp.getUid(), regResp.getCloud());
+        clouds.put(regResp.getUid(), clientCloud);
+        // Сохраняем тот же объект, который используется runtime-cache.
+        clientState.saveCloud(clientCloud);
+
         clientState.setUid(regResp.getUid());
         clientState.setAlias(regResp.getAlias());
         var cloud = regResp.getCloud();
@@ -755,11 +758,37 @@ public final class AetherCloudClient implements Destroyable {
     public void setCloud(UUID uid, Cloud cloud) {
         ClientCloud cc = clouds.getNow(uid);
         if (cc != null) {
-            cc.applyCloudConfig(new CloudConfig(uid, 0, cloud), appliedConfigsRequests);
+            cc.applyCloudConfig(
+                    new CloudConfig(uid, 0, cloud),
+                    appliedConfigsRequests
+            );
         } else {
-            clouds.put(uid, new ClientCloud(uid, cloud));
+            cc = new ClientCloud(uid, cloud);
+            clouds.put(uid, cc);
         }
+
+        clientState.saveCloud(cc);
     }
+
+
+    void applyCloudConfig(CloudConfig config) {
+        UUID uid = config.getSubjectUid();
+        ClientCloud cloud = clouds.getNow(uid);
+
+        if (cloud != null) {
+            cloud.applyCloudConfig(
+                    config,
+                    appliedConfigsRequests
+            );
+        } else {
+            cloud = new ClientCloud(uid, config.getCloud());
+            cloud.setConfigVersion(config.getConfigVersion());
+            clouds.put(uid, cloud);
+        }
+
+        clientState.saveCloud(cloud);
+    }
+
 
     public void requestCloudConfig(UUID subjectUid) {
         ClientCloud cc = clouds.getNow(subjectUid);

@@ -195,11 +195,6 @@ class ClientApiSafeImpl implements ClientApiSafe {
     }
 
     private void sendCloudConfig(CloudConfig cc) {
-        ClientCloud clientCloud = client.clouds.getNow(cc.getSubjectUid());
-        if (clientCloud != null) {
-            clientCloud.applyCloudConfig(cc, client.appliedConfigsRequests);
-        } else {
-            client.clouds.put(cc.getSubjectUid(), new ClientCloud(cc.getSubjectUid(), cc.getCloud()));
-        }
+        client.applyCloudConfig(cc);
     }
 }
