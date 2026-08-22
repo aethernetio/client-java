@@ -776,6 +776,10 @@ public final class AetherCloudClient implements Destroyable {
         UUID uid = config.getSubjectUid();
         ClientCloud cloud = clouds.getNow(uid);
 
+        long previousConfigVersion =
+                cloud != null ? cloud.getConfigVersion() : -1;
+
+
         if (cloud != null) {
             cloud.applyCloudConfig(
                     config,
@@ -788,6 +792,22 @@ public final class AetherCloudClient implements Destroyable {
         }
 
         clientState.saveCloud(cloud);
+
+
+
+
+        if (config.getConfigVersion() > previousConfigVersion) {
+            priorityManager.updateCloudFromWork(
+                    uid,
+                    cloud.toCloud()
+            );
+
+            if (uid.equals(getUid())) {
+                makeFirstConnection();
+            }
+        }
+
+
     }
 
 

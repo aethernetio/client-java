@@ -25,4 +25,17 @@ public interface MessageEventListener {
     void onResolveConsumerServer(MessageNode messageNode, ServerDescriptor serverDescriptor);
 
     void onResolveConsumerConnection(MessageNode messageNode, ConnectionWork connection);
+
+
+
+    default boolean shouldSendViaConnection(
+            MessageNode messageNode,
+            ConnectionWork connection,
+            byte[] message
+    ) {
+        return true;
+    }
+
+
+
 }

@@ -7,6 +7,9 @@ import io.aether.api.common.AppliedConfig;
 import io.aether.api.common.ServerDescriptor;
 import io.aether.crypto.CryptoEngine;
 import io.aether.logger.Log;
+
+
+
 import io.aether.utils.RU;
 import io.aether.utils.flow.Flow;
 import io.aether.utils.futures.AFuture;
@@ -18,7 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -32,7 +35,17 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
     final CryptoEngine cryptoEngine;
     final AuthorizedApiRemote authorizedApi;
     private final ServerDescriptor serverDescriptor;
-    final private AtomicBoolean inProcess = new AtomicBoolean();
+
+    private static final long PING_RESPONSE_TIMEOUT_MS = 5_000L;
+    private static final long PING_ACQUIRE_TIMEOUT_MS =
+            PING_RESPONSE_TIMEOUT_MS + 1_000L;
+
+    private static final class PingAttempt {
+    }
+
+    private final AtomicReference<PingAttempt> activePing =
+            new AtomicReference<>();
+
     boolean basicStatus;
     long lastWorkTime;
     volatile boolean firstAuth;
@@ -75,11 +88,18 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                     uri
             );
         } else {
-            inProcess.set(false);
+            activePing.set(null);
         }
 
         stateListeners.fire(isWritable);
     }
+
+
+    @Override
+    public boolean isWritable() {
+        return super.isWritable();
+    }
+
 
 
     public void flushBackgroundRequests() {
@@ -155,34 +175,43 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
 
 
         for (var messageNode : client.messageNodeMap.values()) {
+
+
             if (!messageNode.connectionsOut.contains(this)) {
                 continue;
             }
+
+
 
             List<Tuple2<byte[], AFuture>> nodeMessages =
                     new ArrayList<>();
             int currentBatchSize = 0;
             final int maxBatchBytes = 512 * 1024;
 
-            while (true) {
-                Tuple2<byte[], AFuture> pending =
-                        messageNode.bufferOut.peekFirst();
 
-                if (pending == null
-                    || currentBatchSize
-                       + pending.val1().length
-                       > maxBatchBytes) {
+            for (Tuple2<byte[], AFuture> pending : messageNode.bufferOut) {
+                byte[] message = pending.val1();
+
+                if (!messageNode.getStrategy().shouldSendViaConnection(
+                        messageNode,
+                        this,
+                        message
+                )) {
+                    continue;
+                }
+
+                if (currentBatchSize + message.length > maxBatchBytes) {
                     break;
                 }
 
-                pending = messageNode.bufferOut.pollFirst();
-                if (pending == null) {
-                    break;
+                if (!messageNode.bufferOut.remove(pending)) {
+                    continue;
                 }
 
                 nodeMessages.add(pending);
-                currentBatchSize += pending.val1().length;
+                currentBatchSize += message.length;
             }
+
 
             if (nodeMessages.isEmpty()) {
                 continue;
@@ -194,24 +223,26 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                     "uidTo", messageNode.consumer
             );
 
+
+
             for (Tuple2<byte[], AFuture> pending : nodeMessages) {
                 AFuture messageFuture = pending.val2();
 
+                Message outboundMessage = new Message(
+                        messageNode.consumer,
+                        pending.val1()
+                );
+
                 try {
-                    a.sendMessageWithResult(
-                            new Message(
-                                    messageNode.consumer,
-                                    pending.val1()
-                            )
-                    ).to(
-                            messageFuture::tryDone
-                    ).onError(
-                            messageFuture::tryError
-                    );
+                    a.sendMessageWithResult(outboundMessage)
+                            .to(messageFuture::tryDone)
+                            .onError(messageFuture::tryError);
                 } catch (Throwable error) {
                     messageFuture.tryError(error);
                 }
             }
+
+
         }
 
 
@@ -224,7 +255,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         long now = RU.time();
         long pingInterval = client.getPingTime();
 
-        if (pingInterval <= 0) {
+        if (pingInterval <= 0L) {
             pingInterval = 6_000L;
         }
 
@@ -233,53 +264,98 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             return;
         }
 
+        PingAttempt pingAttempt = new PingAttempt();
+
         if (!isWritable()
-                || !inProcess.compareAndSet(false, true)) {
+                || !activePing.compareAndSet(null, pingAttempt)) {
             return;
         }
 
-
         lastWorkTime = now;
+
         long advertisedUapDuration = Math.max(
                 pingInterval * 5L,
                 5_000L
         );
 
+        Thread.startVirtualThread(() -> {
+            try {
+                Thread.sleep(PING_RESPONSE_TIMEOUT_MS);
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+
+            if (activePing.compareAndSet(pingAttempt, null)) {
+                firstAuth = false;
+
+                Log.warn(
+                        "Ping response timed out, will retry after ping interval"
+                );
+            }
+        });
+
         try {
             api.ping(
-
                     advertisedUapDuration,
                     advertisedUapDuration
-
             ).to(() -> {
+                if (!activePing.compareAndSet(
+                        pingAttempt,
+                        null
+                )) {
+                    return;
+                }
+
                 firstAuth = true;
-                inProcess.set(false);
+
                 Log.debug(
                         "Ping response received",
-
                         "nextConnectMsDuration",
                         advertisedUapDuration,
                         "rxWindowMs",
                         advertisedUapDuration
-
                 );
             }).onError(error -> {
+                if (!activePing.compareAndSet(
+                        pingAttempt,
+                        null
+                )) {
+                    return;
+                }
+
                 firstAuth = false;
-                inProcess.set(false);
+
                 Log.warn(
                         "Ping failed, will retry after ping interval",
                         error
                 );
             });
         } catch (Throwable error) {
+            if (!activePing.compareAndSet(
+                    pingAttempt,
+                    null
+            )) {
+                return;
+            }
+
             firstAuth = false;
-            inProcess.set(false);
+
             Log.warn(
                     "Failed to send ping, will retry after ping interval",
                     error
             );
         }
     }
+
+
+
+
+
+
+
+
+
 
 
     @Override
@@ -315,12 +391,185 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
     }
 
     public void scheduledWork() {
-        var t = RU.time();
-        if ((t - lastWorkTime < client.getPingTime() || !inProcess.compareAndSet(false, true))) return;
-        lastWorkTime = t;
-        var f = AFuture.make();
-        f.timeout(2, () -> {
-            Log.warn("connection work flush 1 timeout");
+        sendPingIfNeeded(authorizedApi);
+    }
+
+    private PingAttempt acquireMeasuredPing(
+            ARFuture<Long> result
+    ) {
+        PingAttempt pingAttempt =
+                new PingAttempt();
+
+        long waitDeadline =
+                RU.time() + PING_ACQUIRE_TIMEOUT_MS;
+
+        while (!activePing.compareAndSet(
+                null,
+                pingAttempt
+        )) {
+            if (RU.time() >= waitDeadline) {
+                result.tryError(
+                        new IllegalStateException(
+                                "Timeout waiting for idle connection before measured ping"
+                        )
+                );
+                return null;
+            }
+
+            try {
+                Thread.sleep(1L);
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                result.tryError(error);
+                return null;
+            }
+        }
+
+        if (!isWritable()) {
+            activePing.compareAndSet(
+                    pingAttempt,
+                    null
+            );
+
+            result.tryError(
+                    new IllegalStateException(
+                            "Connection is not writable before measured ping"
+                    )
+            );
+            return null;
+        }
+
+        return pingAttempt;
+    }
+
+
+    private void startMeasuredPingTimeout(
+            PingAttempt pingAttempt,
+            ARFuture<Long> result
+    ) {
+        Thread.startVirtualThread(() -> {
+            try {
+                Thread.sleep(
+                        PING_RESPONSE_TIMEOUT_MS
+                );
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+
+            if (activePing.compareAndSet(
+                    pingAttempt,
+                    null
+            )) {
+                firstAuth = false;
+            }
+
+            result.tryError(
+                    new IllegalStateException(
+                            "Timeout waiting for measured ping response"
+                    )
+            );
         });
+    }
+
+
+    private void completeMeasuredPing(
+            PingAttempt pingAttempt,
+            ARFuture<Long> result,
+            long startedNs
+    ) {
+        if (!activePing.compareAndSet(
+                pingAttempt,
+                null
+        )) {
+            result.tryError(
+                    new IllegalStateException(
+                            "Measured ping attempt is no longer active"
+                    )
+            );
+            return;
+        }
+
+        firstAuth = true;
+
+        result.tryDone(
+                System.nanoTime() - startedNs
+        );
+    }
+
+
+    private void failMeasuredPing(
+            PingAttempt pingAttempt,
+            ARFuture<Long> result,
+            Throwable error
+    ) {
+        if (activePing.compareAndSet(
+                pingAttempt,
+                null
+        )) {
+            firstAuth = false;
+        }
+
+        result.tryError(error);
+    }
+
+
+    private void runMeasuredPing(ARFuture<Long> result) {
+        PingAttempt pingAttempt =
+                acquireMeasuredPing(result);
+
+        if (pingAttempt == null) {
+            return;
+        }
+
+        long pingInterval = client.getPingTime();
+
+        if (pingInterval <= 0L) {
+            pingInterval = 6_000L;
+        }
+
+        long advertisedUapDuration = Math.max(
+                pingInterval * 5L,
+                5_000L
+        );
+
+        lastWorkTime = RU.time();
+        long startedNs = System.nanoTime();
+
+        startMeasuredPingTimeout(
+                pingAttempt,
+                result
+        );
+
+        try {
+            authorizedApi.ping(
+                    advertisedUapDuration,
+                    advertisedUapDuration
+            ).to(() -> completeMeasuredPing(
+                    pingAttempt,
+                    result,
+                    startedNs
+            )).onError(error -> failMeasuredPing(
+                    pingAttempt,
+                    result,
+                    error
+            ));
+        } catch (Throwable error) {
+            failMeasuredPing(
+                    pingAttempt,
+                    result,
+                    error
+            );
+        }
+    }
+
+    public ARFuture<Long> measurePingNs() {
+        ARFuture<Long> result = ARFuture.make();
+
+        Thread.startVirtualThread(
+                () -> runMeasuredPing(result)
+        );
+
+        return result;
     }
 }

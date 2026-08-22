@@ -2,8 +2,18 @@ package io.aether.examples.pointToPoint;
 
 import io.aether.StandardUUIDs;
 import io.aether.api.common.CryptoLib;
+
+import io.aether.api.common.ServerDescriptor;
+import io.aether.api.common.ServerDescriptorWithGeo;
+
 import io.aether.cloud.client.AetherCloudClient;
 import io.aether.cloud.client.ClientStateInMemory;
+
+import io.aether.cloud.client.ClientCloud;
+import io.aether.cloud.client.ConnectionWork;
+import io.aether.cloud.client.MessageEventListener;
+import io.aether.cloud.client.MessageNode;
+
 import io.aether.common.AccessGroupI;
 import io.aether.logger.Log;
 import io.aether.utils.ConcurrentHashSet;
@@ -12,11 +22,17 @@ import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
 
 import java.net.URI;
+
+import java.nio.ByteBuffer;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+
+
+
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -360,7 +376,15 @@ public class PointToPointTest {
                 if (checkReceiveWarmMessage.isFinalStatus()) {
                     warmTask.cancel(false);
                 }
-            }).onError(testDoneFuture::error);
+
+            }).onError(error -> failWithCleanup(
+                    client1,
+                    client2,
+                    testDoneFuture,
+                    error,
+                    "p2p"
+            ));
+
 
             checkReceiveWarmMessage.to(() -> {
                 ScheduledFuture<?> task = resendTask.getAndSet(null);
@@ -382,17 +406,896 @@ public class PointToPointTest {
 
                 Log.info("TEST IS DONE!");
 
-                client1.destroy(true).to(() ->
-                        client2.destroy(true)
-                                .to(testDoneFuture::done)
-                                .onError(testDoneFuture::error)
-                ).onError(testDoneFuture::error);
-            }).onError(testDoneFuture::error);
 
-        }).onError(testDoneFuture::error);
+
+                Thread.startVirtualThread(() -> {
+                    try {
+                        selfDestructAndDestroy(
+                                client1,
+                                "p2p client1"
+                        );
+                        selfDestructAndDestroy(
+                                client2,
+                                "p2p client2"
+                        );
+                        testDoneFuture.done();
+                    } catch (Throwable error) {
+                        failWithCleanup(
+                                client1,
+                                client2,
+                                testDoneFuture,
+                                error,
+                                "p2p"
+                        );
+                    }
+                });
+
+
+
+            }).onError(error -> failWithCleanup(
+                    client1,
+                    client2,
+                    testDoneFuture,
+                    error,
+                    "p2p"
+            ));
+
+
+
+        }).onError(error -> failWithCleanup(
+                client1,
+                client2,
+                testDoneFuture,
+                error,
+                "p2p"
+        ));
+
 
         return testDoneFuture;
     }
+
+
+    public AFuture p2pAcrossWorkServers() {
+        var parent = UUID.fromString("B0600A31-1ACC-BB39-35C9-F1476C1F40E2");
+
+        if (clientConfig1 == null) {
+            clientConfig1 = new ClientStateInMemory(
+                    parent,
+                    registrationUri,
+                    null,
+                    CryptoLib.HYDROGEN
+            );
+        }
+        if (clientConfig2 == null) {
+            clientConfig2 = new ClientStateInMemory(
+                    parent,
+                    registrationUri,
+                    null,
+                    CryptoLib.HYDROGEN
+            );
+        }
+
+        AetherCloudClient client1 =
+                new AetherCloudClient(clientConfig1, "server-canary-client1");
+        AetherCloudClient client2 =
+                new AetherCloudClient(clientConfig2, "server-canary-client2");
+
+        AFuture testDoneFuture = AFuture.make();
+
+        Thread.startVirtualThread(() -> {
+            try {
+                awaitFutureSuccess(
+                        AFuture.all(client1.startFuture, client2.startFuture),
+                        30_000,
+                        "connect canary clients"
+                );
+
+                ServerDescriptorWithGeo[] servers = awaitResult(
+                        client1.getServers(),
+                        10_000,
+                        "enumerate WORK servers"
+                );
+
+                if (servers.length == 0) {
+                    throw new IllegalStateException(
+                            "No WORK servers returned by getServers()"
+                    );
+                }
+
+                short[] sids = new short[servers.length];
+                for (int i = 0; i < servers.length; i++) {
+                    sids[i] = servers[i].getId();
+                }
+
+                var client1Api = awaitResult(
+                        client1.getClientApi(client1.getUid()),
+                        10_000,
+                        "open client1 cloud API"
+                );
+                var client2Api = awaitResult(
+                        client2.getClientApi(client2.getUid()),
+                        10_000,
+                        "open client2 cloud API"
+                );
+
+                awaitFutureSuccess(
+                        client1Api.addServersToCloud(sids),
+                        10_000,
+                        "add WORK servers to client1 cloud"
+                );
+                awaitFutureSuccess(
+                        client2Api.addServersToCloud(sids),
+                        10_000,
+                        "add WORK servers to client2 cloud"
+                );
+
+                waitForCloudSids(
+                        client1,
+                        client1.getUid(),
+                        sids,
+                        10_000
+                );
+                waitForCloudSids(
+                        client2,
+                        client2.getUid(),
+                        sids,
+                        10_000
+                );
+
+                final int probeMagic = 0xA37ECAFE;
+
+                MessageEventListener routeBySid =
+                        new MessageEventListener() {
+                            @Override
+                            public void setConsumerCloud(
+                                    MessageNode messageNode,
+                                    ClientCloud cloud
+                            ) {
+                                for (short sid : cloud.getData()) {
+                                    messageNode.addConsumerServerOut(sid);
+                                }
+                            }
+
+                            @Override
+                            public void onResolveConsumerServer(
+                                    MessageNode messageNode,
+                                    ServerDescriptor serverDescriptor
+                            ) {
+                                messageNode.addConsumerServerOut(
+                                        serverDescriptor
+                                );
+                            }
+
+                            @Override
+                            public void onResolveConsumerConnection(
+                                    MessageNode messageNode,
+                                    ConnectionWork connection
+                            ) {
+                                messageNode.addConsumerConnectionOut(
+                                        connection
+                                );
+                            }
+
+                            @Override
+                            public boolean shouldSendViaConnection(
+                                    MessageNode messageNode,
+                                    ConnectionWork connection,
+                                    byte[] message
+                            ) {
+                                if (message == null || message.length != 10) {
+                                    return false;
+                                }
+
+                                ByteBuffer input = ByteBuffer.wrap(message);
+
+                                return input.getInt() == probeMagic
+                                        && input.getShort()
+                                        == connection
+                                        .getServerDescriptor()
+                                        .getId();
+                            }
+                        };
+
+                MessageNode forwardNode = client1.getMessageNode(
+                        client2.getUid(),
+                        routeBySid
+                );
+                MessageNode reverseNode = client2.getMessageNode(
+                        client1.getUid(),
+                        routeBySid
+                );
+
+                for (short sid : sids) {
+                    forwardNode.addConsumerServerOut(sid);
+                    reverseNode.addConsumerServerOut(sid);
+                }
+
+                ConcurrentHashMap<Long, ARFuture<Long>> forwardDeliveries =
+                        new ConcurrentHashMap<>();
+                ConcurrentHashMap<Long, ARFuture<Long>> reverseDeliveries =
+                        new ConcurrentHashMap<>();
+
+                client2.onMessage((fromUid, data) -> {
+                    if (!client1.getUid().equals(fromUid)
+                            || data == null
+                            || data.length != 10) {
+                        return;
+                    }
+
+                    ByteBuffer input = ByteBuffer.wrap(data);
+
+                    if (input.getInt() != probeMagic) {
+                        return;
+                    }
+
+                    short sid = input.getShort();
+                    int sequence = input.getInt();
+                    long key = probeKey(sid, sequence);
+
+                    ARFuture<Long> delivery =
+                            forwardDeliveries.remove(key);
+
+                    if (delivery != null) {
+                        delivery.tryDone(System.nanoTime());
+                    }
+                });
+
+                client1.onMessage((fromUid, data) -> {
+                    if (!client2.getUid().equals(fromUid)
+                            || data == null
+                            || data.length != 10) {
+                        return;
+                    }
+
+                    ByteBuffer input = ByteBuffer.wrap(data);
+
+                    if (input.getInt() != probeMagic) {
+                        return;
+                    }
+
+                    short sid = input.getShort();
+                    int sequence = input.getInt();
+                    long key = probeKey(sid, sequence);
+
+                    ARFuture<Long> delivery =
+                            reverseDeliveries.remove(key);
+
+                    if (delivery != null) {
+                        delivery.tryDone(System.nanoTime());
+                    }
+                });
+
+                Set<Short> failedSids = new ConcurrentHashSet<>();
+
+                List<Thread> probeThreads = new ArrayList<>();
+
+                final int minSamples = 15;
+                final int maxSamples = 300;
+                final int requiredStableSamples = 3;
+
+                final int maxSampleAttempts = 3;
+
+                final double targetErrorNs =
+                        java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(1);
+
+
+                final long measurementDeadlineNs =
+                        System.nanoTime()
+                                + java.util.concurrent.TimeUnit.SECONDS.toNanos(240);
+
+                for (int sidIndex = 0; sidIndex < sids.length; sidIndex++) {
+                    short sid = sids[sidIndex];
+
+                    long remainingBudgetNs = Math.max(
+                            0L,
+                            measurementDeadlineNs - System.nanoTime()
+                    );
+
+                    int remainingSids = sids.length - sidIndex;
+
+                    long maxProbeDurationNs =
+                            remainingBudgetNs / Math.max(1, remainingSids);
+
+                    probeThreads.add(Thread.startVirtualThread(() -> {
+                        try {
+                            ConnectionWork connection1 =
+                                    waitForConnection(client1, sid, 10_000);
+                            ConnectionWork connection2 =
+                                    waitForConnection(client2, sid, 10_000);
+
+                            int sampleCount = 0;
+                            int stableSamples = 0;
+                            int negativeSamples = 0;
+
+                            int sampleAttempts = 0;
+                            int sampleRetries = 0;
+                            int probeSequence = 0;
+
+
+                            long totalPingANs = 0L;
+                            long totalPingBNs = 0L;
+                            long totalForwardNs = 0L;
+                            long totalReverseNs = 0L;
+
+                            double meanInternalNs = 0.0;
+                            double m2InternalNs = 0.0;
+                            double error95Ns = Double.POSITIVE_INFINITY;
+
+                            long statisticsStartedNs = System.nanoTime();
+
+
+                            while (sampleCount < maxSamples
+                                    && System.nanoTime() - statisticsStartedNs
+                                    < maxProbeDurationNs
+                                    && System.nanoTime() < measurementDeadlineNs) {
+
+
+
+                                int sampleOrdinal = sampleCount + 1;
+
+                                long pingANs;
+                                long pingBNs;
+                                long forwardNs;
+                                long reverseNs;
+
+                                int attempt = 0;
+
+                                while (true) {
+                                    attempt++;
+                                    sampleAttempts++;
+
+                                    int sequence = ++probeSequence;
+
+                                    try {
+                                        pingANs = awaitResult(
+                                                connection1.measurePingNs(),
+                                                12_000,
+                                                "ping client1 through SID "
+                                                        + sid
+                                                        + " sample "
+                                                        + sampleOrdinal
+                                                        + " attempt "
+                                                        + attempt
+                                        );
+
+                                        pingBNs = awaitResult(
+                                                connection2.measurePingNs(),
+                                                12_000,
+                                                "ping client2 through SID "
+                                                        + sid
+                                                        + " sample "
+                                                        + sampleOrdinal
+                                                        + " attempt "
+                                                        + attempt
+                                        );
+
+                                        forwardNs = measureProbeDelivery(
+                                                forwardNode,
+                                                forwardDeliveries,
+                                                sid,
+                                                sequence,
+                                                probeMagic,
+                                                "A->B"
+                                        );
+
+                                        reverseNs = measureProbeDelivery(
+                                                reverseNode,
+                                                reverseDeliveries,
+                                                sid,
+                                                sequence,
+                                                probeMagic,
+                                                "B->A"
+                                        );
+
+                                        break;
+                                    } catch (Throwable sampleError) {
+                                        stableSamples = 0;
+
+                                        if (attempt >= maxSampleAttempts
+                                                || System.nanoTime()
+                                                >= measurementDeadlineNs) {
+                                            throw sampleError;
+                                        }
+
+                                        sampleRetries++;
+
+                                        String errorMessage =
+                                                String.valueOf(
+                                                        sampleError.getMessage()
+                                                )
+                                                        .replace('\n', ' ')
+                                                        .replace('\r', ' ');
+
+                                        System.out.println(
+                                                "AETHER_JAVA_CLIENT_SERVER_RETRY"
+                                                        + " sid=" + sid
+                                                        + " sample=" + sampleOrdinal
+                                                        + " attempt=" + attempt
+                                                        + " next_attempt="
+                                                        + (attempt + 1)
+                                                        + " error="
+                                                        + sampleError
+                                                        .getClass()
+                                                        .getSimpleName()
+                                                        + " message="
+                                                        + errorMessage
+                                        );
+                                    }
+                                }
+
+
+                                double internalNs = (
+                                        (double) forwardNs
+                                                + reverseNs
+                                                - pingANs
+                                                - pingBNs
+                                ) / 2.0;
+
+                                sampleCount++;
+
+                                totalPingANs += pingANs;
+                                totalPingBNs += pingBNs;
+                                totalForwardNs += forwardNs;
+                                totalReverseNs += reverseNs;
+
+                                if (internalNs < 0.0) {
+                                    negativeSamples++;
+                                }
+
+                                double delta =
+                                        internalNs - meanInternalNs;
+                                meanInternalNs += delta / sampleCount;
+                                double delta2 =
+                                        internalNs - meanInternalNs;
+                                m2InternalNs += delta * delta2;
+
+                                if (sampleCount > 1) {
+                                    double variance =
+                                            m2InternalNs
+                                                    / (sampleCount - 1);
+
+                                    double standardDeviationNs =
+                                            Math.sqrt(
+                                                    Math.max(0.0, variance)
+                                            );
+
+                                    error95Ns =
+                                            1.96
+                                                    * standardDeviationNs
+                                                    / Math.sqrt(sampleCount);
+                                }
+
+                                long error95Us = sampleCount > 1
+                                        ? Math.round(error95Ns / 1_000.0)
+                                        : -1L;
+
+                                System.out.println(
+                                        "AETHER_JAVA_CLIENT_SERVER_SAMPLE"
+                                                + " sid=" + sid
+                                                + " sample=" + sampleCount
+
+                                                + " attempt=" + attempt
+                                                + " total_attempts="
+                                                + sampleAttempts
+                                                + " retries="
+                                                + sampleRetries
+
+                                                + " ping_a_us="
+                                                + Math.round(
+                                                        pingANs / 1_000.0
+                                                )
+                                                + " ping_b_us="
+                                                + Math.round(
+                                                        pingBNs / 1_000.0
+                                                )
+                                                + " forward_us="
+                                                + Math.round(
+                                                        forwardNs / 1_000.0
+                                                )
+                                                + " reverse_us="
+                                                + Math.round(
+                                                        reverseNs / 1_000.0
+                                                )
+                                                + " internal_us="
+                                                + Math.round(
+                                                        internalNs / 1_000.0
+                                                )
+                                                + " mean_internal_us="
+                                                + Math.round(
+                                                        meanInternalNs / 1_000.0
+                                                )
+                                                + " error95_us="
+                                                + error95Us
+                                );
+
+                                if (sampleCount >= minSamples
+                                        && error95Ns <= targetErrorNs) {
+                                    stableSamples++;
+                                } else {
+                                    stableSamples = 0;
+                                }
+
+                                if (stableSamples
+                                        >= requiredStableSamples) {
+                                    break;
+                                }
+                            }
+
+                            if (sampleCount == 0) {
+                                throw new IllegalStateException(
+                                        "No measurement samples for SID " + sid
+                                );
+                            }
+
+                            boolean converged =
+                                    stableSamples >= requiredStableSamples;
+
+                            long meanPingAUs = Math.round(
+                                    totalPingANs
+                                            / (double) sampleCount
+                                            / 1_000.0
+                            );
+                            long meanPingBUs = Math.round(
+                                    totalPingBNs
+                                            / (double) sampleCount
+                                            / 1_000.0
+                            );
+                            long meanForwardUs = Math.round(
+                                    totalForwardNs
+                                            / (double) sampleCount
+                                            / 1_000.0
+                            );
+                            long meanReverseUs = Math.round(
+                                    totalReverseNs
+                                            / (double) sampleCount
+                                            / 1_000.0
+                            );
+                            long messageRoundtripUs = Math.round(
+                                    (totalForwardNs + totalReverseNs)
+                                            / (double) sampleCount
+                                            / 1_000.0
+                            );
+
+                            double standardDeviationNs =
+                                    sampleCount > 1
+                                            ? Math.sqrt(
+                                                    Math.max(
+                                                            0.0,
+                                                            m2InternalNs
+                                                                    / (sampleCount - 1)
+                                                    )
+                                            )
+                                            : 0.0;
+
+                            long finalError95Us =
+                                    sampleCount > 1
+                                            ? Math.round(
+                                                    error95Ns / 1_000.0
+                                            )
+                                            : -1L;
+
+                            System.out.println(
+                                    "AETHER_JAVA_CLIENT_SERVER_METRICS"
+                                            + " sid=" + sid
+                                            + " samples=" + sampleCount
+
+                                            + " attempts=" + sampleAttempts
+                                            + " retries=" + sampleRetries
+
+                                            + " ping_a_us=" + meanPingAUs
+                                            + " ping_b_us=" + meanPingBUs
+                                            + " forward_us=" + meanForwardUs
+                                            + " reverse_us=" + meanReverseUs
+                                            + " message_roundtrip_us="
+                                            + messageRoundtripUs
+                                            + " aether_delivery_us="
+                                            + Math.round(
+                                                    meanInternalNs / 1_000.0
+                                            )
+                                            + " stddev_us="
+                                            + Math.round(
+                                                    standardDeviationNs
+                                                            / 1_000.0
+                                            )
+                                            + " error95_us="
+                                            + finalError95Us
+                                            + " negative_samples="
+                                            + negativeSamples
+                                            + " converged="
+                                            + (converged ? 1 : 0)
+                                            + " success=1"
+                            );
+
+                        } catch (Throwable error) {
+                            failedSids.add(sid);
+
+                            System.out.println(
+                                    "AETHER_JAVA_CLIENT_SERVER_METRICS"
+                                            + " sid=" + sid
+                                            + " success=0"
+                            );
+
+                            Log.error(
+                                    "WORK server canary failed for SID " + sid,
+                                    error
+                            );
+                        }
+                    }));
+
+                    try {
+                        probeThreads.get(probeThreads.size() - 1).join();
+                    } catch (InterruptedException error) {
+                        Thread.currentThread().interrupt();
+                        throw new RuntimeException(
+                                "Interrupted while waiting for WORK server probe SID " + sid,
+                                error
+                        );
+                    }
+
+                }
+
+                for (Thread probeThread : probeThreads) {
+                    try {
+                        probeThread.join();
+                    } catch (InterruptedException error) {
+                        Thread.currentThread().interrupt();
+                        throw new RuntimeException(
+                                "Interrupted while waiting for WORK server probes",
+                                error
+                        );
+                    }
+                }
+
+                if (!failedSids.isEmpty()) {
+                    throw new IllegalStateException(
+                            "WORK server canary failed for SIDs "
+                                    + failedSids
+                    );
+                }
+
+                selfDestructAndDestroy(
+                        client1,
+                        "canary client1"
+                );
+                selfDestructAndDestroy(
+                        client2,
+                        "canary client2"
+                );
+
+                testDoneFuture.done();
+
+            } catch (Throwable error) {
+                bestEffortSelfDestructAndDestroy(
+                        client1,
+                        "canary client1"
+                );
+                bestEffortSelfDestructAndDestroy(
+                        client2,
+                        "canary client2"
+                );
+
+                testDoneFuture.tryError(error);
+            }
+        });
+
+        return testDoneFuture;
+    }
+
+
+
+    private static void failWithCleanup(
+            AetherCloudClient client1,
+            AetherCloudClient client2,
+            AFuture result,
+            Throwable error,
+            String name
+    ) {
+        Thread.startVirtualThread(() -> {
+            bestEffortSelfDestructAndDestroy(
+                    client1,
+                    name + " client1"
+            );
+            bestEffortSelfDestructAndDestroy(
+                    client2,
+                    name + " client2"
+            );
+            result.tryError(error);
+        });
+    }
+
+
+
+    private static void selfDestructAndDestroy(
+            AetherCloudClient client,
+            String name
+    ) {
+        try {
+            var authApi = awaitResult(
+                    client.getAuthApiFuture(),
+                    8_000,
+                    "open " + name + " auth API for self-destruct"
+            );
+
+            awaitFutureSuccess(
+                    authApi.selfDestruct(),
+                    10_000,
+                    "self-destruct " + name
+            );
+        } finally {
+            awaitFutureSuccess(
+                    client.destroy(true),
+                    8_000,
+                    "destroy " + name
+            );
+        }
+    }
+
+    private static void bestEffortSelfDestructAndDestroy(
+            AetherCloudClient client,
+            String name
+    ) {
+        try {
+            var authApi = awaitResult(
+                    client.getAuthApiFuture(),
+                    3_000,
+                    "open " + name + " auth API for cleanup"
+            );
+
+            awaitFutureSuccess(
+                    authApi.selfDestruct(),
+                    5_000,
+                    "self-destruct " + name
+            );
+        } catch (Throwable cleanupError) {
+            Log.error(
+                    "Best-effort canary cleanup failed for " + name,
+                    cleanupError
+            );
+        }
+
+        client.destroy(true);
+    }
+
+
+
+    private static void waitForCloudSids(
+            AetherCloudClient client,
+            UUID uid,
+            short[] expectedSids,
+            long timeoutMs
+    ) {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+
+        while (System.currentTimeMillis() < deadline) {
+            ClientCloud cloud = client.getCloud(uid).getNow();
+
+            if (cloud != null
+                    && containsAllSids(
+                    cloud.getData(),
+                    expectedSids
+            )) {
+                return;
+            }
+
+            RU.sleep(50);
+        }
+
+        throw new IllegalStateException(
+                "Cloud did not contain all expected WORK servers for "
+                        + uid
+        );
+    }
+
+    private static boolean containsAllSids(
+            short[] actual,
+            short[] expected
+    ) {
+        for (short expectedSid : expected) {
+            boolean found = false;
+
+            for (short actualSid : actual) {
+                if (actualSid == expectedSid) {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+
+    private static ConnectionWork waitForConnection(
+            AetherCloudClient client,
+            short sid,
+            long timeoutMs
+    ) {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+
+        while (System.currentTimeMillis() < deadline) {
+            ConnectionWork connection = client
+                    .getConnections()
+                    .stream()
+                    .filter(candidate ->
+                            candidate
+                                    .getServerDescriptor()
+                                    .getId() == sid
+                    )
+                    .filter(ConnectionWork::isWritable)
+                    .findFirst()
+                    .orElse(null);
+
+            if (connection != null) {
+                return connection;
+            }
+
+            RU.sleep(50);
+        }
+
+        throw new IllegalStateException(
+                "Writable connection was not established for WORK SID "
+                        + sid
+        );
+    }
+
+
+    private static void awaitFutureSuccess(
+            AFuture future,
+            long timeoutMs,
+            String operation
+    ) {
+        boolean successful = future.waitSuccessful(timeoutMs);
+
+        if (future.isError()) {
+            throw new RuntimeException(
+                    operation,
+                    future.getError()
+            );
+        }
+
+        if (!successful) {
+            throw new RuntimeException(
+                    operation + " timed out after " + timeoutMs + " ms"
+            );
+        }
+    }
+
+    private static <T> T awaitResult(
+            ARFuture<T> future,
+            long timeoutMs,
+            String operation
+    ) {
+        boolean successful = future.waitSuccessful(timeoutMs);
+
+        if (future.isError()) {
+            throw new RuntimeException(
+                    operation,
+                    future.getError()
+            );
+        }
+
+        if (!successful) {
+            throw new RuntimeException(
+                    operation + " timed out after " + timeoutMs + " ms"
+            );
+        }
+
+        T result = future.getNow();
+
+        if (result == null) {
+            throw new RuntimeException(
+                    operation + " completed without a result"
+            );
+        }
+
+        return result;
+    }
+
+
 
     @SuppressWarnings("deprecation")
     public AFuture pointToPointWithService() {
@@ -673,5 +1576,95 @@ public class PointToPointTest {
             client2.destroy(true);
         });
         return testDoneFuture;
+    }
+    private long probeKey(
+            short sid,
+            int sequence
+    ) {
+        return (((long) sid & 0xFFFFL) << 32)
+                | ((long) sequence & 0xFFFFFFFFL);
+    }
+    private long measureProbeDelivery(
+            MessageNode messageNode,
+            ConcurrentHashMap<Long, ARFuture<Long>> deliveries,
+            short sid,
+            int sequence,
+            int probeMagic,
+            String direction
+    ) {
+        long key = probeKey(sid, sequence);
+        ARFuture<Long> delivery = ARFuture.make();
+
+        delivery.timeoutError(
+                10,
+                "Timeout waiting for "
+                        + direction
+                        + " delivery through SID "
+                        + sid
+                        + " sample "
+                        + sequence
+        );
+
+        ARFuture<Long> previous = deliveries.putIfAbsent(key, delivery);
+
+        if (previous != null) {
+            throw new IllegalStateException(
+                    "Duplicate probe key for SID "
+                            + sid
+                            + " sample "
+                            + sequence
+                            + " direction "
+                            + direction
+            );
+        }
+
+        byte[] payload = ByteBuffer
+                .allocate(10)
+                .putInt(probeMagic)
+                .putShort(sid)
+                .putInt(sequence)
+                .array();
+
+        long sendStartedNs = System.nanoTime();
+
+        try {
+            AFuture sendFuture = messageNode.send(payload);
+
+            sendFuture.timeoutError(
+                    10,
+                    "Timeout sending "
+                            + direction
+                            + " through SID "
+                            + sid
+                            + " sample "
+                            + sequence
+            );
+
+            awaitFutureSuccess(
+                    sendFuture,
+                    12_000,
+                    "send "
+                            + direction
+                            + " through SID "
+                            + sid
+                            + " sample "
+                            + sequence
+            );
+
+            long receivedNs = awaitResult(
+                    delivery,
+                    12_000,
+                    "receive "
+                            + direction
+                            + " through SID "
+                            + sid
+                            + " sample "
+                            + sequence
+            );
+
+            return receivedNs - sendStartedNs;
+        } finally {
+            deliveries.remove(key, delivery);
+        }
     }
 }
