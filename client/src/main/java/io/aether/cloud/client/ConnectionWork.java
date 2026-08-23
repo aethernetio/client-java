@@ -40,6 +40,10 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
     private static final long PING_ACQUIRE_TIMEOUT_MS =
             PING_RESPONSE_TIMEOUT_MS + 1_000L;
 
+    private static final long RX_WINDOW_MS =
+            PING_RESPONSE_TIMEOUT_MS;
+
+
     private static final class PingAttempt {
     }
 
@@ -259,6 +263,9 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             pingInterval = 6_000L;
         }
 
+        final long nextConnectMsDuration =
+                pingInterval;
+
         if (lastWorkTime != 0L
                 && now - lastWorkTime < pingInterval) {
             return;
@@ -273,10 +280,10 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
 
         lastWorkTime = now;
 
-        long advertisedUapDuration = Math.max(
-                pingInterval * 5L,
-                5_000L
-        );
+
+        long rxWindowMs =
+                RX_WINDOW_MS;
+
 
         Thread.startVirtualThread(() -> {
             try {
@@ -297,8 +304,8 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
 
         try {
             api.ping(
-                    advertisedUapDuration,
-                    advertisedUapDuration
+                    nextConnectMsDuration,
+                    rxWindowMs
             ).to(() -> {
                 if (!activePing.compareAndSet(
                         pingAttempt,
@@ -312,9 +319,9 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                 Log.debug(
                         "Ping response received",
                         "nextConnectMsDuration",
-                        advertisedUapDuration,
+                        nextConnectMsDuration,
                         "rxWindowMs",
-                        advertisedUapDuration
+                        rxWindowMs
                 );
             }).onError(error -> {
                 if (!activePing.compareAndSet(
@@ -528,10 +535,10 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             pingInterval = 6_000L;
         }
 
-        long advertisedUapDuration = Math.max(
-                pingInterval * 5L,
-                5_000L
-        );
+
+        long rxWindowMs =
+                RX_WINDOW_MS;
+
 
         lastWorkTime = RU.time();
         long startedNs = System.nanoTime();
@@ -543,8 +550,8 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
 
         try {
             authorizedApi.ping(
-                    advertisedUapDuration,
-                    advertisedUapDuration
+                    pingInterval,
+                    rxWindowMs
             ).to(() -> completeMeasuredPing(
                     pingAttempt,
                     result,
