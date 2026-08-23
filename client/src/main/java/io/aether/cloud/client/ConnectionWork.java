@@ -51,7 +51,13 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             new AtomicReference<>();
 
     boolean basicStatus;
-    long lastWorkTime;
+
+    private final PingRttHistory pingRttHistory =
+            new PingRttHistory();
+
+    private final AtomicLong nextPingAtMs =
+            new AtomicLong();
+
     volatile boolean firstAuth;
 
     public ConnectionWork(AetherCloudClient client, ServerDescriptor s) {
@@ -85,7 +91,8 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         }
 
         if (isWritable) {
-            lastWorkTime = 0L;
+            nextPingAtMs.set(0L);
+
             Log.info(
                     "Network restored. Resetting auth state and forcing flush.",
                     "uri",
@@ -255,102 +262,118 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
     }
 
 
+
+    private long resolvedPingIntervalMs() {
+        long pingInterval =
+                client.getPingTime();
+
+        return pingInterval > 0L
+                ? pingInterval
+                : 6_000L;
+    }
+
+    private void scheduleNextPing(
+            long sentAtMs,
+            long fullPingIntervalMs
+    ) {
+        long delayMs =
+                pingRttHistory.nextPingDelayMs(
+                        fullPingIntervalMs
+                );
+
+        long nextPingTime =
+                delayMs > Long.MAX_VALUE - sentAtMs
+                        ? Long.MAX_VALUE
+                        : sentAtMs + delayMs;
+
+        nextPingAtMs.set(nextPingTime);
+    }
+
+    private long recordSuccessfulPingRtt(
+            long startedNs,
+            long sentAtMs,
+            long fullPingIntervalMs
+    ) {
+        long rttNs =
+                Math.max(
+                        1L,
+                        System.nanoTime() - startedNs
+                );
+
+        pingRttHistory.record(rttNs);
+
+        scheduleNextPing(
+                sentAtMs,
+                fullPingIntervalMs
+        );
+
+        return rttNs;
+    }
+
+
     private void sendPingIfNeeded(AuthorizedApiRemote api) {
         long now = RU.time();
-        long pingInterval = client.getPingTime();
 
-        if (pingInterval <= 0L) {
-            pingInterval = 6_000L;
-        }
+        long scheduledPingTime =
+                nextPingAtMs.get();
 
-        final long nextConnectMsDuration =
-                pingInterval;
-
-        if (lastWorkTime != 0L
-                && now - lastWorkTime < pingInterval) {
+        if (scheduledPingTime != 0L
+                && now < scheduledPingTime) {
             return;
         }
 
-        PingAttempt pingAttempt = new PingAttempt();
+        PingAttempt pingAttempt =
+                new PingAttempt();
 
         if (!isWritable()
-                || !activePing.compareAndSet(null, pingAttempt)) {
+                || !activePing.compareAndSet(
+                null,
+                pingAttempt
+        )) {
             return;
         }
 
-        lastWorkTime = now;
+        final long fullPingIntervalMs =
+                resolvedPingIntervalMs();
 
-
-        long rxWindowMs =
+        final long rxWindowMs =
                 RX_WINDOW_MS;
 
+        final long sentAtMs =
+                RU.time();
 
-        Thread.startVirtualThread(() -> {
-            try {
-                Thread.sleep(PING_RESPONSE_TIMEOUT_MS);
-            } catch (InterruptedException error) {
-                Thread.currentThread().interrupt();
-                return;
-            }
+        final long startedNs =
+                System.nanoTime();
 
-            if (activePing.compareAndSet(pingAttempt, null)) {
-                firstAuth = false;
+        scheduleNextPing(
+                sentAtMs,
+                fullPingIntervalMs
+        );
 
-                Log.warn(
-                        "Ping response timed out, will retry after ping interval"
-                );
-            }
-        });
+        startBackgroundPingTimeout(
+                pingAttempt
+        );
 
         try {
             api.ping(
-                    nextConnectMsDuration,
+                    fullPingIntervalMs,
                     rxWindowMs
-            ).to(() -> {
-                if (!activePing.compareAndSet(
-                        pingAttempt,
-                        null
-                )) {
-                    return;
-                }
-
-                firstAuth = true;
-
-                Log.debug(
-                        "Ping response received",
-                        "nextConnectMsDuration",
-                        nextConnectMsDuration,
-                        "rxWindowMs",
-                        rxWindowMs
-                );
-            }).onError(error -> {
-                if (!activePing.compareAndSet(
-                        pingAttempt,
-                        null
-                )) {
-                    return;
-                }
-
-                firstAuth = false;
-
-                Log.warn(
-                        "Ping failed, will retry after ping interval",
-                        error
-                );
-            });
-        } catch (Throwable error) {
-            if (!activePing.compareAndSet(
+            ).to(() -> completeBackgroundPing(
                     pingAttempt,
-                    null
-            )) {
-                return;
-            }
-
-            firstAuth = false;
-
-            Log.warn(
-                    "Failed to send ping, will retry after ping interval",
-                    error
+                    startedNs,
+                    sentAtMs,
+                    fullPingIntervalMs,
+                    rxWindowMs
+            )).onError(error -> failBackgroundPing(
+                    pingAttempt,
+                    error,
+                    "Ping failed, will retry after ping interval"
+            ));
+        } catch (Throwable error) {
+            failBackgroundPing(
+                    pingAttempt,
+                    error,
+                    "Failed to send ping, will retry after ping interval"
             );
         }
     }
@@ -483,7 +506,9 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
     private void completeMeasuredPing(
             PingAttempt pingAttempt,
             ARFuture<Long> result,
-            long startedNs
+            long startedNs,
+            long sentAtMs,
+            long fullPingIntervalMs
     ) {
         if (!activePing.compareAndSet(
                 pingAttempt,
@@ -497,11 +522,16 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             return;
         }
 
+        long rttNs =
+                recordSuccessfulPingRtt(
+                        startedNs,
+                        sentAtMs,
+                        fullPingIntervalMs
+                );
+
         firstAuth = true;
 
-        result.tryDone(
-                System.nanoTime() - startedNs
-        );
+        result.tryDone(rttNs);
     }
 
 
@@ -529,19 +559,22 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             return;
         }
 
-        long pingInterval = client.getPingTime();
-
-        if (pingInterval <= 0L) {
-            pingInterval = 6_000L;
-        }
-
+        long fullPingIntervalMs =
+                resolvedPingIntervalMs();
 
         long rxWindowMs =
                 RX_WINDOW_MS;
 
+        long sentAtMs =
+                RU.time();
 
-        lastWorkTime = RU.time();
-        long startedNs = System.nanoTime();
+        long startedNs =
+                System.nanoTime();
+
+        scheduleNextPing(
+                sentAtMs,
+                fullPingIntervalMs
+        );
 
         startMeasuredPingTimeout(
                 pingAttempt,
@@ -550,12 +583,14 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
 
         try {
             authorizedApi.ping(
-                    pingInterval,
+                    fullPingIntervalMs,
                     rxWindowMs
             ).to(() -> completeMeasuredPing(
                     pingAttempt,
                     result,
-                    startedNs
+                    startedNs,
+                    sentAtMs,
+                    fullPingIntervalMs
             )).onError(error -> failMeasuredPing(
                     pingAttempt,
                     result,
@@ -578,5 +613,86 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         );
 
         return result;
+    }
+    private void startBackgroundPingTimeout(
+            PingAttempt pingAttempt
+    ) {
+        Thread.startVirtualThread(() -> {
+            try {
+                Thread.sleep(
+                        PING_RESPONSE_TIMEOUT_MS
+                );
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+
+            if (!activePing.compareAndSet(
+                    pingAttempt,
+                    null
+            )) {
+                return;
+            }
+
+            firstAuth = false;
+
+            Log.warn(
+                    "Ping response timed out, will retry after ping interval"
+            );
+        });
+    }
+    private void completeBackgroundPing(
+            PingAttempt pingAttempt,
+            long startedNs,
+            long sentAtMs,
+            long fullPingIntervalMs,
+            long rxWindowMs
+    ) {
+        if (!activePing.compareAndSet(
+                pingAttempt,
+                null
+        )) {
+            return;
+        }
+
+        long rttNs =
+                recordSuccessfulPingRtt(
+                        startedNs,
+                        sentAtMs,
+                        fullPingIntervalMs
+                );
+
+        firstAuth = true;
+
+        Log.debug(
+                "Ping response received",
+                "nextConnectMsDuration",
+                fullPingIntervalMs,
+                "rxWindowMs",
+                rxWindowMs,
+                "rttNs",
+                rttNs,
+                "nextPingAtMs",
+                nextPingAtMs.get()
+        );
+    }
+    private void failBackgroundPing(
+            PingAttempt pingAttempt,
+            Throwable error,
+            String message
+    ) {
+        if (!activePing.compareAndSet(
+                pingAttempt,
+                null
+        )) {
+            return;
+        }
+
+        firstAuth = false;
+
+        Log.warn(
+                message,
+                error
+        );
     }
 }
