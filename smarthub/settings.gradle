@@ -12,3 +12,12 @@ plugins {
     id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
 }
 rootProject.name = 'smarthub'
+
+
+if (Boolean.getBoolean('smarthub.localClient')) {
+    includeBuild('..') {
+        dependencySubstitution {
+            substitute module('io.aether:cloud-client') using project(':client')
+        }
+    }
+}

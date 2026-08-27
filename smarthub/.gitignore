@@ -1,0 +1,4 @@
+# Runtime Aether client state
+smarthub-data/*.bin
+state.bin
+state-Emulator-*.bin

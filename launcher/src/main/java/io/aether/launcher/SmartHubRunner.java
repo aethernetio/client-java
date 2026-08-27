@@ -75,7 +75,7 @@ public class SmartHubRunner extends AbstractProjectRunner {
 
     @Override
     public String getGuiSourcePath() {
-        return "smarthub/src/main/resources/smarthub.html";
+        return "smarthub/guiNew/dist/simple_hub.html";
     }
 
     // TODO: Implement operations using Launcher's infrastructure (SSE, process management)
@@ -120,18 +120,57 @@ public class SmartHubRunner extends AbstractProjectRunner {
             Launcher.sendOk(t, "{\"status\":\"waiting_for_tools\"}");
             return;
         }
-        ctx.broadcast("log", "{\"stream\":\"build\",\"line\":\"Starting build...\"}");
-        Path repo = ctx.workspace().resolve("client-java");
-        String gradleBin = Launcher.gradleHome + "/bin/gradle";
-        String cmd = gradleBin + " --console=plain " + getGradleProject() + ":build";
-        String exportJdk = Launcher.jdkHome.startsWith(Launcher.workspace.resolve("tools").toString())
-                ? RunnerUtils.exportCmd("JAVA_HOME", Launcher.jdkHome) + " && " : "";
-        String localCmd = RunnerUtils.localCd(repo) + exportJdk + cmd;
-        ProcessBuilder pb = new ProcessBuilder(gradleBin, "--console=plain", getGradleProject() + ":build");
+
+        ctx.broadcast(
+                "log",
+                "{\"stream\":\"build\",\"line\":\"Starting build...\"}");
+
+        Path repo =
+                ctx.workspace()
+                        .resolve("client-java")
+                        .resolve("smarthub");
+
+        String gradleBin =
+                Launcher.gradleHome + "/bin/gradle";
+
+        String cmd =
+                gradleBin
+                        + " --console=plain"
+                        + " -Dsmarthub.localClient=true"
+                        + " build";
+
+        String exportJdk =
+                Launcher.jdkHome.startsWith(
+                        Launcher.workspace.resolve("tools").toString())
+                        ? RunnerUtils.exportCmd(
+                                "JAVA_HOME",
+                                Launcher.jdkHome) + " && "
+                        : "";
+
+        String localCmd =
+                RunnerUtils.localCd(repo)
+                        + exportJdk
+                        + cmd;
+
+        ProcessBuilder pb =
+                new ProcessBuilder(
+                        gradleBin,
+                        "--console=plain",
+                        "-Dsmarthub.localClient=true",
+                        "build");
+
         pb.directory(repo.toFile());
         pb.environment().put("PATH", System.getenv("PATH"));
         pb.environment().put("JAVA_HOME", Launcher.jdkHome);
-        RunnerUtils.runCommand(pb, "build", localCmd, ctx, null, "Build SmartHub");
+
+        RunnerUtils.runCommand(
+                pb,
+                "build",
+                localCmd,
+                ctx,
+                null,
+                "Build SmartHub");
+
         Launcher.sendOk(t, "{\"status\":\"started\"}");
     }
 
@@ -143,19 +182,60 @@ public class SmartHubRunner extends AbstractProjectRunner {
             Launcher.sendOk(t, "{\"status\":\"waiting_for_tools\"}");
             return;
         }
-        ctx.broadcast("log", "{\"stream\":\"run\",\"line\":\"Starting run...\"}");
+
+        ctx.broadcast(
+                "log",
+                "{\"stream\":\"run\",\"line\":\"Starting run...\"}");
+
         stopService();
-        Path repo = ctx.workspace().resolve("client-java");
-        String gradleBin = Launcher.gradleHome + "/bin/gradle";
-        String cmd = gradleBin + " --console=plain " + getGradleProject() + ":run";
-        String exportJdk = Launcher.jdkHome.startsWith(Launcher.workspace.resolve("tools").toString())
-                ? RunnerUtils.exportCmd("JAVA_HOME", Launcher.jdkHome) + " && " : "";
-        String localCmd = RunnerUtils.localCd(repo) + exportJdk + cmd;
-        ProcessBuilder pb = new ProcessBuilder(gradleBin, "--console=plain", getGradleProject() + ":run");
+
+        Path repo =
+                ctx.workspace()
+                        .resolve("client-java")
+                        .resolve("smarthub");
+
+        String gradleBin =
+                Launcher.gradleHome + "/bin/gradle";
+
+        String cmd =
+                gradleBin
+                        + " --console=plain"
+                        + " -Dsmarthub.localClient=true"
+                        + " run";
+
+        String exportJdk =
+                Launcher.jdkHome.startsWith(
+                        Launcher.workspace.resolve("tools").toString())
+                        ? RunnerUtils.exportCmd(
+                                "JAVA_HOME",
+                                Launcher.jdkHome) + " && "
+                        : "";
+
+        String localCmd =
+                RunnerUtils.localCd(repo)
+                        + exportJdk
+                        + cmd;
+
+        ProcessBuilder pb =
+                new ProcessBuilder(
+                        gradleBin,
+                        "--console=plain",
+                        "-Dsmarthub.localClient=true",
+                        "run");
+
         pb.directory(repo.toFile());
         pb.environment().put("PATH", System.getenv("PATH"));
         pb.environment().put("JAVA_HOME", Launcher.jdkHome);
-        serviceProcess = RunnerUtils.runCommand(pb, "run", localCmd, ctx, detectedServiceUuid, "Start SmartHub Service");
+
+        serviceProcess =
+                RunnerUtils.runCommand(
+                        pb,
+                        "run",
+                        localCmd,
+                        ctx,
+                        detectedServiceUuid,
+                        "Start SmartHub Service");
+
         ctx.broadcast("service_started", "{}");
         Launcher.sendOk(t, "{\"status\":\"started\"}");
     }
@@ -173,18 +253,61 @@ public class SmartHubRunner extends AbstractProjectRunner {
             Launcher.sendError(t, 400, "No service UUID");
             return;
         }
+
         stopEmulator();
-        Path repo = ctx.workspace().resolve("client-java");
-        String gradleBin = Launcher.gradleHome + "/bin/gradle";
-        String cmd = gradleBin + " --console=plain -DserviceUid=" + detectedServiceUuid.get() + " " + getGradleProject() + ":runEmulator";
-        String exportJdk = Launcher.jdkHome.startsWith(Launcher.workspace.resolve("tools").toString())
-                ? RunnerUtils.exportCmd("JAVA_HOME", Launcher.jdkHome) + " && " : "";
-        String localCmd = RunnerUtils.localCd(repo) + exportJdk + cmd;
-        ProcessBuilder pb = new ProcessBuilder(gradleBin, "--console=plain", "-DserviceUid=" + detectedServiceUuid.get(), getGradleProject() + ":runEmulator");
+
+        Path repo =
+                ctx.workspace()
+                        .resolve("client-java")
+                        .resolve("smarthub");
+
+        String gradleBin =
+                Launcher.gradleHome + "/bin/gradle";
+
+        String serviceUid =
+                detectedServiceUuid.get();
+
+        String cmd =
+                gradleBin
+                        + " --console=plain"
+                        + " -Dsmarthub.localClient=true"
+                        + " -DserviceUid=" + serviceUid
+                        + " runEmulator";
+
+        String exportJdk =
+                Launcher.jdkHome.startsWith(
+                        Launcher.workspace.resolve("tools").toString())
+                        ? RunnerUtils.exportCmd(
+                                "JAVA_HOME",
+                                Launcher.jdkHome) + " && "
+                        : "";
+
+        String localCmd =
+                RunnerUtils.localCd(repo)
+                        + exportJdk
+                        + cmd;
+
+        ProcessBuilder pb =
+                new ProcessBuilder(
+                        gradleBin,
+                        "--console=plain",
+                        "-Dsmarthub.localClient=true",
+                        "-DserviceUid=" + serviceUid,
+                        "runEmulator");
+
         pb.directory(repo.toFile());
         pb.environment().put("PATH", System.getenv("PATH"));
         pb.environment().put("JAVA_HOME", Launcher.jdkHome);
-        emulatorProcess = RunnerUtils.runCommand(pb, "emulator", localCmd, ctx, null, "Start Emulator");
+
+        emulatorProcess =
+                RunnerUtils.runCommand(
+                        pb,
+                        "emulator",
+                        localCmd,
+                        ctx,
+                        null,
+                        "Start Emulator");
+
         ctx.broadcast("emulator_started", "{}");
         Launcher.sendOk(t, "{\"status\":\"started\"}");
     }

@@ -103,23 +103,17 @@ function createCommandBlock(stream, localCmd) {
 if (commandBlocks[stream]) return;
 const block = document.createElement('div');
 block.className = 'cmd-block';
+
 block.innerHTML =
-'
-<div class="cmd-header" onclick="toggleBlock(\'' + stream + '\')">' +
-    '<span class="led running"></span>' +
-    '<span class="cmd-title">' + stream + '</span>' +
-    '
-</div>' +
-'
-<div class="cmd-body">' +
-    '
-    <div class="cmd-code" id="cmd-text-' + stream + '">' + escapeHtml(localCmd) + '</div>
-    ' +
-    '
-    <div class="cmd-log" id="cmd-log-' + stream + '"></div>
-    ' +
-    '
-</div>';
+        '<div class="cmd-header" onclick="toggleBlock(\'' + stream + '\')">' +
+        '<span class="led running"></span>' +
+        '<span class="cmd-title">' + stream + '</span>' +
+        '</div>' +
+        '<div class="cmd-body">' +
+        '<div class="cmd-code" id="cmd-text-' + stream + '">' + escapeHtml(localCmd) + '</div>' +
+        '<div class="cmd-log" id="cmd-log-' + stream + '"></div>' +
+        '</div>';
+
 commandsEl.appendChild(block);
 commandBlocks[stream] = block;
 activateBlock(stream);
@@ -129,8 +123,7 @@ activateBlock(stream);
 function appendCommandLog(stream, line) {
 const logEl = document.getElementById('cmd-log-' + stream);
 if (logEl) {
-logEl.innerHTML += '
-<div>' + line + '</div>';
+logEl.innerHTML += '<div>' + line + '</div>';
 logEl.scrollTop = logEl.scrollHeight;
 }
 }
@@ -164,8 +157,10 @@ evtSource.addEventListener('error', e => { statusEl.textContent = 'Error: ' + e.
 evtSource.addEventListener('uuid_found', e => {
 const d = JSON.parse(e.data);
 serviceUuid = d.uuid;
-uuidDisplay.innerHTML = 'Service UUID: <b>' + serviceUuid + '</b>
-<button onclick="window.open(\'https://aethernet.io/smarthub.html?uuid=' + serviceUuid + '\')">Open GUI</button>';
+
+uuidDisplay.innerHTML =
+        `Service UUID: <b>${serviceUuid}</b><button onclick="window.open('https://aethernet.io/smarthub.html?uuid=${serviceUuid}')">Open GUI</button>`;
+
 updateButtons();
 });
 evtSource.addEventListener('uuid_clear', e => {
@@ -315,8 +310,10 @@ document.getElementById('workspaceInput').value = s.workspace;
 serviceRunning = s.serviceRunning;
 emulatorRunning = s.emulatorRunning;
 if (s.serviceUuid) {
-uuidDisplay.innerHTML = 'Service UUID: <b>' + serviceUuid + '</b>
-<button onclick="window.open(\'https://aethernet.io/smarthub.html?uuid=' + serviceUuid + '\')">Open GUI</button>';
+
+uuidDisplay.innerHTML =
+        `Service UUID: <b>${serviceUuid}</b><button onclick="window.open('https://aethernet.io/smarthub.html?uuid=${serviceUuid}')">Open GUI</button>`;
+
 }
 if (s.cloned) {
 const project = document.getElementById('projectSelect').value;

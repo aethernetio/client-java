@@ -18,6 +18,10 @@ include ':chat'
 include ':pointToPoint'
 include ':smarthome'
 //include ':smarthome-plain'
-includeBuild 'smarthub'
+
+if (!Boolean.getBoolean('smarthub.localClient')) {
+    includeBuild 'smarthub'
+}
+
 include ':echo'
 includeBuild 'launcher'

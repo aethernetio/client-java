@@ -22,7 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class SmartHubService {
     private static final String TAG = "SmartHub";
-    private static final String DB_PATH = "smarthub-data/smarthub";
+    private static final String DEFAULT_DB_PATH = "smarthub-data/smarthub";
     private static final String STATE_PATH = "smarthub-data/client.bin";
     private final Map<UUID, DeviceSession> devices = new ConcurrentHashMap<>();
     private final Set<UUID> knownDevices = ConcurrentHashMap.newKeySet();
@@ -31,10 +31,21 @@ public class SmartHubService {
     private JdbcConnectionPool connectionPool;
     private io.aether.cloud.client.AetherCloudClient client;
     private io.aether.cloud.client.ClientState clientState;
+    private final String dbPath;
+
 
     public SmartHubService(ClientStateInMemory serviceState) {
+        this(serviceState, DEFAULT_DB_PATH);
+    }
+
+    SmartHubService(
+            ClientStateInMemory serviceState,
+            String dbPath) {
+
+        this.dbPath = dbPath;
         setClientState(serviceState);
     }
+
 
     public void setClientState(io.aether.cloud.client.ClientState state) {
         this.clientState = state;
@@ -52,30 +63,69 @@ public class SmartHubService {
     public AFuture start() throws Exception {
         try (var ctx = LNode.of(Log.SYSTEM_COMPONENT, TAG).context()) {
             Log.info("Starting SmartHub Service...");
+
             initDatabase();
             loadKnownDevicesFromDb();
-            java.io.File stateFile = new java.io.File(STATE_PATH);
-            ClientStateInFile state = new ClientStateInFile(
-                    clientState != null ? clientState.getParentUid() : StandardUUIDs.TEST_UID,
-                    List.of(URI.create("tcp://registration.aethernet.io:9010")),
-                    stateFile);
-            client = AetherCloudClient.asServer(state, "SmartHub",
-                    SmartHomeHubRegistryApi.META,
-                    this::createHubRegistryApi);
+
+            if (clientState == null) {
+                throw new IllegalStateException("SmartHub client state is not configured");
+            }
+
+            client = new AetherCloudClient(clientState, "SmartHub");
+
+            client.onClientStream(node -> {
+                UUID peerUid = node.getConsumerUUID();
+
+                Log.info(
+                        "SmartHub: client stream opened",
+                        "peerUid", peerUid);
+
+                node.toApiR(
+                        SmartHomeHubRegistryApi.META,
+                        rootCtx -> createHubRegistryApi(rootCtx, peerUid));
+            });
+
+            client.startFuture.to(() -> {
+                Log.info("SmartHub started", "uid", client.getUid());
+                System.out.println("started with UUID:" + client.getUid());
+            });
         }
+
         return client.startFuture;
     }
 
 
+
     private void initDatabase() throws SQLException {
         try {
-            java.nio.file.Files.createDirectories(Paths.get("smarthub-data"));
+            java.nio.file.Path dbFile =
+                    Paths.get(dbPath);
+
+            java.nio.file.Path parent =
+                    dbFile.getParent();
+
+            if (parent != null) {
+                java.nio.file.Files.createDirectories(parent);
+            }
         } catch (java.io.IOException e) {
-            throw new SQLException("Failed to create database directory", e);
+            throw new SQLException(
+                    "Failed to create database directory",
+                    e);
         }
-        String url = "jdbc:h2:./" + DB_PATH + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1;AUTO_SERVER=TRUE";
-        connectionPool = JdbcConnectionPool.create(url, "sa", "");
+
+        String url =
+                "jdbc:h2:./"
+                        + dbPath
+                        + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1;AUTO_SERVER=TRUE";
+
+        connectionPool =
+                JdbcConnectionPool.create(
+                        url,
+                        "sa",
+                        "");
+
         connectionPool.setMaxConnections(10);
+
         try (Connection conn = connectionPool.getConnection();
              Statement stmt = conn.createStatement()) {
             stmt.execute("SET MODE PostgreSQL");
@@ -99,62 +149,97 @@ public class SmartHubService {
     }
 
 
-    private SmartHomeHubRegistryApi createHubRegistryApi(MetaContext rootCtx) {
-        Log.info("SmartHub: Registry API starting...");
+    private SmartHomeHubRegistryApi createHubRegistryApi(MetaContext rootCtx, UUID peerUid) {
+        Log.info("SmartHub: Registry API starting...", "peerUid", peerUid);
+
         return new SmartHomeHubRegistryApi() {
-
-            SmartHomeClientDeviceApi api2DeviceRemote;
-            SmartHomeClientGuiApiRemote api2GuiRemote;
-            SmartHomeDeviceApi api2DeviceLocal;
-            SmartHomeGuiApi api2GuiLocal;
-
             @Override
             public void device(DeviceStream stream) {
-                Log.info("SmartHub: device method called");
-                if (api2DeviceRemote == null) {
-                    api2DeviceLocal = (value) -> {
-                        Log.info("api2DeviceLocal called", "value", value);
-                        boolean isNew = knownDevices.add(UUID.randomUUID());//FIXME: use correct uid
-                        if (isNew) {
-                            Log.info("New device detected");
-                            try (Connection conn = connectionPool.getConnection();
-                                 PreparedStatement stmt = conn.prepareStatement("INSERT INTO devices (UID, NAME, TYPE, last_seen) VALUES (?, ?, ?, ?)")) {
-                                stmt.setObject(1, UUID.randomUUID());//FIXME: use correct uid
-                                stmt.setString(2, "Emulator");
-                                stmt.setString(3, "TemperatureSensor");
-                                stmt.setTimestamp(4, new Timestamp(System.currentTimeMillis()));
-                                stmt.executeUpdate();
-                                Log.info("Device registered in DB");
-                            } catch (Exception e) {
-                                Log.error("Failed to register device in DB", e);
+                Log.info("SmartHub: device stream received", "deviceUid", peerUid);
+
+                stream.asIn()
+                        .keys(ctx -> (SmartHomeDeviceApi) value -> {
+                            long now = System.currentTimeMillis();
+                            boolean isNew = knownDevices.add(peerUid);
+
+                            if (isNew) {
+                                try (Connection conn = connectionPool.getConnection();
+                                     PreparedStatement stmt = conn.prepareStatement(
+                                             "INSERT INTO devices (UID, NAME, TYPE, last_seen) VALUES (?, ?, ?, ?)")) {
+                                    stmt.setObject(1, peerUid);
+                                    stmt.setString(2, "Emulator");
+                                    stmt.setString(3, "TemperatureSensor");
+                                    stmt.setTimestamp(4, new Timestamp(now));
+                                    stmt.executeUpdate();
+
+                                    Log.info(
+                                            "Device registered in DB",
+                                            "deviceUid", peerUid);
+                                } catch (Exception e) {
+                                    knownDevices.remove(peerUid);
+                                    Log.error(
+                                            "Failed to register device in DB: " + peerUid,
+                                            e);
+                                    return;
+                                }
+                            } else {
+                                try (Connection conn = connectionPool.getConnection();
+                                     PreparedStatement stmt = conn.prepareStatement(
+                                             "UPDATE devices SET last_seen = ? WHERE UID = ?")) {
+                                    stmt.setTimestamp(1, new Timestamp(now));
+                                    stmt.setObject(2, peerUid);
+                                    stmt.executeUpdate();
+                                } catch (Exception e) {
+                                    Log.error(
+                                            "Failed to update device last_seen: " + peerUid,
+                                            e);
+                                }
                             }
-                            deviceRegisteredFuture.tryDone();
-                        }
-                        try (Connection conn = connectionPool.getConnection();
-                             PreparedStatement stmt = conn.prepareStatement("INSERT INTO device_states (DEVICE_UID, STATE_VALUE, STATE_TIME, STATE_TIMESTAMP) VALUES (?, ?, ?, ?)")) {
-                            stmt.setObject(1, UUID.randomUUID());//FIXME: use correct uid
-                            stmt.setShort(2, value);
-                            stmt.setNull(3, 0);//TODO
-                            stmt.setTimestamp(4, new Timestamp(System.currentTimeMillis()));
-                            stmt.addBatch();
-                            stmt.executeBatch();
-                            Log.info("Inserted device states", "value", value);
-                        } catch (Exception e) {
-                            Log.error("SmartHub: SQL Error", e);
-                        }
-                    };
-                }
-                Log.info("SmartHub: Device stream connected");
-                stream.asIn().accept();
-                Log.info("SmartHub: stream.accept finished successfully");
+
+                            try (Connection conn = connectionPool.getConnection();
+                                 PreparedStatement stmt = conn.prepareStatement(
+                                         "INSERT INTO device_states (DEVICE_UID, STATE_VALUE, STATE_TIME, STATE_TIMESTAMP) VALUES (?, ?, ?, ?)")) {
+                                stmt.setObject(1, peerUid);
+                                stmt.setShort(2, value);
+                                stmt.setObject(3, null);
+                                stmt.setTimestamp(4, new Timestamp(now));
+                                stmt.executeUpdate();
+
+                                deviceRegisteredFuture.tryDone();
+
+                                Log.info(
+                                        "Inserted device state",
+                                        "deviceUid", peerUid,
+                                        "value", value);
+                            } catch (Exception e) {
+                                Log.error(
+                                        "SmartHub SQL error for device " + peerUid,
+                                        e);
+                            }
+                        }, peerUid)
+                        .accept();
+
+                Log.info(
+                        "SmartHub: device stream accepted",
+                        "deviceUid", peerUid);
             }
 
-
+            @Override
             public void gui(GuiStream stream) {
-                Log.info("SmartHub: gui method entered");
+                Log.info(
+                        "SmartHub: gui stream received",
+                        "guiUid", peerUid);
+
                 stream.asIn()
-                        .keys(c -> new MySmartHomeGuiApi(stream.asIn().remoteApi()))
+                        .keys(
+                                ctx -> new MySmartHomeGuiApi(
+                                        ctx.makeRemote(SmartHomeClientGuiApi.META)),
+                                peerUid)
                         .accept();
+
+                Log.info(
+                        "SmartHub: gui stream accepted",
+                        "guiUid", peerUid);
             }
         };
     }
@@ -167,16 +252,18 @@ public class SmartHubService {
 
     private void loadKnownDevicesFromDb() {
         try (Connection conn = connectionPool.getConnection();
-             Statement s = conn.createStatement();
-             ResultSet rs = s.executeQuery("SELECT DISTINCT DEVICE_UID FROM device_states")) {
+             PreparedStatement stmt = conn.prepareStatement("SELECT UID FROM devices");
+             ResultSet rs = stmt.executeQuery()) {
+
             while (rs.next()) {
-                Object obj = rs.getObject("DEVICE_UID");
-                if (obj instanceof UUID uid) knownDevices.add(uid);
-                else if (obj instanceof String str) knownDevices.add(UUID.fromString(str));
+                knownDevices.add((UUID) rs.getObject(1));
             }
-            Log.info("Loaded known devices from DB", "count", knownDevices.size());
+
+            Log.info(
+                    "Loaded known devices",
+                    "count", knownDevices.size());
         } catch (Exception e) {
-            Log.error("Failed to load known devices", e);
+            Log.error("Failed to load known devices from DB", e);
         }
     }
 
@@ -189,13 +276,20 @@ public class SmartHubService {
 
     public static void main(String[] args) {
         Log.printPlainConsole(new LogFilter());
-        // Используем ClientStateInFile, который автоматически сохраняет состояние
-        ClientStateInFile state = new ClientStateInFile(StandardUUIDs.TEST_UID,
+
+        ClientStateInFile state = new ClientStateInFile(
+                StandardUUIDs.TEST_UID,
                 List.of(URI.create("tcp://registration.aethernet.io:9010")),
-                new File("state.bin"));
+                new java.io.File(STATE_PATH));
+
         SmartHubService service = new SmartHubService(state);
+
         try {
             service.start();
+
+            Runtime.getRuntime().addShutdownHook(
+                    new Thread(service::stop));
+
             Thread.currentThread().join();
         } catch (Exception e) {
             Log.error("Failed to start service", e);
