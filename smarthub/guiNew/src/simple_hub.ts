@@ -18,6 +18,7 @@ const selectedDeviceId = document.getElementById('selected-device-id')!;
 const currentTemp = document.getElementById('current-temp')!;
 const lastUpdate = document.getElementById('last-update')!;
 const eventLog = document.getElementById('event-log')!;
+const connectError = document.getElementById('connect-error')!;
 
 const controller = new SmartHubController();
 let selectedDeviceUuid: string | null = null;
@@ -148,12 +149,22 @@ async function init() {
         if (update.deviceUid === selectedDeviceUuid) updateDeviceDisplay(update.deviceUid, update.records);
         else renderDeviceList(controller.getCachedDevices());
     });
-    controller.onError.add(error => addLog(`Error: ${error}`));
+
+    controller.onError.add(error => {
+        addLog(`Error: ${error}`);
+        connectError.textContent = error;
+        connectError.style.display = 'block';
+    });
+
 
     btnConnect.onclick = () => {
         const uuidInput = document.getElementById('service-uuid') as HTMLInputElement;
         const uuid = uuidInput ? uuidInput.value : serviceUuid;
         if (!uuid) { addLog('No service UUID provided'); return; }
+
+        connectError.textContent = '';
+        connectError.style.display = 'none';
+
         screenConnect.classList.remove('visible');
         screenDisplay.classList.add('visible');
         controller.connect(uuid, regUri).then(() => {

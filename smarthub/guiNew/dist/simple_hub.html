@@ -150,6 +150,20 @@
             font-weight: 600;
         }
         
+
+        .connect-error {
+            display: none;
+            margin-top: 12px;
+            padding: 10px;
+            border-radius: 8px;
+            background: rgba(255, 59, 48, 0.12);
+            color: #ff6961;
+            font-size: 0.85rem;
+            text-align: left;
+            word-break: break-word;
+        }
+
+
         .logs {
             margin-top: 20px;
             max-height: 200px;
@@ -177,6 +191,7 @@
         <h2 style="margin-top:0">Connect to SmartHub</h2>
         <button id="btn-connect">Connect</button>
         <button class="secondary" id="btn-restore">Restore Session</button>
+        <div id="connect-error" class="connect-error"></div>
     </div>
 
     <!-- Экран отображения данных -->
@@ -60345,6 +60360,7 @@ const selectedDeviceId = document.getElementById('selected-device-id');
 const currentTemp = document.getElementById('current-temp');
 const lastUpdate = document.getElementById('last-update');
 const eventLog = document.getElementById('event-log');
+const connectError = document.getElementById('connect-error');
 const controller = new SmartHubController_1.SmartHubController();
 let selectedDeviceUuid = null;
 let dataPollingInterval = null;
@@ -60480,7 +60496,11 @@ async function init() {
         else
             renderDeviceList(controller.getCachedDevices());
     });
-    controller.onError.add(error => addLog(`Error: ${error}`));
+    controller.onError.add(error => {
+        addLog(`Error: ${error}`);
+        connectError.textContent = error;
+        connectError.style.display = 'block';
+    });
     btnConnect.onclick = () => {
         const uuidInput = document.getElementById('service-uuid');
         const uuid = uuidInput ? uuidInput.value : serviceUuid;
@@ -60488,6 +60508,8 @@ async function init() {
             addLog('No service UUID provided');
             return;
         }
+        connectError.textContent = '';
+        connectError.style.display = 'none';
         screenConnect.classList.remove('visible');
         screenDisplay.classList.add('visible');
         controller.connect(uuid, regUri).then(() => {
