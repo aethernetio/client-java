@@ -58131,21 +58131,27 @@ class SmartHubController {
         this.onConnectionStateChange.fire('connecting');
         aether_client_1.Log.printConsolePlain(new aether_client_1.LogFilter());
         await (0, aether_client_1.applySodium)();
+        let phase = 'parse service UUID';
         try {
             const serviceUuid = aether_client_1.UUID.fromString(serviceUuidStr);
+            phase = 'load/create persistent client state';
             const state = new aether_client_1.ClientStateInLocalStorage(serviceUuid, [wsUri], undefined, aether_client_1.aetherApi.CryptoLib.SODIUM, 'smarthub_gui_state_' + serviceUuidStr);
+            phase = 'create AetherCloudClient';
             this.client = new aether_client_1.AetherCloudClient(state, "SmartHubClient");
             this.client.onMessage.add((uid, data) => {
                 console.log('[SmartHub] Raw message from', uid.toAString().toString(), 'length', data.length);
             });
+            phase = 'connect to Aether network';
             await this.client.connect().toPromise(30000);
+            phase = 'open SmartHub API stream';
             await this.connectToService(serviceUuid);
+            phase = 'connected';
             this.onConnectionStateChange.fire('connected');
         }
         catch (e) {
-            console.error('[SmartHub] Connection failed', e);
             const message = e instanceof Error ? e.message : String(e);
-            this.onError.fire(`Failed to connect to Aether Core: ${message}`);
+            console.error(`[SmartHub] Connection failed during ${phase}`, e);
+            this.onError.fire(`Connection failed during ${phase}: ${message}`);
             this.onConnectionStateChange.fire('error');
             throw e;
         }
