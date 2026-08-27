@@ -321,7 +321,7 @@ public class Launcher {
                 }
 
                 if (lastHeartbeat > 0
-                        && System.currentTimeMillis() - lastHeartbeat > 3000) {
+                        && System.currentTimeMillis() - lastHeartbeat > 60_000L) {
 
                     System.out.println("No heartbeat from browser, shutting down...");
                     System.exit(0);
