@@ -44,15 +44,36 @@ export class SmartHubController {
 
     async connect(serviceUuidStr: string, wsUri: string = "wss://dbservice.aethernet.io:9013"): Promise<void> {
         this.onConnectionStateChange.fire('connecting');
-        Log.printConsolePlain(new LogFilter());
+
+        Log.printConsolePlain(
+            new LogFilter()
+                .traceOff()
+                .debugOff()
+                .infoOff()
+        );
+
         await applySodium();
 
         let phase = 'parse service UUID';
 
         try {
+            if (this.client) {
+                phase = 'close previous Aether client';
+
+                await this.client
+                    .destroy(true)
+                    .toPromise(5000);
+
+                this.client = null;
+                this.serviceConnection = null;
+                this.deviceDataCache.clear();
+                this.devices = [];
+            }
+
             const serviceUuid = UUID.fromString(serviceUuidStr);
 
             phase = 'load/create persistent client state';
+
             const state = new ClientStateInLocalStorage(
                 serviceUuid,
                 [wsUri as any],
@@ -62,24 +83,65 @@ export class SmartHubController {
             );
 
             phase = 'create AetherCloudClient';
-            this.client = new AetherCloudClient(state, "SmartHubClient");
-            this.client.onMessage.add((uid, data) => {
-                console.log('[SmartHub] Raw message from', uid.toAString().toString(), 'length', data.length);
-            });
+
+            this.client =
+                new AetherCloudClient(
+                    state,
+                    "SmartHubClient"
+                );
+
+            this.client.tryAcquireWebRtcMessageNode =
+                () => false;
 
             phase = 'connect to Aether network';
-            await this.client.connect().toPromise(30000);
+
+            await this.client
+                .connect()
+                .toPromise(30000);
 
             phase = 'open SmartHub API stream';
-            await this.connectToService(serviceUuid);
+
+            await this.connectToService(
+                serviceUuid
+            );
 
             phase = 'connected';
-            this.onConnectionStateChange.fire('connected');
+
+            this.onConnectionStateChange.fire(
+                'connected'
+            );
         } catch (e: any) {
-            const message = e instanceof Error ? e.message : String(e);
-            console.error(`[SmartHub] Connection failed during ${phase}`, e);
-            this.onError.fire(`Connection failed during ${phase}: ${message}`);
-            this.onConnectionStateChange.fire('error');
+            if (this.client) {
+                try {
+                    await this.client
+                        .destroy(true)
+                        .toPromise(5000);
+                } catch {
+                }
+
+                this.client = null;
+            }
+
+            this.serviceConnection = null;
+
+            const message =
+                e instanceof Error
+                    ? e.message
+                    : String(e);
+
+            console.error(
+                `[SmartHub] Connection failed during ${phase}`,
+                e
+            );
+
+            this.onError.fire(
+                `Connection failed during ${phase}: ${message}`
+            );
+
+            this.onConnectionStateChange.fire(
+                'error'
+            );
+
             throw e;
         }
     }
@@ -94,18 +156,47 @@ export class SmartHubController {
 
 
     private async connectToService(serviceUuid: UUID): Promise<void> {
-        if (!this.client) throw new Error("Client not initialized");
+        if (!this.client) {
+            throw new Error("Client not initialized");
+        }
 
-        const node = this.client.getMessageNode(serviceUuid, MessageEventListenerDefault);
-        console.log('[SmartHub] MessageNode created for service', serviceUuid.toAString().toString());
+        const node =
+            this.client.getMessageNode(
+                serviceUuid,
+                MessageEventListenerDefault
+            );
+
+        console.log(
+            '[SmartHub] MessageNode created for service',
+            serviceUuid.toAString().toString()
+        );
 
         const localGuiApi: SmartHomeClientGuiApi = {
-            deviceStateUpdated: (deviceUid: UUID, records: SensorRecord[]) => {
-                console.log('[SmartHub] deviceStateUpdated', deviceUid.toAString().toString(), records);
-                const deviceUidStr = deviceUid.toAString().toString();
-                let history = this.deviceDataCache.get(deviceUidStr) || [];
-                history = [...history, ...records].slice(-50);
-                this.deviceDataCache.set(deviceUidStr, history);
+            deviceStateUpdated: (
+                deviceUid: UUID,
+                records: SensorRecord[]
+            ) => {
+                const deviceUidStr =
+                    deviceUid.toAString().toString();
+
+                console.log(
+                    '[SmartHub] deviceStateUpdated',
+                    deviceUidStr,
+                    'records=' + records.length
+                );
+
+                let history =
+                    this.deviceDataCache.get(deviceUidStr)
+                    || [];
+
+                history =
+                    [...history, ...records]
+                        .slice(-50);
+
+                this.deviceDataCache.set(
+                    deviceUidStr,
+                    history
+                );
 
                 this.onDeviceDataUpdate.fire({
                     deviceUid: deviceUidStr,
@@ -114,24 +205,41 @@ export class SmartHubController {
                 });
             },
 
-            onGetDevicesResult: (devices: UUID[]) => {
+            onGetDevicesResult: (
+                devices: UUID[]
+            ) => {
                 console.log(
-                    '[SmartHub] onGetDevicesResult received:',
-                    devices.map(d => d.toAString().toString())
+                    '[SmartHub] onGetDevicesResult received',
+                    'devices=' + devices.length
                 );
+
                 this.devices = devices;
-                this.onDeviceListUpdate.fire(devices);
+
+                this.onDeviceListUpdate.fire(
+                    devices
+                );
             },
 
-            onRequestHistoryResult: (deviceUid: UUID, records: SensorRecord[]) => {
+            onRequestHistoryResult: (
+                deviceUid: UUID,
+                records: SensorRecord[]
+            ) => {
+                const deviceUidStr =
+                    deviceUid.toAString().toString();
+
                 console.log(
                     '[SmartHub] onRequestHistoryResult',
-                    deviceUid.toAString().toString(),
-                    records
+                    deviceUidStr,
+                    'records=' + records.length
                 );
-                const deviceUidStr = deviceUid.toAString().toString();
-                const history = records.slice(-50);
-                this.deviceDataCache.set(deviceUidStr, history);
+
+                const history =
+                    records.slice(-50);
+
+                this.deviceDataCache.set(
+                    deviceUidStr,
+                    history
+                );
 
                 this.onDeviceDataUpdate.fire({
                     deviceUid: deviceUidStr,
@@ -141,25 +249,33 @@ export class SmartHubController {
             }
         };
 
-        const rootCtx = node.toApiR(
-            SmartHomeClientGuiApi.META,
-            (_ctx: MetaContext) => localGuiApi
-        );
+        const rootCtx =
+            node.toApiR(
+                SmartHomeClientGuiApi.META,
+                (_ctx: MetaContext) => localGuiApi
+            );
 
-        const hubRegistry = SmartHomeHubRegistryApi.META.makeRemote(rootCtx);
+        const hubRegistry =
+            SmartHomeHubRegistryApi.META
+                .makeRemote(rootCtx);
 
-        const guiApi = hubRegistry.openGui(
-            () => localGuiApi,
-            data => data
-        );
+        const guiApi =
+            hubRegistry.openGui(
+                () => localGuiApi,
+                data => data
+            );
 
         this.serviceConnection = {
-            uuid: serviceUuid.toAString().toString(),
+            uuid: serviceUuid
+                .toAString()
+                .toString(),
             hub: guiApi
         };
 
-        console.log('[SmartHub] Service connection established');
-        this.onConnectionStateChange.fire('connected');
+        console.log(
+            '[SmartHub] Service connection established'
+        );
+
         this.refreshDeviceList();
     }
 

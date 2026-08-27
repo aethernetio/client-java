@@ -65,13 +65,15 @@ function renderDeviceList(devices: UUID[]) {
                 </div>`;
     }).join('');
     document.querySelectorAll('.device-item').forEach(el => {
+
         el.addEventListener('click', () => {
             const uuid = el.getAttribute('data-uuid');
+
             if (uuid) {
                 selectDevice(uuid);
-                controller.requestDeviceData(uuid, 20);
             }
         });
+
     });
 }
 
@@ -186,16 +188,23 @@ async function init() {
         });
     };
 
+
     btnRefresh.onclick = () => {
         if (selectedDeviceUuid) {
-            controller.requestDeviceData(selectedDeviceUuid, 20);
-            addLog(`Refreshing data for ${selectedDeviceUuid.substring(0, 8)}...`);
+            controller.requestDeviceData(
+                selectedDeviceUuid,
+                20
+            );
+
+            addLog(
+                `Refreshing data for ${selectedDeviceUuid.substring(0, 8)}...`
+            );
         } else {
-            // Если метода getDevices нет, вызываем тот, что инициирует обновление списка
-            controller.connect(localStorage.getItem('smarthub_last_service') || '', regUri);
-            addLog('Refreshing connection/devices...');
+            controller.refreshDeviceList();
+            addLog('Refreshing device list...');
         }
     };
+
 
 
     const hasSession = controller.restoreSession(serviceUuid || '');

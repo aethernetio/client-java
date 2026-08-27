@@ -144,7 +144,13 @@ public class SmartHubService {
                             STATE_TIMESTAMP TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                             FOREIGN KEY (DEVICE_UID) REFERENCES devices(UID)
                         );
+
                     """);
+            stmt.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_device_states_uid_ts
+                    ON device_states(DEVICE_UID, STATE_TIMESTAMP)
+                    """);
+
         }
     }
 
@@ -339,21 +345,60 @@ public class SmartHubService {
 
         @Override
         public void requestDeviceHistory(UUID d, long c) {
-            List<SensorRecord> records = new ArrayList<>();
-            try (Connection conn = connectionPool.getConnection();
-                 PreparedStatement stmt = conn.prepareStatement(
-                         "SELECT STATE_VALUE, STATE_TIME FROM device_states WHERE DEVICE_UID = ? ORDER BY STATE_TIMESTAMP DESC LIMIT ?")) {
-                stmt.setObject(1, d);
-                stmt.setLong(2, c);
-                try (ResultSet rs = stmt.executeQuery()) {
+            int limit =
+                    (int) Math.max(
+                            0L,
+                            Math.min(
+                                    c,
+                                    100L
+                            )
+                    );
+
+            List<SensorRecord> records =
+                    new ArrayList<>();
+
+            try (Connection conn =
+                         connectionPool.getConnection();
+                 PreparedStatement stmt =
+                         conn.prepareStatement(
+                                 "SELECT STATE_VALUE, STATE_TIME "
+                                         + "FROM device_states "
+                                         + "WHERE DEVICE_UID = ? "
+                                         + "ORDER BY STATE_TIMESTAMP DESC "
+                                         + "LIMIT ?")) {
+
+                stmt.setObject(
+                        1,
+                        d
+                );
+
+                stmt.setInt(
+                        2,
+                        limit
+                );
+
+                try (ResultSet rs =
+                             stmt.executeQuery()) {
+
                     while (rs.next()) {
-                        records.add(new SensorRecord((byte) rs.getShort(1), (byte) rs.getShort(2)));
+                        records.add(
+                                new SensorRecord(
+                                        (byte) rs.getShort(1),
+                                        (byte) rs.getShort(2)
+                                )
+                        );
                     }
                 }
             } catch (Exception e) {
                 Log.error(e);
             }
-            guiRemote.onRequestHistoryResult(d, records.toArray(new SensorRecord[0]));
+
+            guiRemote.onRequestHistoryResult(
+                    d,
+                    records.toArray(
+                            new SensorRecord[0]
+                    )
+            );
         }
     }
 }
