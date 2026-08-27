@@ -58143,9 +58143,11 @@ class SmartHubController {
             this.onConnectionStateChange.fire('connected');
         }
         catch (e) {
-            console.error(e);
-            this.onError.fire("Failed to connect to Aether Core");
+            console.error('[SmartHub] Connection failed', e);
+            const message = e instanceof Error ? e.message : String(e);
+            this.onError.fire(`Failed to connect to Aether Core: ${message}`);
             this.onConnectionStateChange.fire('error');
+            throw e;
         }
     }
     async connectToService(serviceUuid) {
