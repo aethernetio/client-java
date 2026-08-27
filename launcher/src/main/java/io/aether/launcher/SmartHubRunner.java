@@ -99,17 +99,48 @@ public class SmartHubRunner extends AbstractProjectRunner {
 
     @Override
     public void handleReset(HttpExchange t) throws IOException {
-        if (!Files.exists(ctx.workspace().resolve("client-java/.git"))) {
+        Path repo =
+                ctx.workspace()
+                        .resolve("client-java");
+
+        if (!Files.exists(repo.resolve(".git"))) {
             Launcher.sendError(t, 400, "Not cloned");
             return;
         }
+
         stopAll();
-        String safe = "git config --global --add safe.directory " + ctx.workspace().resolve("client-java").toAbsolutePath().toString() + " && git reset --hard HEAD && git clean -fdx";
-        String localCmd = RunnerUtils.localCd(ctx.workspace().resolve("client-java")) + safe;
-        ProcessBuilder pb = new ProcessBuilder("sh", "-c", safe);
-        pb.directory(ctx.workspace().resolve("client-java").toFile());
-        RunnerUtils.runCommand(pb, "reset", localCmd, ctx, null, "Reset Repository");
-        Launcher.sendOk(t, "{\"status\":\"resetting\"}");
+
+        String safe =
+                "git config --global --add safe.directory "
+                        + repo.toAbsolutePath()
+                        + " && git fetch origin"
+                        + " && git reset --hard origin/main"
+                        + " && git clean -fdx";
+
+        String localCmd =
+                RunnerUtils.localCd(repo)
+                        + safe;
+
+        ProcessBuilder pb =
+                new ProcessBuilder(
+                        "sh",
+                        "-c",
+                        safe);
+
+        pb.directory(
+                repo.toFile());
+
+        RunnerUtils.runCommand(
+                pb,
+                "reset",
+                localCmd,
+                ctx,
+                null,
+                "Reset Repository");
+
+        Launcher.sendOk(
+                t,
+                "{\"status\":\"resetting\"}");
     }
 
 
