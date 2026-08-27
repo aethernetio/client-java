@@ -27,7 +27,7 @@ public class Launcher {
     static final JdkProvider jdkProvider = new JdkProvider();
     // -- Gradle Provider (similar) --
     static final GradleProvider gradleProvider = new GradleProvider();
-    static volatile long lastHeartbeat = System.currentTimeMillis();
+    static volatile long lastHeartbeat = 0L;
     static Path workspace = Path.of(System.getProperty("user.home"), "aether_projects");
     static ProjectRunner activeRunner = runners.get("smarthub");
     static volatile String jdkHome;
@@ -319,7 +319,10 @@ public class Launcher {
                 } catch (InterruptedException e) {
                     break;
                 }
-                if (System.currentTimeMillis() - lastHeartbeat > 3000) {
+
+                if (lastHeartbeat > 0
+                        && System.currentTimeMillis() - lastHeartbeat > 3000) {
+
                     System.out.println("No heartbeat from browser, shutting down...");
                     System.exit(0);
                 }
