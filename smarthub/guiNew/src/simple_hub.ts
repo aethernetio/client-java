@@ -186,16 +186,16 @@ async function init() {
         }
     };
 
+
     const hasSession = controller.restoreSession();
-    hasSession.then(has => {
-        if (has) {
-            screenConnect.classList.remove('visible');
-            screenDisplay.classList.add('visible');
-            updateStatus('disconnected');
-        } else {
-            screenConnect.classList.add('visible');
-        }
-    });
+    if (hasSession) {
+        screenConnect.classList.remove('visible');
+        screenDisplay.classList.add('visible');
+        updateStatus('disconnected');
+    } else {
+        screenConnect.classList.add('visible');
+    }
+
 }
 
 
