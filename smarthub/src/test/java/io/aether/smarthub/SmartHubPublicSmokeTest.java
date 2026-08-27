@@ -186,7 +186,236 @@ class SmartHubPublicSmokeTest {
         }
     }
 
+
+    @Test
+    void publicGuiRoundTripReturnsDevicesAndHistory()
+            throws Exception {
+
+        File smokeDir =
+                new File("build/public-smoke");
+
+        assertTrue(
+                smokeDir.exists() || smokeDir.mkdirs(),
+                "Cannot create public smoke directory");
+
+        String smokeDbPath =
+                new File(
+                        smokeDir,
+                        "smarthub-gui")
+                        .getPath();
+
+        SmartHubService.clearDatabaseFiles(
+                smokeDbPath);
+
+        File serviceStateFile =
+                new File(
+                        smokeDir,
+                        "gui-service.bin");
+
+        File deviceStateFile =
+                new File(
+                        smokeDir,
+                        "gui-device.bin");
+
+        File guiStateFile =
+                new File(
+                        smokeDir,
+                        "gui-client.bin");
+
+        serviceStateFile.delete();
+        deviceStateFile.delete();
+        guiStateFile.delete();
+
+        ClientStateInFile serviceState =
+                new ClientStateInFile(
+                        StandardUUIDs.TEST_UID,
+                        List.of(REG_URI),
+                        serviceStateFile);
+
+        SmartHubService service =
+                new SmartHubService(
+                        serviceState,
+                        smokeDbPath);
+
+        SmartDeviceEmulator emulator = null;
+        ClientStateInFile guiState = null;
+        io.aether.cloud.client.AetherCloudClient guiClient = null;
+        UUID deviceUid = null;
+
+        AFuture devicesReceived = AFuture.make();
+        AFuture historyReceived = AFuture.make();
+
+        java.util.concurrent.atomic.AtomicReference<UUID[]> devices =
+                new java.util.concurrent.atomic.AtomicReference<>();
+
+        java.util.concurrent.atomic.AtomicReference<io.aether.api.smarthub.SensorRecord[]> history =
+                new java.util.concurrent.atomic.AtomicReference<>();
+
+        try {
+            await(
+                    service.start(),
+                    "SmartHub GUI smoke service registration");
+
+            UUID serviceUid =
+                    service.getClient().getUid();
+
+            assertNotNull(
+                    serviceUid,
+                    "SmartHub service UID was not assigned");
+
+            emulator =
+                    new SmartDeviceEmulator(
+                            serviceUid,
+                            deviceStateFile.getPath());
+
+            emulator.start(
+                    REG_URI.toString());
+
+            await(
+                    emulator.getReady(),
+                    "SmartHub GUI smoke emulator registration");
+
+            await(
+                    service.getDeviceRegisteredFuture(),
+                    "SmartHub GUI smoke device state delivery");
+
+            deviceUid =
+                    emulator.getDeviceUid();
+
+            assertNotNull(
+                    deviceUid,
+                    "SmartHub GUI smoke device UID was not assigned");
+
+            UUID expectedDeviceUid =
+                    deviceUid;
+
+            guiState =
+                    new ClientStateInFile(
+                            serviceUid,
+                            List.of(REG_URI),
+                            guiStateFile);
+
+            io.aether.api.smarthub.SmartHomeClientGuiApi localGuiApi =
+                    new io.aether.api.smarthub.SmartHomeClientGuiApi() {
+                        @Override
+                        public void deviceStateUpdated(
+                                UUID uid,
+                                io.aether.api.smarthub.SensorRecord[] records) {
+                        }
+
+                        @Override
+                        public void onGetDevicesResult(
+                                UUID[] receivedDevices) {
+
+                            devices.set(
+                                    receivedDevices);
+
+                            devicesReceived.done();
+                        }
+
+                        @Override
+                        public void onRequestHistoryResult(
+                                UUID uid,
+                                io.aether.api.smarthub.SensorRecord[] records) {
+
+                            if (expectedDeviceUid.equals(uid)) {
+                                history.set(
+                                        records);
+
+                                historyReceived.done();
+                            }
+                        }
+                    };
+
+            guiClient =
+                    io.aether.cloud.client.AetherCloudClient.asClient(
+                            guiState,
+                            "SmartHub-Gui-Public-Smoke",
+                            io.aether.api.smarthub.SmartHomeClientGuiApi.META,
+                            io.aether.api.smarthub.SmartHomeHubRegistryApi.META,
+                            remoteHubApi -> {
+                                io.aether.api.smarthub.SmartHomeGuiApiRemote guiApi =
+                                        remoteHubApi.openGui(
+                                                remoteGuiApi -> localGuiApi,
+                                                data -> data);
+
+                                guiApi.getDevices();
+
+                                guiApi.requestDeviceHistory(
+                                        expectedDeviceUid,
+                                        10);
+
+                                return localGuiApi;
+                            });
+
+            await(
+                    guiClient.startFuture,
+                    "SmartHub GUI client registration");
+
+            await(
+                    devicesReceived,
+                    "SmartHub getDevices callback");
+
+            await(
+                    historyReceived,
+                    "SmartHub requestDeviceHistory callback");
+
+            UUID[] receivedDevices =
+                    devices.get();
+
+            assertNotNull(
+                    receivedDevices,
+                    "SmartHub getDevices returned null");
+
+            assertTrue(
+                    java.util.Arrays.asList(receivedDevices)
+                            .contains(expectedDeviceUid),
+                    "SmartHub getDevices did not return emulator UID");
+
+            io.aether.api.smarthub.SensorRecord[] receivedHistory =
+                    history.get();
+
+            assertNotNull(
+                    receivedHistory,
+                    "SmartHub history callback returned null");
+
+            assertTrue(
+                    receivedHistory.length > 0,
+                    "SmartHub history callback returned no records");
+        } finally {
+            if (guiClient != null) {
+                guiClient.destroy(true);
+            }
+
+            if (guiState != null) {
+                guiState.destroy(true);
+            }
+
+            if (emulator != null) {
+                emulator.stop();
+            }
+
+            if (deviceUid != null) {
+                cleanupDevice(
+                        service,
+                        deviceUid);
+            }
+
+            service.stop();
+            serviceState.destroy(true);
+
+            serviceStateFile.delete();
+            deviceStateFile.delete();
+            guiStateFile.delete();
+
+            SmartHubService.clearDatabaseFiles(
+                    smokeDbPath);
+        }
+    }
+
+
     private static void await(
+
             AFuture future,
             String operation)
             throws Exception {

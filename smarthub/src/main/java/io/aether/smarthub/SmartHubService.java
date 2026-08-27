@@ -235,6 +235,7 @@ public class SmartHubService {
                                 ctx -> new MySmartHomeGuiApi(
                                         ctx.makeRemote(SmartHomeClientGuiApi.META)),
                                 peerUid)
+                        .onFlushData(data -> rootCtx.sendToRemote(data))
                         .accept();
 
                 Log.info(
