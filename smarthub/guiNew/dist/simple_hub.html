@@ -58133,7 +58133,7 @@ class SmartHubController {
         await (0, aether_client_1.applySodium)();
         try {
             const serviceUuid = aether_client_1.UUID.fromString(serviceUuidStr);
-            const state = new aether_client_1.ClientStateInLocalStorage(aether_client_1.StandardUUIDs.ANONYMOUS_UID, [wsUri], undefined, aether_client_1.aetherApi.CryptoLib.SODIUM, 'smarthub_gui_state');
+            const state = new aether_client_1.ClientStateInLocalStorage(serviceUuid, [wsUri], undefined, aether_client_1.aetherApi.CryptoLib.SODIUM, 'smarthub_gui_state_' + serviceUuidStr);
             this.client = new aether_client_1.AetherCloudClient(state, "SmartHubClient");
             this.client.onMessage.add((uid, data) => {
                 console.log('[SmartHub] Raw message from', uid.toAString().toString(), 'length', data.length);
@@ -58227,8 +58227,10 @@ class SmartHubController {
             return;
         this.client.state.save();
     }
-    restoreSession() {
-        return localStorage.getItem('smarthub_gui_state') !== null;
+    restoreSession(serviceUuidStr) {
+        if (!serviceUuidStr)
+            return false;
+        return localStorage.getItem('smarthub_gui_state_' + serviceUuidStr) !== null;
     }
 }
 exports.SmartHubController = SmartHubController;
@@ -60514,7 +60516,7 @@ async function init() {
             addLog('Refreshing connection/devices...');
         }
     };
-    const hasSession = controller.restoreSession();
+    const hasSession = controller.restoreSession(serviceUuid || '');
     if (hasSession) {
         screenConnect.classList.remove('visible');
         screenDisplay.classList.add('visible');

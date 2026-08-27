@@ -7,7 +7,7 @@ export interface DeviceUpdate {
 
 
 
-import { AetherCloudClient, ClientStateInLocalStorage, MessageEventListenerDefault, UUID, MetaContext, Log, LogFilter, applySodium, EventConsumer, aetherApi, StandardUUIDs } from 'aether-client';
+import { AetherCloudClient, ClientStateInLocalStorage, MessageEventListenerDefault, UUID, MetaContext, Log, LogFilter, applySodium, EventConsumer, aetherApi } from 'aether-client';
 
 
 import {
@@ -50,13 +50,15 @@ export class SmartHubController {
         try {
             const serviceUuid = UUID.fromString(serviceUuidStr);
 
+
             const state = new ClientStateInLocalStorage(
-                StandardUUIDs.ANONYMOUS_UID,
+                serviceUuid,
                 [wsUri as any],
                 undefined,
                 aetherApi.CryptoLib.SODIUM,
-                'smarthub_gui_state'
+                'smarthub_gui_state_' + serviceUuidStr
             );
+
 
 
 
@@ -211,7 +213,8 @@ export class SmartHubController {
         this.client.state.save();
     }
 
-    restoreSession(): boolean {
-        return localStorage.getItem('smarthub_gui_state') !== null;
+    restoreSession(serviceUuidStr: string): boolean {
+        if (!serviceUuidStr) return false;
+        return localStorage.getItem('smarthub_gui_state_' + serviceUuidStr) !== null;
     }
 }

@@ -187,7 +187,7 @@ async function init() {
     };
 
 
-    const hasSession = controller.restoreSession();
+    const hasSession = controller.restoreSession(serviceUuid || '');
     if (hasSession) {
         screenConnect.classList.remove('visible');
         screenDisplay.classList.add('visible');
