@@ -14,7 +14,9 @@ plugins {
 rootProject.name = 'smarthub'
 
 
-if (Boolean.getBoolean('smarthub.localClient')) {
+
+if (Boolean.getBoolean('smarthub.localClient')
+        || Boolean.getBoolean('smarthub.publicSmoke')) {
     includeBuild('..') {
         dependencySubstitution {
             substitute module('io.aether:cloud-client') using project(':client')
