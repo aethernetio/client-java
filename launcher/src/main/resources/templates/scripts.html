@@ -99,12 +99,22 @@ body.classList.remove('collapsed');
 }
 }
 
-function createCommandBlock(stream, localCmd) {
-if (commandBlocks[stream]) return;
-const block = document.createElement('div');
-block.className = 'cmd-block';
 
-block.innerHTML =
+function createCommandBlock(stream, localCmd) {
+    if (commandBlocks[stream]) {
+        const block = commandBlocks[stream];
+        const logEl = block.querySelector('.cmd-log');
+        if (logEl) logEl.replaceChildren();
+        const codeEl = block.querySelector('.cmd-code');
+        if (codeEl) codeEl.textContent = localCmd;
+        activateBlock(stream);
+        return;
+    }
+
+    const block = document.createElement('div');
+    block.className = 'cmd-block';
+
+    block.innerHTML =
         '<div class="cmd-header" onclick="toggleBlock(\'' + stream + '\')">' +
         '<span class="led running"></span>' +
         '<span class="cmd-title">' + stream + '</span>' +
@@ -114,19 +124,31 @@ block.innerHTML =
         '<div class="cmd-log" id="cmd-log-' + stream + '"></div>' +
         '</div>';
 
-commandsEl.appendChild(block);
-commandBlocks[stream] = block;
-activateBlock(stream);
+    commandsEl.appendChild(block);
+    commandBlocks[stream] = block;
+    activateBlock(stream);
 }
 
+
+
+
+const MAX_COMMAND_LOG_LINES = 500;
 
 function appendCommandLog(stream, line) {
-const logEl = document.getElementById('cmd-log-' + stream);
-if (logEl) {
-logEl.innerHTML += '<div>' + line + '</div>';
-logEl.scrollTop = logEl.scrollHeight;
+    const logEl = document.getElementById('cmd-log-' + stream);
+    if (!logEl) return;
+
+    const entry = document.createElement('div');
+    entry.textContent = line;
+    logEl.appendChild(entry);
+
+    while (logEl.children.length > MAX_COMMAND_LOG_LINES) {
+        logEl.removeChild(logEl.firstElementChild);
+    }
+
+    logEl.scrollTop = logEl.scrollHeight;
 }
-}
+
 
 function escapeHtml(text) {
 return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
