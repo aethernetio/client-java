@@ -453,8 +453,111 @@ class SmartHubPublicSmokeTest {
     }
 
 
-    private static void await(
 
+    @Test
+    void publicGuiConnectedBeforeEmulatorReceivesDeviceAndLiveState() throws Exception {
+        File dir = new File("build/public-smoke");
+        assertTrue(dir.exists() || dir.mkdirs(), "Cannot create public smoke directory");
+        String db = new File(dir, "smarthub-gui-before-device").getPath();
+        SmartHubService.clearDatabaseFiles(db);
+        File serviceFile = new File(dir, "gui-before-device-service.bin");
+        File deviceFile = new File(dir, "gui-before-device.bin");
+        File guiFile = new File(dir, "gui-before-device-client.bin");
+        serviceFile.delete(); deviceFile.delete(); guiFile.delete();
+
+        ClientStateInFile serviceState =
+                new ClientStateInFile(StandardUUIDs.TEST_UID, List.of(REG_URI), serviceFile);
+        SmartHubService service = new SmartHubService(serviceState, db);
+        SmartDeviceEmulator emulator = null;
+        ClientStateInFile guiState = null;
+        io.aether.cloud.client.AetherCloudClient guiClient = null;
+        UUID deviceUid = null;
+
+        AFuture emptyDevices = AFuture.make();
+        AFuture discoveredDevice = AFuture.make();
+        AFuture liveState = AFuture.make();
+        var expectedUid = new java.util.concurrent.atomic.AtomicReference<UUID>();
+        var devices = new java.util.concurrent.atomic.AtomicReference<UUID[]>();
+        var lastLiveUid = new java.util.concurrent.atomic.AtomicReference<UUID>();
+        var lastLiveState =
+                new java.util.concurrent.atomic.AtomicReference<io.aether.api.smarthub.SensorRecord[]>();
+
+        try {
+            await(service.start(), "GUI-before-emulator service registration");
+            UUID serviceUid = service.getClient().getUid();
+            assertNotNull(serviceUid, "SmartHub service UID was not assigned");
+            guiState = new ClientStateInFile(serviceUid, List.of(REG_URI), guiFile);
+
+            io.aether.api.smarthub.SmartHomeClientGuiApi localGui =
+                    new io.aether.api.smarthub.SmartHomeClientGuiApi() {
+                        @Override
+                        public void deviceStateUpdated(
+                                UUID uid, io.aether.api.smarthub.SensorRecord[] records) {
+                            lastLiveUid.set(uid); lastLiveState.set(records);
+                            UUID expected = expectedUid.get();
+                            if (expected != null && expected.equals(uid)
+                                    && records != null && records.length > 0) liveState.tryDone();
+                        }
+
+                        @Override
+                        public void onGetDevicesResult(UUID[] received) {
+                            devices.set(received);
+                            if (received != null && received.length == 0) emptyDevices.tryDone();
+                            UUID expected = expectedUid.get();
+                            if (expected != null && received != null
+                                    && java.util.Arrays.asList(received).contains(expected))
+                                discoveredDevice.tryDone();
+                        }
+
+                        @Override
+                        public void onRequestHistoryResult(
+                                UUID uid, io.aether.api.smarthub.SensorRecord[] records) {
+                        }
+                    };
+
+            guiClient = io.aether.cloud.client.AetherCloudClient.asClient(
+                    guiState, "SmartHub-Gui-Before-Emulator-Smoke",
+                    io.aether.api.smarthub.SmartHomeClientGuiApi.META,
+                    io.aether.api.smarthub.SmartHomeHubRegistryApi.META,
+                    remoteHubApi -> {
+                        remoteHubApi.openGui(remoteGuiApi -> localGui, data -> data).getDevices();
+                        return localGui;
+                    });
+
+            await(guiClient.startFuture, "GUI-before-emulator client registration");
+            await(emptyDevices, "Initial empty SmartHub device list");
+            assertNotNull(devices.get(), "Initial getDevices returned null");
+            assertEquals(0, devices.get().length, "Device list is not empty before emulator");
+
+            emulator = new SmartDeviceEmulator(serviceUid, deviceFile.getPath());
+            emulator.start(REG_URI.toString());
+            await(emulator.getReady(), "GUI-before-emulator emulator registration");
+            deviceUid = emulator.getDeviceUid();
+            assertNotNull(deviceUid, "Emulator UID was not assigned");
+            expectedUid.set(deviceUid);
+
+            UUID[] current = devices.get();
+            if (current != null && java.util.Arrays.asList(current).contains(deviceUid))
+                discoveredDevice.tryDone();
+            if (deviceUid.equals(lastLiveUid.get())
+                    && lastLiveState.get() != null && lastLiveState.get().length > 0)
+                liveState.tryDone();
+
+            await(service.getDeviceRegisteredFuture(), "Device state after GUI connected first");
+            await(discoveredDevice, "Automatic device list broadcast");
+            await(liveState, "Live state broadcast");
+        } finally {
+            if (guiClient != null) guiClient.destroy(true);
+            if (guiState != null) guiState.destroy(true);
+            if (emulator != null) emulator.stop();
+            if (deviceUid != null) cleanupDevice(service, deviceUid);
+            service.stop(); serviceState.destroy(true);
+            serviceFile.delete(); deviceFile.delete(); guiFile.delete();
+            SmartHubService.clearDatabaseFiles(db);
+        }
+    }
+
+    private static void await(
             AFuture future,
             String operation)
             throws Exception {
@@ -466,7 +569,6 @@ class SmartHubPublicSmokeTest {
         while (!future.isDone()
                 && !future.isError()
                 && System.currentTimeMillis() < deadline) {
-
             Thread.sleep(100);
         }
 
@@ -483,6 +585,7 @@ class SmartHubPublicSmokeTest {
                         + TIMEOUT_MS
                         + " ms");
     }
+
 
     private static void awaitStateCount(
             SmartHubService service,
