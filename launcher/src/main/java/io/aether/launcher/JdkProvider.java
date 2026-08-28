@@ -86,14 +86,16 @@ public class JdkProvider extends ToolProvider {
         reportProgress("Downloading JDK " + REQUIRED_MAJOR + "...");
         Files.createDirectories(toolsDir);
 
+
         String primaryUrl =
+                "https://cdn.azul.com/zulu/bin/"
+                        + "zulu25.36.205-ca-jdk25.0.4.1-linux_x64.tar.gz";
+
+        String fallbackUrl =
                 "https://api.adoptium.net/v3/binary/latest/"
                         + REQUIRED_MAJOR
                         + "/ga/linux/x64/jdk/hotspot/normal/eclipse?project=jdk";
 
-        String fallbackUrl =
-                "https://cdn.azul.com/zulu/bin/"
-                        + "zulu25.36.205-ca-jdk25.0.4.1-linux_x64.tar.gz";
 
         Path archive =
                 toolsDir.resolve("jdk.tar.gz");

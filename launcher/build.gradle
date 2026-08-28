@@ -20,8 +20,10 @@ if [ ! -x "$$JRE_DIR/bin/java" ]; then
         JRE_URL="https://api.adoptium.net/v3/binary/latest/25/ga/mac/x64/jre/hotspot/normal/eclipse?project=jdk"
         JRE_FALLBACK_URL=""
     else
-        JRE_URL="https://api.adoptium.net/v3/binary/latest/25/ga/linux/x64/jre/hotspot/normal/eclipse?project=jdk"
-        JRE_FALLBACK_URL="https://cdn.azul.com/zulu/bin/zulu25.36.205-ca-jre25.0.4.1-linux_x64.tar.gz"
+
+        JRE_URL="https://cdn.azul.com/zulu/bin/zulu25.36.205-ca-jre25.0.4.1-linux_x64.tar.gz"
+        JRE_FALLBACK_URL="https://api.adoptium.net/v3/binary/latest/25/ga/linux/x64/jre/hotspot/normal/eclipse?project=jdk"
+
     fi
 
     download_jre() {

@@ -361,15 +361,17 @@ public class GradleProvider extends ToolProvider {
         Files.createDirectories(
                 toolsDir);
 
+
         String primaryUrl =
-                "https://services.gradle.org/distributions/gradle-"
+                "https://repo.huaweicloud.com/gradle/gradle-"
                         + DOWNLOAD_VERSION
                         + "-bin.zip";
 
         String fallbackUrl =
-                "https://repo.huaweicloud.com/gradle/gradle-"
+                "https://services.gradle.org/distributions/gradle-"
                         + DOWNLOAD_VERSION
                         + "-bin.zip";
+
 
         Path archive =
                 toolsDir.resolve(
