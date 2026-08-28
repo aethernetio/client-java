@@ -211,7 +211,6 @@ btnDisconnect.onclick = () => {
     });
 };
 
-    };
 
 
     btnRefresh.onclick = () => {
