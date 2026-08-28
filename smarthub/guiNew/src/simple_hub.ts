@@ -13,8 +13,11 @@ const statusDot = document.getElementById('status-dot')!;
 const statusText = document.getElementById('status-text')!;
 const devicesCount = document.getElementById('devices-count')!;
 const deviceList = document.getElementById('device-list')!;
+
 const deviceDetails = document.getElementById('device-details')!;
+const chartContainer = document.getElementById('chart-container')!;
 const selectedDeviceId = document.getElementById('selected-device-id')!;
+
 const currentTemp = document.getElementById('current-temp')!;
 const lastUpdate = document.getElementById('last-update')!;
 const eventLog = document.getElementById('event-log')!;
@@ -22,7 +25,6 @@ const connectError = document.getElementById('connect-error')!;
 
 const controller = new SmartHubController();
 let selectedDeviceUuid: string | null = null;
-let dataPollingInterval: any = null;
 let tempChart: Chart | null = null;
 
 function addLog(msg: string) {
@@ -78,25 +80,28 @@ function renderDeviceList(devices: UUID[]) {
 }
 
 
+
 function selectDevice(uuid: string) {
     selectedDeviceUuid = uuid;
     selectedDeviceId.textContent = `Device: ${uuid}`;
+
     document.querySelectorAll('.device-item').forEach(el => el.classList.remove('selected'));
     const selectedEl = document.querySelector(`.device-item[data-uuid="${uuid}"]`);
     if (selectedEl) selectedEl.classList.add('selected');
+
     deviceDetails.style.display = 'block';
-    // Запрашиваем историю устройства (результат придёт через событие onDeviceDataUpdate)
-        if (dataPollingInterval) clearInterval(dataPollingInterval);
-        
-        controller.requestDeviceData(uuid, 20);
-        
-        dataPollingInterval = setInterval(() => {
-            if (selectedDeviceUuid) {
-                controller.requestDeviceData(selectedDeviceUuid, 20);
-            }
-        }, 5000);
-    addLog(`Requested history for ${uuid.substring(0, 8)}...`);
+    chartContainer.style.display = 'none';
+    currentTemp.textContent = '--°C';
+    lastUpdate.textContent = '--:--';
+
+    if (tempChart) {
+        tempChart.destroy();
+        tempChart = null;
+    }
+
+    addLog(`Selected device ${uuid.substring(0, 8)}... Waiting for live data or Refresh.`);
 }
+
 
 async function loadDeviceData(uuid: string) {
     // Метод оставлен для совместимости, но теперь он просто вызывает запрос
@@ -105,16 +110,21 @@ async function loadDeviceData(uuid: string) {
 }
 
 
+
 function updateDeviceDisplay(uuid: string, records: SensorRecord[]) {
     if (uuid !== selectedDeviceUuid) return;
+
     if (records.length > 0) {
         const temp = ((records[0].value & 0xFF) / 3.0) - 30.0;
         currentTemp.textContent = temp.toFixed(1) + '°C';
         lastUpdate.textContent = new Date().toLocaleTimeString();
+        chartContainer.style.display = 'block';
         updateChart(records);
     }
+
     renderDeviceList(controller.getCachedDevices());
 }
+
 
 function updateChart(records: SensorRecord[]) {
     if (!tempChart) {
@@ -143,14 +153,23 @@ async function init() {
 
     controller.onConnectionStateChange.add(state => updateStatus(state));
 
-    controller.onDeviceListUpdate.add(devices => {
+
+controller.onDeviceListUpdate.add(devices => {
         renderDeviceList(devices);
-        if (devices.length > 0 && !selectedDeviceUuid) selectDevice(devices[0].toAString().toString());
     });
+
     controller.onDeviceDataUpdate.add((update: DeviceUpdate) => {
-        if (update.deviceUid === selectedDeviceUuid) updateDeviceDisplay(update.deviceUid, update.records);
-        else renderDeviceList(controller.getCachedDevices());
+        if (!selectedDeviceUuid) {
+            selectDevice(update.deviceUid);
+        }
+
+        if (update.deviceUid === selectedDeviceUuid) {
+            updateDeviceDisplay(update.deviceUid, update.records);
+        } else {
+            renderDeviceList(controller.getCachedDevices());
+        }
     });
+
 
     controller.onError.add(error => {
         addLog(`Error: ${error}`);
@@ -178,14 +197,20 @@ async function init() {
         });
     };
 
-    btnDisconnect.onclick = () => {
-        controller.disconnect().then(() => {
-            screenConnect.classList.add('visible');
-            if (dataPollingInterval) { clearInterval(dataPollingInterval); dataPollingInterval = null; }
-            screenDisplay.classList.remove('visible');
-            selectedDeviceUuid = null;
-            if (tempChart) { tempChart.destroy(); tempChart = null; }
-        });
+
+btnDisconnect.onclick = () => {
+    controller.disconnect().then(() => {
+        screenConnect.classList.add('visible');
+        screenDisplay.classList.remove('visible');
+        selectedDeviceUuid = null;
+        deviceDetails.style.display = 'none';
+        if (tempChart) {
+            tempChart.destroy();
+            tempChart = null;
+        }
+    });
+};
+
     };
 
 
