@@ -35,11 +35,18 @@ public class SmartDeviceEmulator {
 
 
 
+
     public SmartDeviceEmulator(UUID serviceUid) {
         this(
                 serviceUid,
-                "smarthub-data/device-" + serviceUid + ".bin");
+                java.nio.file.Paths.get(
+                                System.getProperty("user.home"),
+                                ".aether",
+                                "smarthub",
+                                "device-" + serviceUid + ".bin")
+                        .toString());
     }
+
 
     SmartDeviceEmulator(
             UUID serviceUid,
@@ -67,11 +74,29 @@ public class SmartDeviceEmulator {
 
         URI uri = URI.create(regUri);
 
+
+        File stateFile =
+                new File(statePath);
+
+        File stateDirectory =
+                stateFile.getParentFile();
+
+        if (stateDirectory != null
+                && !stateDirectory.isDirectory()
+                && !stateDirectory.mkdirs()
+                && !stateDirectory.isDirectory()) {
+
+            throw new IllegalStateException(
+                    "Failed to create emulator state directory: "
+                            + stateDirectory);
+        }
+
         clientState =
                 new ClientStateInFile(
                         serviceUid,
                         List.of(uri),
-                        new File(statePath));
+                        stateFile);
+
 
         client =
                 AetherCloudClient.asClient(

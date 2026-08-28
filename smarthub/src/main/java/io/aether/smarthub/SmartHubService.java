@@ -24,9 +24,12 @@ public class SmartHubService {
     private static final String TAG = "SmartHub";
     private static final String DEFAULT_DB_PATH = "smarthub-data/smarthub";
     private static final String STATE_PATH = "smarthub-data/client.bin";
+
     private final Map<UUID, DeviceSession> devices = new ConcurrentHashMap<>();
     private final Set<UUID> knownDevices = ConcurrentHashMap.newKeySet();
+    private final Map<UUID, SmartHomeClientGuiApiRemote> guiClients = new ConcurrentHashMap<>();
     private final AFuture deviceRegisteredFuture = AFuture.make();
+
 
     private JdbcConnectionPool connectionPool;
     private io.aether.cloud.client.AetherCloudClient client;
@@ -165,8 +168,38 @@ public class SmartHubService {
 
                 stream.asIn()
                         .keys(ctx -> (SmartHomeDeviceApi) value -> {
+
                             long now = System.currentTimeMillis();
+
+                            SensorRecord liveRecord =
+                                    new SensorRecord(
+                                            (byte) value,
+                                            (byte) 0);
+
+                            DeviceSession newSession =
+                                    new DeviceSession(peerUid);
+
+                            DeviceSession session =
+                                    devices.putIfAbsent(
+                                            peerUid,
+                                            newSession);
+
+                            boolean becameActive =
+                                    session == null;
+
+                            if (session == null) {
+                                session = newSession;
+                            }
+
+                            session.lastState =
+                                    new SensorRecord[]{
+                                            liveRecord
+                                    };
+
+                            session.lastSeen = now;
+
                             boolean isNew = knownDevices.add(peerUid);
+
 
                             if (isNew) {
                                 try (Connection conn = connectionPool.getConnection();
@@ -217,11 +250,21 @@ public class SmartHubService {
                                         "Inserted device state",
                                         "deviceUid", peerUid,
                                         "value", value);
+
                             } catch (Exception e) {
                                 Log.error(
                                         "SmartHub SQL error for device " + peerUid,
                                         e);
                             }
+
+                            if (becameActive) {
+                                broadcastDeviceList();
+                            }
+
+                            broadcastDeviceState(
+                                    peerUid,
+                                    liveRecord);
+
                         }, peerUid)
                         .accept();
 
@@ -236,13 +279,25 @@ public class SmartHubService {
                         "SmartHub: gui stream received",
                         "guiUid", peerUid);
 
+
                 stream.asIn()
                         .keys(
-                                ctx -> new MySmartHomeGuiApi(
-                                        ctx.makeRemote(SmartHomeClientGuiApi.META)),
+                                ctx -> {
+                                    SmartHomeClientGuiApiRemote remote =
+                                            ctx.makeRemote(
+                                                    SmartHomeClientGuiApi.META);
+
+                                    guiClients.put(
+                                            peerUid,
+                                            remote);
+
+                                    return new MySmartHomeGuiApi(
+                                            remote);
+                                },
                                 peerUid)
                         .onFlushData(data -> rootCtx.sendToRemote(data))
                         .accept();
+
 
                 Log.info(
                         "SmartHub: gui stream accepted",
@@ -252,7 +307,71 @@ public class SmartHubService {
     }
 
 
+    private UUID[] activeDeviceUids() {
+        return devices.keySet()
+                .toArray(new UUID[0]);
+    }
+
+
+    private void broadcastDeviceList() {
+        UUID[] activeDevices =
+                activeDeviceUids();
+
+        for (Map.Entry<UUID, SmartHomeClientGuiApiRemote> entry :
+                guiClients.entrySet()) {
+
+            try {
+                entry.getValue()
+                        .onGetDevicesResult(
+                                activeDevices);
+            } catch (RuntimeException error) {
+                guiClients.remove(
+                        entry.getKey(),
+                        entry.getValue());
+
+                Log.warn(
+                        "Failed to send SmartHub device list to GUI",
+                        "guiUid", entry.getKey(),
+                        "error", error.getMessage());
+            }
+        }
+    }
+
+
+    private void broadcastDeviceState(
+            UUID deviceUid,
+            SensorRecord record) {
+
+        SensorRecord[] records =
+                new SensorRecord[]{
+                        record
+                };
+
+        for (Map.Entry<UUID, SmartHomeClientGuiApiRemote> entry :
+                guiClients.entrySet()) {
+
+            try {
+                entry.getValue()
+                        .deviceStateUpdated(
+                                deviceUid,
+                                records);
+            } catch (RuntimeException error) {
+                guiClients.remove(
+                        entry.getKey(),
+                        entry.getValue());
+
+                Log.warn(
+                        "Failed to send SmartHub state to GUI",
+                        "guiUid", entry.getKey(),
+                        "deviceUid", deviceUid,
+                        "error", error.getMessage());
+            }
+        }
+    }
+
+
     public AFuture getDeviceRegisteredFuture() {
+
         return deviceRegisteredFuture;
     }
 
@@ -334,12 +453,24 @@ public class SmartHubService {
         }
 
         @Override
+
         public void getDevices() {
-            Log.info("getDevices called for gui", "currentKnownCount", knownDevices.size());
-            UUID[] devicesArray = knownDevices.toArray(new UUID[0]);
-            Log.info("getDevices returning", "count", devicesArray.length);
-            for (UUID u : devicesArray) Log.info("device", "uid", u);
-            guiRemote.onGetDevicesResult(devicesArray);
+            UUID[] devicesArray =
+                    activeDeviceUids();
+
+            Log.info(
+                    "getDevices called for gui",
+                    "activeCount", devicesArray.length);
+
+            for (UUID u : devicesArray) {
+                Log.info(
+                        "active device",
+                        "uid", u);
+            }
+
+            guiRemote.onGetDevicesResult(
+                    devicesArray);
+
         }
 
 

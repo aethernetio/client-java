@@ -242,14 +242,22 @@ class SmartHubPublicSmokeTest {
         io.aether.cloud.client.AetherCloudClient guiClient = null;
         UUID deviceUid = null;
 
+
         AFuture devicesReceived = AFuture.make();
         AFuture historyReceived = AFuture.make();
+        AFuture liveStateReceived = AFuture.make();
+
 
         java.util.concurrent.atomic.AtomicReference<UUID[]> devices =
                 new java.util.concurrent.atomic.AtomicReference<>();
 
+
         java.util.concurrent.atomic.AtomicReference<io.aether.api.smarthub.SensorRecord[]> history =
                 new java.util.concurrent.atomic.AtomicReference<>();
+
+        java.util.concurrent.atomic.AtomicReference<io.aether.api.smarthub.SensorRecord[]> liveState =
+                new java.util.concurrent.atomic.AtomicReference<>();
+
 
         try {
             await(
@@ -298,10 +306,22 @@ class SmartHubPublicSmokeTest {
             io.aether.api.smarthub.SmartHomeClientGuiApi localGuiApi =
                     new io.aether.api.smarthub.SmartHomeClientGuiApi() {
                         @Override
+
                         public void deviceStateUpdated(
                                 UUID uid,
                                 io.aether.api.smarthub.SensorRecord[] records) {
+
+                            if (expectedDeviceUid.equals(uid)
+                                    && records != null
+                                    && records.length > 0) {
+
+                                liveState.set(
+                                        records);
+
+                                liveStateReceived.done();
+                            }
                         }
+
 
                         @Override
                         public void onGetDevicesResult(
@@ -348,13 +368,19 @@ class SmartHubPublicSmokeTest {
                                 return localGuiApi;
                             });
 
+
             await(
                     guiClient.startFuture,
                     "SmartHub GUI client registration");
 
             await(
+                    liveStateReceived,
+                    "SmartHub live deviceStateUpdated callback");
+
+            await(
                     devicesReceived,
                     "SmartHub getDevices callback");
+
 
             await(
                     historyReceived,
@@ -372,8 +398,21 @@ class SmartHubPublicSmokeTest {
                             .contains(expectedDeviceUid),
                     "SmartHub getDevices did not return emulator UID");
 
+
+            io.aether.api.smarthub.SensorRecord[] receivedLiveState =
+                    liveState.get();
+
+            assertNotNull(
+                    receivedLiveState,
+                    "SmartHub live state callback returned null");
+
+            assertTrue(
+                    receivedLiveState.length > 0,
+                    "SmartHub live state callback returned no records");
+
             io.aether.api.smarthub.SensorRecord[] receivedHistory =
                     history.get();
+
 
             assertNotNull(
                     receivedHistory,
