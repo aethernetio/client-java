@@ -12,25 +12,74 @@ def startShScript = $/#!/bin/sh
 DIR=$$(dirname "$$0")
 JRE_DIR="$$DIR/jre"
 if [ ! -x "$$JRE_DIR/bin/java" ]; then
+
     echo "Downloading Java..."
     mkdir -p "$$JRE_DIR"
+
     if [ "$$(uname -s)" = "Darwin" ]; then
         JRE_URL="https://api.adoptium.net/v3/binary/latest/25/ga/mac/x64/jre/hotspot/normal/eclipse?project=jdk"
+        JRE_FALLBACK_URL=""
     else
         JRE_URL="https://api.adoptium.net/v3/binary/latest/25/ga/linux/x64/jre/hotspot/normal/eclipse?project=jdk"
+        JRE_FALLBACK_URL="https://cdn.azul.com/zulu/bin/zulu25.36.205-ca-jre25.0.4.1-linux_x64.tar.gz"
     fi
-    if command -v wget >/dev/null 2>&1; then
-        wget --show-progress -O "$$JRE_DIR/jre.tar.gz" "$$JRE_URL" || { echo "Download failed!"; exit 1; }
-    elif command -v curl >/dev/null 2>&1; then
-        curl -L --progress-bar -o "$$JRE_DIR/jre.tar.gz" "$$JRE_URL" || { echo "Download failed!"; exit 1; }
-    else
-        echo "ERROR: Neither wget nor curl found. Please install one of them."
-        exit 1
+
+    download_jre() {
+        DOWNLOAD_URL="$$1"
+        rm -f "$$JRE_DIR/jre.tar.gz"
+
+        if command -v wget >/dev/null 2>&1; then
+            wget \
+                --show-progress \
+                --connect-timeout=8 \
+                --read-timeout=30 \
+                --tries=1 \
+                -O "$$JRE_DIR/jre.tar.gz" \
+                "$$DOWNLOAD_URL"
+        elif command -v curl >/dev/null 2>&1; then
+            curl \
+                -L \
+                --progress-bar \
+                --connect-timeout 8 \
+                --max-time 180 \
+                -o "$$JRE_DIR/jre.tar.gz" \
+                "$$DOWNLOAD_URL"
+        else
+            echo "ERROR: Neither wget nor curl found. Please install one of them."
+            return 127
+        fi
+    }
+
+    if ! download_jre "$$JRE_URL"; then
+        if [ -n "$$JRE_FALLBACK_URL" ]; then
+            echo "Primary Java download failed, trying fallback..."
+
+            if ! download_jre "$$JRE_FALLBACK_URL"; then
+                rm -f "$$JRE_DIR/jre.tar.gz"
+                echo "Java download failed!"
+                exit 1
+            fi
+        else
+            rm -f "$$JRE_DIR/jre.tar.gz"
+            echo "Java download failed!"
+            exit 1
+        fi
     fi
+
     echo "Extracting Java..."
-    tar -xzf "$$JRE_DIR/jre.tar.gz" -C "$$JRE_DIR" --strip-components=1 || { echo "Extraction failed!"; exit 1; }
+
+    tar -xzf "$$JRE_DIR/jre.tar.gz" \
+        -C "$$JRE_DIR" \
+        --strip-components=1 \
+        || {
+            rm -f "$$JRE_DIR/jre.tar.gz"
+            echo "Extraction failed!"
+            exit 1
+        }
+
     rm "$$JRE_DIR/jre.tar.gz"
     echo "Java ready."
+
 fi
 exec "$$JRE_DIR/bin/java" -cp "$$DIR/lib/*" io.aether.launcher.Launcher "$$@"/$
 

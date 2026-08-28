@@ -24,10 +24,12 @@ public class JdkProvider extends ToolProvider {
         if (Files.exists(toolsDir)) {
             try (var s = Files.list(toolsDir)) {
                 for (Path sub : s.toList()) {
-                    if (Files.isDirectory(sub) && sub.getFileName().toString().startsWith("jdk-") && isValidJdk(sub)) {
+
+                    if (Files.isDirectory(sub) && isValidJdk(sub)) {
                         reportProgress("Found JDK in workspace/tools: " + sub);
                         return sub;
                     }
+
                 }
             } catch (IOException e) {
                 System.err.println("[JdkProvider] Error listing tools directory: " + e.getMessage());
@@ -83,25 +85,98 @@ public class JdkProvider extends ToolProvider {
     public Path download(Path toolsDir) throws Exception {
         reportProgress("Downloading JDK " + REQUIRED_MAJOR + "...");
         Files.createDirectories(toolsDir);
-        String url = "https://api.adoptium.net/v3/binary/latest/" + REQUIRED_MAJOR +
-                     "/ga/linux/x64/jdk/hotspot/normal/eclipse?project=jdk";
-        Path archive = toolsDir.resolve("jdk.tar.gz");
-        downloadWithProgress(url, archive, pct -> reportProgress("Downloading... " + pct + "%"));
+
+        String primaryUrl =
+                "https://api.adoptium.net/v3/binary/latest/"
+                        + REQUIRED_MAJOR
+                        + "/ga/linux/x64/jdk/hotspot/normal/eclipse?project=jdk";
+
+        String fallbackUrl =
+                "https://cdn.azul.com/zulu/bin/"
+                        + "zulu25.36.205-ca-jdk25.0.4.1-linux_x64.tar.gz";
+
+        Path archive =
+                toolsDir.resolve("jdk.tar.gz");
+
+        try {
+            downloadWithProgress(
+                    primaryUrl,
+                    archive,
+                    pct ->
+                            reportProgress(
+                                    "Downloading... "
+                                            + pct
+                                            + "%"));
+        } catch (IOException primaryError) {
+            Files.deleteIfExists(archive);
+
+            reportProgress(
+                    "Primary JDK download failed, trying fallback...");
+
+            try {
+                downloadWithProgress(
+                        fallbackUrl,
+                        archive,
+                        pct ->
+                                reportProgress(
+                                        "Downloading fallback... "
+                                                + pct
+                                                + "%"));
+            } catch (IOException fallbackError) {
+                Files.deleteIfExists(archive);
+                fallbackError.addSuppressed(primaryError);
+                throw fallbackError;
+            }
+        }
+
         reportProgress("Extracting JDK...");
-        ProcessBuilder pb = new ProcessBuilder("tar", "xzf", archive.toString(), "-C", toolsDir.toString());
+
+        ProcessBuilder pb =
+                new ProcessBuilder(
+                        "tar",
+                        "xzf",
+                        archive.toString(),
+                        "-C",
+                        toolsDir.toString());
+
         pb.inheritIO();
-        Process p = pb.start();
-        p.waitFor();
-        // Find extracted directory
-        try (var s = Files.list(toolsDir)) {
-            for (Path e : s.toList()) {
-                if (Files.isDirectory(e) && e.getFileName().toString().startsWith("jdk-" + REQUIRED_MAJOR)) {
-                    reportProgress("JDK installed to " + e);
-                    return e;
+
+        Process p =
+                pb.start();
+
+        int exitCode =
+                p.waitFor();
+
+        if (exitCode != 0) {
+            Files.deleteIfExists(archive);
+
+            throw new IOException(
+                    "Failed to extract JDK archive, exit code "
+                            + exitCode);
+        }
+
+        Files.deleteIfExists(archive);
+
+        try (var stream =
+                     Files.list(toolsDir)) {
+
+            for (Path candidate :
+                    stream.toList()) {
+
+                if (Files.isDirectory(candidate)
+                        && isValidJdk(candidate)) {
+
+                    reportProgress(
+                            "JDK installed to "
+                                    + candidate);
+
+                    return candidate;
                 }
             }
         }
-        throw new IOException("Failed to locate extracted JDK directory");
+
+        throw new IOException(
+                "Failed to locate extracted JDK directory");
     }
 
     private boolean isValidJdk(Path home) {

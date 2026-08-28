@@ -352,6 +352,7 @@ public class GradleProvider extends ToolProvider {
             Path toolsDir)
             throws Exception {
 
+
         reportProgress(
                 "Downloading Gradle "
                         + DOWNLOAD_VERSION
@@ -360,8 +361,13 @@ public class GradleProvider extends ToolProvider {
         Files.createDirectories(
                 toolsDir);
 
-        String url =
+        String primaryUrl =
                 "https://services.gradle.org/distributions/gradle-"
+                        + DOWNLOAD_VERSION
+                        + "-bin.zip";
+
+        String fallbackUrl =
+                "https://repo.huaweicloud.com/gradle/gradle-"
                         + DOWNLOAD_VERSION
                         + "-bin.zip";
 
@@ -369,14 +375,87 @@ public class GradleProvider extends ToolProvider {
                 toolsDir.resolve(
                         "gradle.zip");
 
-        downloadWithProgress(
-                url,
-                archive,
-                pct ->
-                        reportProgress(
-                                "Downloading... "
-                                        + pct
-                                        + "%"));
+        try {
+            downloadWithProgress(
+                    primaryUrl,
+                    archive,
+                    pct ->
+                            reportProgress(
+                                    "Downloading... "
+                                            + pct
+                                            + "%"));
+        } catch (IOException primaryError) {
+            Files.deleteIfExists(
+                    archive);
+
+            reportProgress(
+                    "Primary Gradle download failed, trying fallback...");
+
+            try {
+                downloadWithProgress(
+                        fallbackUrl,
+                        archive,
+                        pct ->
+                                reportProgress(
+                                        "Downloading fallback... "
+                                                + pct
+                                                + "%"));
+            } catch (IOException fallbackError) {
+                Files.deleteIfExists(
+                        archive);
+
+                fallbackError.addSuppressed(
+                        primaryError);
+
+                throw fallbackError;
+            }
+        }
+
+        String expectedSha256 =
+                "a17ddd85a26b6a7f5ddb71ff8b05fc5104c0202c6e64782429790c933686c806";
+
+        java.security.MessageDigest digest =
+                java.security.MessageDigest.getInstance(
+                        "SHA-256");
+
+        try (java.io.InputStream in =
+                     Files.newInputStream(
+                             archive)) {
+
+            byte[] buffer =
+                    new byte[8192];
+
+            int read;
+
+            while ((read = in.read(buffer)) != -1) {
+                digest.update(
+                        buffer,
+                        0,
+                        read);
+            }
+        }
+
+        String actualSha256 =
+                java.util.HexFormat.of()
+                        .formatHex(
+                                digest.digest());
+
+        if (!expectedSha256.equalsIgnoreCase(
+                actualSha256)) {
+
+            Files.deleteIfExists(
+                    archive);
+
+            throw new IOException(
+                    "Gradle "
+                            + DOWNLOAD_VERSION
+                            + " archive checksum mismatch: "
+                            + actualSha256);
+        }
+
+        reportProgress(
+                "Gradle archive verified.");
+
 
         Path destDir =
                 toolsDir.resolve(

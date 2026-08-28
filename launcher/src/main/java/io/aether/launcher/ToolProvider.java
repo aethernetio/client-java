@@ -68,17 +68,24 @@ public abstract class ToolProvider {
         return "Not found";
     }
 
+
     protected static void downloadWithProgress(String url, Path dest, Consumer<Integer> onProgress) throws IOException {
         java.net.URLConnection conn = new java.net.URL(url).openConnection();
+        conn.setConnectTimeout(8_000);
+        conn.setReadTimeout(30_000);
+
         long total = conn.getContentLengthLong();
         long downloaded = 0;
+
         try (InputStream in = conn.getInputStream();
              OutputStream out = java.nio.file.Files.newOutputStream(dest)) {
             byte[] buf = new byte[8192];
             int n;
+
             while ((n = in.read(buf)) != -1) {
                 out.write(buf, 0, n);
                 downloaded += n;
+
                 if (total > 0) {
                     int pct = (int) (downloaded * 100 / total);
                     onProgress.accept(pct);
@@ -86,4 +93,5 @@ public abstract class ToolProvider {
             }
         }
     }
+
 }
