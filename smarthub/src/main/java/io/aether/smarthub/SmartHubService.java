@@ -307,23 +307,36 @@ public class SmartHubService {
     }
 
 
+
     private UUID[] activeDeviceUids() {
         return devices.keySet()
                 .toArray(new UUID[0]);
     }
 
 
+    private UUID[] knownDeviceUids() {
+        return knownDevices.stream()
+                .sorted(Comparator.comparing(UUID::toString))
+                .toArray(UUID[]::new);
+    }
+
+
+
     private void broadcastDeviceList() {
-        UUID[] activeDevices =
-                activeDeviceUids();
+
+        UUID[] persistedDevices =
+                knownDeviceUids();
+
 
         for (Map.Entry<UUID, SmartHomeClientGuiApiRemote> entry :
                 guiClients.entrySet()) {
 
             try {
                 entry.getValue()
+
                         .onGetDevicesResult(
-                                activeDevices);
+                                persistedDevices);
+
             } catch (RuntimeException error) {
                 guiClients.remove(
                         entry.getKey(),
@@ -455,18 +468,24 @@ public class SmartHubService {
         @Override
 
         public void getDevices() {
+
             UUID[] devicesArray =
-                    activeDeviceUids();
+                    knownDeviceUids();
+
+
 
             Log.info(
                     "getDevices called for gui",
-                    "activeCount", devicesArray.length);
+                    "knownCount", devicesArray.length,
+                    "activeCount", devices.size());
 
             for (UUID u : devicesArray) {
                 Log.info(
-                        "active device",
-                        "uid", u);
+                        "known device",
+                        "uid", u,
+                        "active", devices.containsKey(u));
             }
+
 
             guiRemote.onGetDevicesResult(
                     devicesArray);

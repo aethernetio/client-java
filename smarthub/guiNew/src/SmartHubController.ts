@@ -38,8 +38,11 @@ export class SmartHubController {
     
     public client: AetherCloudClient | null = null;
     private serviceConnection: ServiceConnection | null = null;
+
     private deviceDataCache = new Map<string, SensorRecord[]>();
+    private historyBackfillRequested = new Set<string>();
     private devices: UUID[] = [];
+
     
 
     async connect(serviceUuidStr: string, wsUri: string = "wss://dbservice.aethernet.io:9013"): Promise<void> {
@@ -65,9 +68,12 @@ export class SmartHubController {
                     .toPromise(5000);
 
                 this.client = null;
+
                 this.serviceConnection = null;
                 this.deviceDataCache.clear();
+                this.historyBackfillRequested.clear();
                 this.devices = [];
+
             }
 
             const serviceUuid = UUID.fromString(serviceUuidStr);
@@ -198,11 +204,50 @@ export class SmartHubController {
                     history
                 );
 
+
                 this.onDeviceDataUpdate.fire({
                     deviceUid: deviceUidStr,
                     records: history,
                     timestamp: Date.now()
                 });
+
+                if (!this.historyBackfillRequested.has(deviceUidStr)) {
+                    this.historyBackfillRequested.add(
+                        deviceUidStr
+                    );
+
+                    setTimeout(() => {
+                        if (!this.serviceConnection) {
+                            this.historyBackfillRequested.delete(
+                                deviceUidStr
+                            );
+                            return;
+                        }
+
+                        try {
+                            console.log(
+                                '[SmartHub] Loading persisted history after first live state',
+                                deviceUidStr
+                            );
+
+                            this.requestDeviceData(
+                                deviceUidStr,
+                                50
+                            );
+                        } catch (e) {
+                            this.historyBackfillRequested.delete(
+                                deviceUidStr
+                            );
+
+                            console.warn(
+                                '[SmartHub] Failed to request persisted history',
+                                deviceUidStr,
+                                e
+                            );
+                        }
+                    }, 0);
+                }
+
             },
 
             onGetDevicesResult: (
@@ -319,8 +364,11 @@ export class SmartHubController {
     }
 
     async disconnect(): Promise<void> {
+
         this.serviceConnection = null;
         this.deviceDataCache.clear();
+        this.historyBackfillRequested.clear();
+
         if (this.client) {
             await this.client.destroy(true).toPromise(5000);
             this.client = null;
