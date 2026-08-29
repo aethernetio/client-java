@@ -40,7 +40,6 @@ export class SmartHubController {
     private serviceConnection: ServiceConnection | null = null;
 
     private deviceDataCache = new Map<string, SensorRecord[]>();
-    private historyBackfillRequested = new Set<string>();
     private devices: UUID[] = [];
 
     
@@ -71,7 +70,6 @@ export class SmartHubController {
 
                 this.serviceConnection = null;
                 this.deviceDataCache.clear();
-                this.historyBackfillRequested.clear();
                 this.devices = [];
 
             }
@@ -99,6 +97,8 @@ export class SmartHubController {
             this.client.tryAcquireWebRtcMessageNode =
                 () => false;
 
+
+
             phase = 'connect to Aether network';
 
             await this.client
@@ -110,6 +110,8 @@ export class SmartHubController {
             await this.connectToService(
                 serviceUuid
             );
+
+
 
             phase = 'connected';
 
@@ -211,42 +213,6 @@ export class SmartHubController {
                     timestamp: Date.now()
                 });
 
-                if (!this.historyBackfillRequested.has(deviceUidStr)) {
-                    this.historyBackfillRequested.add(
-                        deviceUidStr
-                    );
-
-                    setTimeout(() => {
-                        if (!this.serviceConnection) {
-                            this.historyBackfillRequested.delete(
-                                deviceUidStr
-                            );
-                            return;
-                        }
-
-                        try {
-                            console.log(
-                                '[SmartHub] Loading persisted history after first live state',
-                                deviceUidStr
-                            );
-
-                            this.requestDeviceData(
-                                deviceUidStr,
-                                50
-                            );
-                        } catch (e) {
-                            this.historyBackfillRequested.delete(
-                                deviceUidStr
-                            );
-
-                            console.warn(
-                                '[SmartHub] Failed to request persisted history',
-                                deviceUidStr,
-                                e
-                            );
-                        }
-                    }, 0);
-                }
 
             },
 
@@ -367,7 +333,6 @@ export class SmartHubController {
 
         this.serviceConnection = null;
         this.deviceDataCache.clear();
-        this.historyBackfillRequested.clear();
 
         if (this.client) {
             await this.client.destroy(true).toPromise(5000);

@@ -99,7 +99,10 @@ function selectDevice(uuid: string) {
         tempChart = null;
     }
 
-    addLog(`Selected device ${uuid.substring(0, 8)}... Waiting for live data or Refresh.`);
+
+    loadDeviceData(uuid);
+    addLog(`Selected device ${uuid.substring(0, 8)}... Loading persisted history...`);
+
 }
 
 
@@ -154,9 +157,16 @@ async function init() {
     controller.onConnectionStateChange.add(state => updateStatus(state));
 
 
-controller.onDeviceListUpdate.add(devices => {
+
+    controller.onDeviceListUpdate.add(devices => {
         renderDeviceList(devices);
+
+        if (!selectedDeviceUuid && devices.length > 0) {
+            const firstDeviceUuid = devices[0].toAString().toString();
+            selectDevice(firstDeviceUuid);
+        }
     });
+
 
     controller.onDeviceDataUpdate.add((update: DeviceUpdate) => {
         if (!selectedDeviceUuid) {

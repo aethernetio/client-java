@@ -467,45 +467,50 @@ public class SmartHubService {
 
         @Override
 
+
         public void getDevices() {
+            long startedNs = System.nanoTime();
 
             UUID[] devicesArray =
                     knownDeviceUids();
 
-
+            long preparedNs = System.nanoTime();
 
             Log.info(
-                    "getDevices called for gui",
+                    "SmartHub getDevices timing",
                     "knownCount", devicesArray.length,
-                    "activeCount", devices.size());
-
-            for (UUID u : devicesArray) {
-                Log.info(
-                        "known device",
-                        "uid", u,
-                        "active", devices.containsKey(u));
-            }
-
+                    "activeCount", devices.size(),
+                    "prepareMs", (preparedNs - startedNs) / 1_000_000.0);
 
             guiRemote.onGetDevicesResult(
                     devicesArray);
 
+            Log.info(
+                    "SmartHub getDevices callback queued",
+                    "totalMs", (System.nanoTime() - startedNs) / 1_000_000.0);
         }
 
 
+
         @Override
+
         public void requestDeviceHistory(UUID d, long c) {
+            long startedNs = System.nanoTime();
+
             int limit =
                     (int) Math.max(
                             0L,
                             Math.min(
                                     c,
-                                    100L
-                            )
+                                    100L)
                     );
 
             List<SensorRecord> records =
                     new ArrayList<>();
+
+            long beforeConnectionNs = System.nanoTime();
+            long connectionAcquiredNs = beforeConnectionNs;
+            long queryFinishedNs = beforeConnectionNs;
 
             try (Connection conn =
                          connectionPool.getConnection();
@@ -516,6 +521,8 @@ public class SmartHubService {
                                          + "WHERE DEVICE_UID = ? "
                                          + "ORDER BY STATE_TIMESTAMP DESC "
                                          + "LIMIT ?")) {
+
+                connectionAcquiredNs = System.nanoTime();
 
                 stmt.setObject(
                         1,
@@ -539,16 +546,32 @@ public class SmartHubService {
                         );
                     }
                 }
+
+                queryFinishedNs = System.nanoTime();
             } catch (Exception e) {
                 Log.error(e);
+                queryFinishedNs = System.nanoTime();
             }
+
+            Log.info(
+                    "SmartHub history timing",
+                    "deviceUid", d,
+                    "records", records.size(),
+                    "connectionMs", (connectionAcquiredNs - beforeConnectionNs) / 1_000_000.0,
+                    "queryMs", (queryFinishedNs - connectionAcquiredNs) / 1_000_000.0,
+                    "beforeCallbackMs", (queryFinishedNs - startedNs) / 1_000_000.0);
 
             guiRemote.onRequestHistoryResult(
                     d,
                     records.toArray(
-                            new SensorRecord[0]
-                    )
+                            new SensorRecord[0])
             );
+
+            Log.info(
+                    "SmartHub history callback queued",
+                    "deviceUid", d,
+                    "totalMs", (System.nanoTime() - startedNs) / 1_000_000.0);
         }
+
     }
 }

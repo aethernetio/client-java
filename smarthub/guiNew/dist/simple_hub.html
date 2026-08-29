@@ -240,7 +240,6 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="simple_hub.js"></script>
 <script defer>/******/ (() => { // webpackBootstrap
 /******/ 	var __webpack_modules__ = ({
 
@@ -58144,27 +58143,107 @@ class SmartHubController {
     devices = [];
     async connect(serviceUuidStr, wsUri = "wss://dbservice.aethernet.io:9013") {
         this.onConnectionStateChange.fire('connecting');
-        aether_client_1.Log.printConsolePlain(new aether_client_1.LogFilter());
+        aether_client_1.Log.printConsolePlain(new aether_client_1.LogFilter()
+            .traceOff()
+            .debugOff()
+            .infoOff());
         await (0, aether_client_1.applySodium)();
         let phase = 'parse service UUID';
         try {
+            if (this.client) {
+                phase = 'close previous Aether client';
+                await this.client
+                    .destroy(true)
+                    .toPromise(5000);
+                this.client = null;
+                this.serviceConnection = null;
+                this.deviceDataCache.clear();
+                this.devices = [];
+            }
             const serviceUuid = aether_client_1.UUID.fromString(serviceUuidStr);
             phase = 'load/create persistent client state';
             const state = new aether_client_1.ClientStateInLocalStorage(serviceUuid, [wsUri], undefined, aether_client_1.aetherApi.CryptoLib.SODIUM, 'smarthub_gui_state_' + serviceUuidStr);
             phase = 'create AetherCloudClient';
-            this.client = new aether_client_1.AetherCloudClient(state, "SmartHubClient");
-            this.client.onMessage.add((uid, data) => {
-                console.log('[SmartHub] Raw message from', uid.toAString().toString(), 'length', data.length);
-            });
+            this.client =
+                new aether_client_1.AetherCloudClient(state, "SmartHubClient");
+            this.client.tryAcquireWebRtcMessageNode =
+                () => false;
+            const connectStartedAt = performance.now();
             phase = 'connect to Aether network';
-            await this.client.connect().toPromise(30000);
+            await this.client
+                .connect()
+                .toPromise(30000);
+            console.log('[SmartHub] Aether client startFuture completed', Math.round(performance.now() - connectStartedAt) + 'ms');
+            phase = 'wait for writable Aether work connection';
+            const knownConnections = this.client.connectServers(this.client.getKnownServerDescriptors());
+            const workConnections = Array.from(new Set([
+                ...this.client.getConnections(),
+                ...knownConnections
+            ]));
+            if (workConnections.length === 0) {
+                throw new Error('No Aether work connections available after client connect');
+            }
+            await new Promise((resolve, reject) => {
+                let settled = false;
+                let failedConnections = 0;
+                const timeout = setTimeout(() => {
+                    if (settled) {
+                        return;
+                    }
+                    settled = true;
+                    reject(new Error('Timeout waiting for writable Aether work connection'));
+                }, 30000);
+                const writable = () => {
+                    if (settled) {
+                        return;
+                    }
+                    settled = true;
+                    clearTimeout(timeout);
+                    resolve();
+                };
+                const failed = (error) => {
+                    if (settled) {
+                        return;
+                    }
+                    failedConnections++;
+                    if (failedConnections === workConnections.length) {
+                        settled = true;
+                        clearTimeout(timeout);
+                        reject(error);
+                    }
+                };
+                for (const connection of workConnections) {
+                    if (connection.isWritable()) {
+                        writable();
+                        return;
+                    }
+                    connection.connectFuture
+                        .toRunnable(writable)
+                        .onError(failed);
+                }
+            });
+            console.log('[SmartHub] Aether work connection writable', Math.round(performance.now() - connectStartedAt) + 'ms');
             phase = 'open SmartHub API stream';
             await this.connectToService(serviceUuid);
+            console.log('[SmartHub] SmartHub API stream opened', Math.round(performance.now() - connectStartedAt) + 'ms');
             phase = 'connected';
             this.onConnectionStateChange.fire('connected');
         }
         catch (e) {
-            const message = e instanceof Error ? e.message : String(e);
+            if (this.client) {
+                try {
+                    await this.client
+                        .destroy(true)
+                        .toPromise(5000);
+                }
+                catch {
+                }
+                this.client = null;
+            }
+            this.serviceConnection = null;
+            const message = e instanceof Error
+                ? e.message
+                : String(e);
             console.error(`[SmartHub] Connection failed during ${phase}`, e);
             this.onError.fire(`Connection failed during ${phase}: ${message}`);
             this.onConnectionStateChange.fire('error');
@@ -58172,16 +58251,20 @@ class SmartHubController {
         }
     }
     async connectToService(serviceUuid) {
-        if (!this.client)
+        if (!this.client) {
             throw new Error("Client not initialized");
+        }
         const node = this.client.getMessageNode(serviceUuid, aether_client_1.MessageEventListenerDefault);
         console.log('[SmartHub] MessageNode created for service', serviceUuid.toAString().toString());
         const localGuiApi = {
             deviceStateUpdated: (deviceUid, records) => {
-                console.log('[SmartHub] deviceStateUpdated', deviceUid.toAString().toString(), records);
                 const deviceUidStr = deviceUid.toAString().toString();
-                let history = this.deviceDataCache.get(deviceUidStr) || [];
-                history = [...history, ...records].slice(-50);
+                console.log('[SmartHub] deviceStateUpdated', deviceUidStr, 'records=' + records.length);
+                let history = this.deviceDataCache.get(deviceUidStr)
+                    || [];
+                history =
+                    [...history, ...records]
+                        .slice(-50);
                 this.deviceDataCache.set(deviceUidStr, history);
                 this.onDeviceDataUpdate.fire({
                     deviceUid: deviceUidStr,
@@ -58190,14 +58273,14 @@ class SmartHubController {
                 });
             },
             onGetDevicesResult: (devices) => {
-                console.log('[SmartHub] onGetDevicesResult received:', devices.map(d => d.toAString().toString()));
+                console.log('[SmartHub] onGetDevicesResult received', 'devices=' + devices.length);
                 this.devices = devices;
                 this.onDeviceListUpdate.fire(devices);
             },
             onRequestHistoryResult: (deviceUid, records) => {
-                console.log('[SmartHub] onRequestHistoryResult', deviceUid.toAString().toString(), records);
                 const deviceUidStr = deviceUid.toAString().toString();
-                const history = records.slice(-50);
+                console.log('[SmartHub] onRequestHistoryResult', deviceUidStr, 'records=' + records.length);
+                const history = records.slice().reverse().slice(-50);
                 this.deviceDataCache.set(deviceUidStr, history);
                 this.onDeviceDataUpdate.fire({
                     deviceUid: deviceUidStr,
@@ -58207,14 +58290,16 @@ class SmartHubController {
             }
         };
         const rootCtx = node.toApiR(aether_api_1.SmartHomeClientGuiApi.META, (_ctx) => localGuiApi);
-        const hubRegistry = aether_api_1.SmartHomeHubRegistryApi.META.makeRemote(rootCtx);
+        const hubRegistry = aether_api_1.SmartHomeHubRegistryApi.META
+            .makeRemote(rootCtx);
         const guiApi = hubRegistry.openGui(() => localGuiApi, data => data);
         this.serviceConnection = {
-            uuid: serviceUuid.toAString().toString(),
+            uuid: serviceUuid
+                .toAString()
+                .toString(),
             hub: guiApi
         };
         console.log('[SmartHub] Service connection established');
-        this.onConnectionStateChange.fire('connected');
         this.refreshDeviceList();
     }
     requestDeviceData(deviceUidStr, count = 10) {
@@ -60404,7 +60489,7 @@ function renderDeviceList(devices) {
     deviceList.innerHTML = devices.map(device => {
         const deviceUuid = device.toAString().toString();
         const cached = controller.getCachedDeviceData(deviceUuid);
-        const lastTemp = cached && cached.length > 0 ? (((cached[0].value & 0xFF) / 3.0) - 30.0).toFixed(1) + '°C' : '--°C';
+        const lastTemp = cached && cached.length > 0 ? (((cached[cached.length - 1].value & 0xFF) / 3.0) - 30.0).toFixed(1) + '°C' : '--°C';
         const isSelected = selectedDeviceUuid === deviceUuid ? 'selected' : '';
         return `<div class="device-item ${isSelected}" data-uuid="${deviceUuid}">
                     <div class="device-id">${deviceUuid.substring(0, 8)}...</div>
@@ -60438,7 +60523,8 @@ function selectDevice(uuid) {
         tempChart.destroy();
         tempChart = null;
     }
-    addLog(`Selected device ${uuid.substring(0, 8)}... Waiting for live data or Refresh.`);
+    loadDeviceData(uuid);
+    addLog(`Selected device ${uuid.substring(0, 8)}... Loading persisted history...`);
 }
 async function loadDeviceData(uuid) {
     // Метод оставлен для совместимости, но теперь он просто вызывает запрос
@@ -60449,7 +60535,7 @@ function updateDeviceDisplay(uuid, records) {
     if (uuid !== selectedDeviceUuid)
         return;
     if (records.length > 0) {
-        const temp = ((records[0].value & 0xFF) / 3.0) - 30.0;
+        const temp = ((records[records.length - 1].value & 0xFF) / 3.0) - 30.0;
         currentTemp.textContent = temp.toFixed(1) + '°C';
         lastUpdate.textContent = new Date().toLocaleTimeString();
         chartContainer.style.display = 'block';
@@ -60485,6 +60571,10 @@ async function init() {
     controller.onConnectionStateChange.add(state => updateStatus(state));
     controller.onDeviceListUpdate.add(devices => {
         renderDeviceList(devices);
+        if (!selectedDeviceUuid && devices.length > 0) {
+            const firstDeviceUuid = devices[0].toAString().toString();
+            selectDevice(firstDeviceUuid);
+        }
     });
     controller.onDeviceDataUpdate.add((update) => {
         if (!selectedDeviceUuid) {
