@@ -233,8 +233,10 @@ export class SmartHubController {
                     'records=' + records.length
                 );
 
+
                 const history =
-                    records.slice(-50);
+                    records.slice().reverse().slice(-50);
+
 
                 this.deviceDataCache.set(
                     deviceUidStr,

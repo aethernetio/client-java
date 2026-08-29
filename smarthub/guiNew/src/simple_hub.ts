@@ -56,7 +56,7 @@ function renderDeviceList(devices: UUID[]) {
     deviceList.innerHTML = devices.map(device => {
         const deviceUuid = device.toAString().toString();
         const cached = controller.getCachedDeviceData(deviceUuid);
-        const lastTemp = cached && cached.length > 0 ? (((cached[0].value & 0xFF) / 3.0) - 30.0).toFixed(1) + '°C' : '--°C';
+        const lastTemp = cached && cached.length > 0 ? (((cached[cached.length - 1].value & 0xFF) / 3.0) - 30.0).toFixed(1) + '°C' : '--°C';
         const isSelected = selectedDeviceUuid === deviceUuid ? 'selected' : '';
         return `<div class="device-item ${isSelected}" data-uuid="${deviceUuid}">
                     <div class="device-id">${deviceUuid.substring(0, 8)}...</div>
@@ -115,7 +115,7 @@ function updateDeviceDisplay(uuid: string, records: SensorRecord[]) {
     if (uuid !== selectedDeviceUuid) return;
 
     if (records.length > 0) {
-        const temp = ((records[0].value & 0xFF) / 3.0) - 30.0;
+        const temp = ((records[records.length - 1].value & 0xFF) / 3.0) - 30.0;
         currentTemp.textContent = temp.toFixed(1) + '°C';
         lastUpdate.textContent = new Date().toLocaleTimeString();
         chartContainer.style.display = 'block';
