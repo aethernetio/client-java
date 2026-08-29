@@ -557,6 +557,295 @@ class SmartHubPublicSmokeTest {
         }
     }
 
+    @Test
+    void publicServiceRestartRestoresPersistedDevicesAndHistory()
+            throws Exception {
+
+        File smokeDir =
+                new File("build/public-smoke");
+
+        assertTrue(
+                smokeDir.exists() || smokeDir.mkdirs(),
+                "Cannot create public smoke directory");
+
+        String smokeDbPath =
+                new File(
+                        smokeDir,
+                        "smarthub-restart-persistence")
+                        .getPath();
+
+        SmartHubService.clearDatabaseFiles(
+                smokeDbPath);
+
+        File serviceStateFile =
+                new File(
+                        smokeDir,
+                        "restart-persistence-service.bin");
+
+        File deviceStateFile =
+                new File(
+                        smokeDir,
+                        "restart-persistence-device.bin");
+
+        File guiStateFile =
+                new File(
+                        smokeDir,
+                        "restart-persistence-gui.bin");
+
+        serviceStateFile.delete();
+        deviceStateFile.delete();
+        guiStateFile.delete();
+
+        SmartHubService firstService = null;
+        SmartHubService restartedService = null;
+        SmartDeviceEmulator emulator = null;
+
+        ClientStateInFile firstServiceState = null;
+        ClientStateInFile restartedServiceState = null;
+        ClientStateInFile guiState = null;
+
+        io.aether.cloud.client.AetherCloudClient guiClient = null;
+
+        UUID expectedDeviceUid = null;
+
+        try {
+            firstServiceState =
+                    new ClientStateInFile(
+                            StandardUUIDs.TEST_UID,
+                            List.of(REG_URI),
+                            serviceStateFile);
+
+            firstService =
+                    new SmartHubService(
+                            firstServiceState,
+                            smokeDbPath);
+
+            await(
+                    firstService.start(),
+                    "first SmartHub service registration");
+
+            UUID firstServiceUid =
+                    firstService.getClient().getUid();
+
+            assertNotNull(
+                    firstServiceUid,
+                    "First SmartHub service UID was not assigned");
+
+            emulator =
+                    new SmartDeviceEmulator(
+                            firstServiceUid,
+                            deviceStateFile.getPath());
+
+            emulator.start(
+                    REG_URI.toString());
+
+            await(
+                    emulator.getReady(),
+                    "restart persistence emulator registration");
+
+            await(
+                    firstService.getDeviceRegisteredFuture(),
+                    "restart persistence first device state");
+
+            expectedDeviceUid =
+                    emulator.getDeviceUid();
+
+            assertNotNull(
+                    expectedDeviceUid,
+                    "Restart persistence device UID was not assigned");
+
+            /*
+             * The important part of this regression:
+             * remove every source of live/runtime state before restart.
+             */
+            emulator.stop();
+            emulator = null;
+
+            firstService.stop();
+            firstService = null;
+
+            firstServiceState.destroy(true);
+            firstServiceState = null;
+
+            /*
+             * Re-open the same persistent service identity and the same H2 DB.
+             * No emulator is running from this point onward.
+             */
+            restartedServiceState =
+                    new ClientStateInFile(
+                            StandardUUIDs.TEST_UID,
+                            List.of(REG_URI),
+                            serviceStateFile);
+
+            restartedService =
+                    new SmartHubService(
+                            restartedServiceState,
+                            smokeDbPath);
+
+            await(
+                    restartedService.start(),
+                    "restarted SmartHub service registration");
+
+            UUID restartedServiceUid =
+                    restartedService.getClient().getUid();
+
+            assertEquals(
+                    firstServiceUid,
+                    restartedServiceUid,
+                    "SmartHub service UID changed across restart");
+
+            UUID finalExpectedDeviceUid =
+                    expectedDeviceUid;
+
+            AFuture devicesReceived =
+                    AFuture.make();
+
+            AFuture historyReceived =
+                    AFuture.make();
+
+            java.util.concurrent.atomic.AtomicReference<UUID[]> devices =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+
+            java.util.concurrent.atomic.AtomicReference<io.aether.api.smarthub.SensorRecord[]> history =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+
+            io.aether.api.smarthub.SmartHomeClientGuiApi localGuiApi =
+                    new io.aether.api.smarthub.SmartHomeClientGuiApi() {
+                        @Override
+                        public void deviceStateUpdated(
+                                UUID uid,
+                                io.aether.api.smarthub.SensorRecord[] records) {
+                            /*
+                             * No emulator is running after restart.
+                             * This callback is intentionally irrelevant:
+                             * persisted history must work without live state.
+                             */
+                        }
+
+                        @Override
+                        public void onGetDevicesResult(
+                                UUID[] receivedDevices) {
+
+                            devices.set(
+                                    receivedDevices);
+
+                            devicesReceived.done();
+                        }
+
+                        @Override
+                        public void onRequestHistoryResult(
+                                UUID uid,
+                                io.aether.api.smarthub.SensorRecord[] records) {
+
+                            if (finalExpectedDeviceUid.equals(uid)) {
+                                history.set(
+                                        records);
+
+                                historyReceived.done();
+                            }
+                        }
+                    };
+
+            guiState =
+                    new ClientStateInFile(
+                            restartedServiceUid,
+                            List.of(REG_URI),
+                            guiStateFile);
+
+            guiClient =
+                    io.aether.cloud.client.AetherCloudClient.asClient(
+                            guiState,
+                            "SmartHub-Restart-Persistence-Gui",
+                            io.aether.api.smarthub.SmartHomeClientGuiApi.META,
+                            io.aether.api.smarthub.SmartHomeHubRegistryApi.META,
+                            remoteHubApi -> {
+                                io.aether.api.smarthub.SmartHomeGuiApiRemote guiApi =
+                                        remoteHubApi.openGui(
+                                                remoteGuiApi -> localGuiApi,
+                                                data -> data);
+
+                                guiApi.getDevices();
+
+                                guiApi.requestDeviceHistory(
+                                        finalExpectedDeviceUid,
+                                        50);
+
+                                return localGuiApi;
+                            });
+
+            await(
+                    guiClient.startFuture,
+                    "restart persistence GUI registration");
+
+            await(
+                    devicesReceived,
+                    "persisted device list after service restart");
+
+            await(
+                    historyReceived,
+                    "persisted history after service restart");
+
+            UUID[] receivedDevices =
+                    devices.get();
+
+            assertNotNull(
+                    receivedDevices,
+                    "Persisted device list after restart was null");
+
+            assertTrue(
+                    java.util.Arrays.asList(receivedDevices)
+                            .contains(finalExpectedDeviceUid),
+                    "Persisted device disappeared from getDevices() after restart");
+
+            io.aether.api.smarthub.SensorRecord[] receivedHistory =
+                    history.get();
+
+            assertNotNull(
+                    receivedHistory,
+                    "Persisted history after restart was null");
+
+            assertTrue(
+                    receivedHistory.length > 0,
+                    "Persisted history was empty after service restart");
+        } finally {
+            if (guiClient != null) {
+                guiClient.destroy(true);
+            }
+
+            if (guiState != null) {
+                guiState.destroy(true);
+            }
+
+            if (emulator != null) {
+                emulator.stop();
+            }
+
+            if (firstService != null) {
+                firstService.stop();
+            }
+
+            if (restartedService != null) {
+                restartedService.stop();
+            }
+
+            if (firstServiceState != null) {
+                firstServiceState.destroy(true);
+            }
+
+            if (restartedServiceState != null) {
+                restartedServiceState.destroy(true);
+            }
+
+            serviceStateFile.delete();
+            deviceStateFile.delete();
+            guiStateFile.delete();
+
+            SmartHubService.clearDatabaseFiles(
+                    smokeDbPath);
+        }
+    }
+
+
     private static void await(
             AFuture future,
             String operation)
