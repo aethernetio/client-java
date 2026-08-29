@@ -2,3 +2,6 @@
 smarthub-data/*.bin
 state.bin
 state-Emulator-*.bin
+
+# SmartHub runtime state
+smarthub-data/
