@@ -32,9 +32,13 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
 
     public final AtomicLong lastBackPing = new AtomicLong(Long.MAX_VALUE);
 
+
     final CryptoEngine cryptoEngine;
-    final AuthorizedApiRemote authorizedApi;
+    final AuthorizedApiRemote authorizedApiV0;
+    volatile AuthorizedApiRemote authorizedApi;
+    private volatile int negotiatedLoginApiVersion = -1;
     private final ServerDescriptor serverDescriptor;
+
 
     private static final long PING_RESPONSE_TIMEOUT_MS = 5_000L;
     private static final long PING_ACQUIRE_TIMEOUT_MS =
@@ -60,16 +64,80 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
 
     volatile boolean firstAuth;
 
-    public ConnectionWork(AetherCloudClient client, ServerDescriptor s) {
-        super(client, s.getIpAddress().getURI(AetherCodec.UDP), ClientApiUnsafe.META, LoginApi.META);
-        cryptoEngine = client.getCryptoEngineForServer(s.getId());
+
+    public ConnectionWork(
+            AetherCloudClient client,
+            ServerDescriptor s
+    ) {
+        super(
+                client,
+                s.getIpAddress().getURI(AetherCodec.UDP),
+                ClientApiUnsafe.META,
+                LoginApi.META
+        );
+
+        cryptoEngine =
+                client.getCryptoEngineForServer(
+                        s.getId()
+                );
+
         if (cryptoEngine == null) {
-            Log.error("ConnectionWork: cryptoEngine is null for server " + s.getId() + ". Authentication will fail.");
+            Log.error(
+                    "ConnectionWork: cryptoEngine is null for server "
+                            + s.getId()
+                            + ". Authentication will fail."
+            );
         }
+
         serverDescriptor = s;
         this.basicStatus = false;
-        authorizedApi = getRootApi().openLoginByAlias(client.getAlias(), c -> new ClientApiSafeImpl(this, client), cryptoEngine::encrypt, "loginByAlias");
+
+        authorizedApiV0 =
+                getRootApi().openLoginByAlias(
+                        client.getAlias(),
+                        c -> new ClientApiSafeImpl(
+                                this,
+                                client
+                        ),
+                        cryptoEngine::encrypt,
+                        "loginByAlias"
+                );
+
+        authorizedApi = authorizedApiV0;
+        negotiateLoginApiVersion();
     }
+
+    private synchronized void negotiateLoginApiVersion() {
+        if (negotiatedLoginApiVersion != -1) {
+            return;
+        }
+
+        AuthorizedApiRemote v0 = authorizedApiV0;
+        if (v0 == null) {
+            return;
+        }
+
+        int version = client.getLoginApiVersion();
+
+        if (version == 0) {
+            authorizedApi = v0;
+            negotiatedLoginApiVersion = 0;
+            return;
+        }
+
+        if (version == 1) {
+            v0.switchVersion(1);
+            authorizedApi = LoginStream.V1.api(v0);
+            negotiatedLoginApiVersion = 1;
+            return;
+        }
+
+        throw new IllegalArgumentException(
+                "Unsupported LoginStream API version: "
+                        + version
+        );
+    }
+
 
     /**
      * Handles changes in the connection state. Resets the internal authentication
@@ -82,6 +150,14 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
     protected void onConnectionStateChanged(boolean isWritable) {
         firstAuth = false;
 
+        if (!isWritable) {
+            negotiatedLoginApiVersion = -1;
+
+            if (authorizedApiV0 != null) {
+                authorizedApi = authorizedApiV0;
+            }
+        }
+
         if (cryptoEngine == null) {
             Log.warn(
                     "onConnectionStateChanged called before cryptoEngine initialized, deferring flush"
@@ -92,11 +168,14 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
 
         if (isWritable) {
             nextPingAtMs.set(0L);
+            negotiateLoginApiVersion();
 
             Log.info(
                     "Network restored. Resetting auth state and forcing flush.",
                     "uri",
-                    uri
+                    uri,
+                    "loginApiVersion",
+                    negotiatedLoginApiVersion
             );
         } else {
             activePing.set(null);

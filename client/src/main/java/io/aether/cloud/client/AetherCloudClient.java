@@ -71,7 +71,10 @@ public final class AetherCloudClient implements Destroyable {
     final Queue<AConsumer<AuthorizedApiRemote>> authTasks = new ConcurrentLinkedQueue<>();
     final CloudPriorityManager priorityManager = new CloudPriorityManager();
     private final ClientState clientState;
+
     private final int timeout1 = 6;
+    private final int loginApiVersion;
+
     private final AtomicBoolean startScheduledTaskFlag = new AtomicBoolean();
     private final Set<ConnectionRegistration> connectionRegistrations = new ConcurrentHashSet<>();
     private final ARFuture<Connection<?, ?>> anyConnection = ARFuture.make();
@@ -91,28 +94,65 @@ public final class AetherCloudClient implements Destroyable {
         this(state, null);
     }
 
-    public AetherCloudClient(ClientState state, String name) {
+
+    public AetherCloudClient(
+            ClientState state,
+            String name
+    ) {
+        this(
+                state,
+                name,
+                0
+        );
+    }
+
+    public AetherCloudClient(
+            ClientState state,
+            String name,
+            int loginApiVersion
+    ) {
         Objects.requireNonNull(state);
+
+        if (loginApiVersion < 0) {
+            throw new IllegalArgumentException(
+                    "loginApiVersion must be non-negative: "
+                            + loginApiVersion
+            );
+        }
+
         this.clientState = state;
         this.name = name;
-        logClientContext = Log.of("SystemComponent", "Client", "ClientName", name);
+        this.loginApiVersion = loginApiVersion;
+
+        logClientContext =
+                Log.of(
+                        "SystemComponent",
+                        "Client",
+                        "ClientName",
+                        name
+                );
+
         try (var ln = logClientContext.context()) {
             destroyer.add(this::closeConnections);
             populateCachesFromState();
+
             onNewChild.add(u -> {
                 if (onNewChildApi.hasListener()) {
-//                    TODO Я удалил очередь задач. Нужно сделать прямой выбор ConnectionWork
-//                    getClientApi(u, api -> {
-//                        onNewChildApi.fire(u, api);
-//                    });
+                    // TODO Я удалил очередь задач. Нужно сделать прямой выбор ConnectionWork
+                    // getClientApi(u, api -> {
+                    //     onNewChildApi.fire(u, api);
+                    // });
                 }
             });
+
             connect();
         }
+
         startFuture.to(() -> {
             forceUpdateStateFromCache().to(state::saveState);
         });
     }
+
 
     private void closeConnections() {
         connections.values().forEach(c -> c.destroy(true));
@@ -562,6 +602,12 @@ public final class AetherCloudClient implements Destroyable {
         clouds.get(uid, 10, request);
         return result;
     }
+
+
+    public int getLoginApiVersion() {
+        return loginApiVersion;
+    }
+
 
     public long getPingTime() {
         return clientState.getPingDuration().getNow();
