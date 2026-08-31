@@ -58168,64 +58168,12 @@ class SmartHubController {
                 new aether_client_1.AetherCloudClient(state, "SmartHubClient");
             this.client.tryAcquireWebRtcMessageNode =
                 () => false;
-            const connectStartedAt = performance.now();
             phase = 'connect to Aether network';
             await this.client
                 .connect()
                 .toPromise(30000);
-            console.log('[SmartHub] Aether client startFuture completed', Math.round(performance.now() - connectStartedAt) + 'ms');
-            phase = 'wait for writable Aether work connection';
-            const knownConnections = this.client.connectServers(this.client.getKnownServerDescriptors());
-            const workConnections = Array.from(new Set([
-                ...this.client.getConnections(),
-                ...knownConnections
-            ]));
-            if (workConnections.length === 0) {
-                throw new Error('No Aether work connections available after client connect');
-            }
-            await new Promise((resolve, reject) => {
-                let settled = false;
-                let failedConnections = 0;
-                const timeout = setTimeout(() => {
-                    if (settled) {
-                        return;
-                    }
-                    settled = true;
-                    reject(new Error('Timeout waiting for writable Aether work connection'));
-                }, 30000);
-                const writable = () => {
-                    if (settled) {
-                        return;
-                    }
-                    settled = true;
-                    clearTimeout(timeout);
-                    resolve();
-                };
-                const failed = (error) => {
-                    if (settled) {
-                        return;
-                    }
-                    failedConnections++;
-                    if (failedConnections === workConnections.length) {
-                        settled = true;
-                        clearTimeout(timeout);
-                        reject(error);
-                    }
-                };
-                for (const connection of workConnections) {
-                    if (connection.isWritable()) {
-                        writable();
-                        return;
-                    }
-                    connection.connectFuture
-                        .toRunnable(writable)
-                        .onError(failed);
-                }
-            });
-            console.log('[SmartHub] Aether work connection writable', Math.round(performance.now() - connectStartedAt) + 'ms');
             phase = 'open SmartHub API stream';
             await this.connectToService(serviceUuid);
-            console.log('[SmartHub] SmartHub API stream opened', Math.round(performance.now() - connectStartedAt) + 'ms');
             phase = 'connected';
             this.onConnectionStateChange.fire('connected');
         }
