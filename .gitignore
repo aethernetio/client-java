@@ -26,3 +26,5 @@ replay_pid*
 build/
 node_modules/
 .idea/
+# Local SmartHub package archives
+smarthub/guiNew/*.tgz
