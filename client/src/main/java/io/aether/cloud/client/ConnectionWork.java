@@ -51,6 +51,20 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
     private static final class PingAttempt {
     }
 
+    private record ProbeReportKey(
+            int testId,
+            int firstSequence,
+            int count
+    ) {
+    }
+
+    private final java.util.concurrent.ConcurrentHashMap<
+            ProbeReportKey,
+            ARFuture<ProbeReport>
+            > pendingProbeReports =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+
     private final AtomicReference<PingAttempt> activePing =
             new AtomicReference<>();
 
@@ -118,24 +132,15 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         }
 
         int version = client.getLoginApiVersion();
-
-        if (version == 0) {
-            authorizedApi = v0;
-            negotiatedLoginApiVersion = 0;
-            return;
+        if (version != 0) {
+            throw new IllegalArgumentException(
+                    "Unsupported LoginStream API version: "
+                            + version
+            );
         }
 
-        if (version == 1) {
-            v0.switchVersion(1);
-            authorizedApi = LoginStream.V1.api(v0);
-            negotiatedLoginApiVersion = 1;
-            return;
-        }
-
-        throw new IllegalArgumentException(
-                "Unsupported LoginStream API version: "
-                        + version
-        );
+        authorizedApi = v0;
+        negotiatedLoginApiVersion = 0;
     }
 
 
@@ -390,6 +395,33 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
     }
 
 
+
+
+    /**
+     * Preserves the legacy immediate RX window while explicitly scheduling
+     * the next receive window for queued server-to-client data.
+     */
+
+    private AFuture sendPingWithReceiveWindow(
+            AuthorizedApiRemote api,
+            long nextConnectMsDuration,
+            long rxWindowMs
+    ) {
+        AFuture result = api.ping(
+                nextConnectMsDuration,
+                rxWindowMs
+        );
+
+        api.setReceiveWindow(
+                nextConnectMsDuration,
+                rxWindowMs
+        );
+
+        return result;
+    }
+
+
+
     private void sendPingIfNeeded(AuthorizedApiRemote api) {
         long now = RU.time();
 
@@ -433,11 +465,14 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                 pingAttempt
         );
 
+
         try {
-            api.ping(
+            sendPingWithReceiveWindow(
+                    api,
                     fullPingIntervalMs,
                     rxWindowMs
             ).to(() -> completeBackgroundPing(
+
                     pingAttempt,
                     startedNs,
                     sentAtMs,
@@ -660,11 +695,14 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                 result
         );
 
+
         try {
-            authorizedApi.ping(
+            sendPingWithReceiveWindow(
+                    authorizedApi,
                     fullPingIntervalMs,
                     rxWindowMs
             ).to(() -> completeMeasuredPing(
+
                     pingAttempt,
                     result,
                     startedNs,
@@ -683,6 +721,111 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             );
         }
     }
+
+
+    /**
+     * Sends one diagnostic probe packet and immediately flushes its FastMeta
+     * context so consecutive probes are emitted as separate transport packets.
+     *
+     * @param testId probe run identifier
+     * @param sequence sequence assigned by the caller
+     * @param payload arbitrary bytes used to control probe packet size
+     */
+    public void sendProbePacket(
+            int testId,
+            int sequence,
+            byte[] payload
+    ) {
+        java.util.Objects.requireNonNull(payload, "payload");
+
+        if (!isWritable()) {
+            throw new IllegalStateException(
+                    "Connection is not writable for probe packet"
+            );
+        }
+
+        AuthorizedApiRemote api = authorizedApi;
+        api.probePacket(testId, sequence, payload);
+        api.getFastMetaContext().flush();
+    }
+
+
+    /**
+     * Requests a server snapshot for a previously sent probe range.
+     *
+     * <p>The returned future completes when the matching reverse
+     * {@link ProbeReport} arrives. The server may defer that report until the
+     * next declared receive window.
+     *
+     * @param testId probe run identifier
+     * @param firstSequence first requested sequence
+     * @param count number of consecutive sequence values
+     * @return future completed by the matching reverse probe report
+     */
+    public ARFuture<ProbeReport> requestProbeReport(
+            int testId,
+            int firstSequence,
+            int count
+    ) {
+        ARFuture<ProbeReport> result = ARFuture.make();
+
+        if (count < 0) {
+            result.tryError(
+                    new IllegalArgumentException(
+                            "Probe report count must be non-negative: " + count
+                    )
+            );
+            return result;
+        }
+
+        ProbeReportKey key =
+                new ProbeReportKey(testId, firstSequence, count);
+
+        ARFuture<ProbeReport> existing =
+                pendingProbeReports.putIfAbsent(key, result);
+
+        if (existing != null) {
+            return existing;
+        }
+
+        try {
+            AuthorizedApiRemote api = authorizedApi;
+            api.requestProbeReport(testId, firstSequence, count);
+            api.getFastMetaContext().flush();
+        } catch (Throwable error) {
+            pendingProbeReports.remove(key, result);
+            result.tryError(error);
+        }
+
+        return result;
+    }
+
+
+    /**
+     * Completes the client-side diagnostic request matching a reverse report.
+     *
+     * @param report report delivered by ClientApiSafe
+     */
+    void onProbeReport(ProbeReport report) {
+        if (report == null) {
+            return;
+        }
+
+        ProbeReportKey key = new ProbeReportKey(
+                report.getTestId(),
+                report.getFirstSequence(),
+                report.getCount()
+        );
+
+        ARFuture<ProbeReport> pending =
+                pendingProbeReports.remove(key);
+
+        if (pending != null) {
+            pending.tryDone(report);
+        }
+    }
+
+
 
     public ARFuture<Long> measurePingNs() {
         ARFuture<Long> result = ARFuture.make();

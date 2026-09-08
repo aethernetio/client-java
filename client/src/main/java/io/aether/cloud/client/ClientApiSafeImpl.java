@@ -6,6 +6,7 @@ import io.aether.api.clientserverapi.ClientInteractionClientStream;
 import io.aether.api.clientserverapi.ServerApiByUidClient;
 
 import io.aether.api.clientserverapi.Message;
+import io.aether.api.clientserverapi.ProbeReport;
 import io.aether.api.common.*;
 import io.aether.logger.Log;
 import io.aether.utils.RU;
@@ -139,7 +140,20 @@ class ClientApiSafeImpl implements ClientApiSafe {
         }
     }
 
+
+
+    /**
+     * Completes the matching client-side diagnostic probe request.
+     *
+     * @param report server-side probe observation snapshot
+     */
     @Override
+    public void probeReport(ProbeReport report) {
+        connection.onProbeReport(report);
+    }
+
+
+
     public void sendMessages(Message[] msg) {
         Log.trace("receive messages: $count", "count", msg.length);
         // Adaptive Cloud: Promote connection on data receipt
