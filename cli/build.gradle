@@ -23,6 +23,33 @@ shadowJar {
     }
 }
 
+
+
+def cliJarFile = layout.buildDirectory.file("libs/aether-cli.jar")
+def cliExecutableFile = layout.buildDirectory.file("bin/aether-cli")
+
+tasks.register('dist') {
+    dependsOn('shadowJar')
+    inputs.file(cliJarFile)
+    outputs.file(cliExecutableFile)
+
+    doLast {
+        var jarFile = cliJarFile.get().asFile
+        var outputFile = cliExecutableFile.get().asFile
+        outputFile.parentFile.mkdirs()
+
+        new FileInputStream(jarFile).withCloseable { jar ->
+            new FileOutputStream(outputFile).withCloseable { out ->
+                out.write("#!/bin/sh\nexec java --add-opens=java.base/jdk.internal.misc=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED -jar \$0 \"\$@\"\nexit 0\n".getBytes())
+                jar.transferTo(out)
+            }
+        }
+        outputFile.setExecutable(true)
+    }
+}
+
+
+
 dependencies {
     implementation project(':client')
     implementation("org.slf4j:slf4j-nop:2.0.16")
