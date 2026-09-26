@@ -198,8 +198,11 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
 
 
     public void flushBackgroundRequests() {
+
         var a = authorizedApi;
+
         // Запросы облаков через новый механизм
+
         for (UUID uid : client.clouds.pollAllRequests()) {
             ClientCloud cc = client.clouds.getNow(uid);
             long version = cc != null ? cc.getConfigVersion() - 1 : -1;
@@ -262,14 +265,20 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                 a.removeItemsFromAccessGroup(groupId, uidsToRemove);
             }
         }
+
         while (true) {
             var t = client.authTasks.poll();
             if (t == null) break;
             t.accept(a);
         }
 
+        if (!firstAuth) {
+            sendPingIfNeeded(a);
+            return;
+        }
 
         for (var messageNode : client.messageNodeMap.values()) {
+
 
 
             if (!messageNode.connectionsOut.contains(this)) {
