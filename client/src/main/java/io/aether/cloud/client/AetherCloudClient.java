@@ -5,7 +5,7 @@ import io.aether.api.CryptoUtils;
 
 import io.aether.api.clientserverapi.AuthorizedApi;
 import io.aether.api.clientserverapi.AuthorizedApiRemote;
-import io.aether.api.clientserverapi.FinishResult;
+import io.aether.api.clientserverapi.RegistrationDirectResult;
 import io.aether.api.clientserverapi.ServerApiByUid;
 import io.aether.api.clientserverapi.ServerApiByUidClient;
 
@@ -76,10 +76,16 @@ public final class AetherCloudClient implements Destroyable {
     private final int loginApiVersion;
 
     private final AtomicBoolean startScheduledTaskFlag = new AtomicBoolean();
+
     private final Set<ConnectionRegistration> connectionRegistrations = new ConcurrentHashSet<>();
+
+    private final WorkConnectionRouter workConnectionRouter;
     private final ARFuture<Connection<?, ?>> anyConnection = ARFuture.make();
     private boolean beginConnect;
     private String name;
+
+
+
 
     {
         lastSecond = System.currentTimeMillis() / 1000;
@@ -106,11 +112,31 @@ public final class AetherCloudClient implements Destroyable {
         );
     }
 
+
     public AetherCloudClient(
             ClientState state,
             String name,
             int loginApiVersion
     ) {
+        this(state, name, loginApiVersion, WorkConnectionRouter.DIRECT);
+    }
+
+    public AetherCloudClient(
+            ClientState state,
+            String name,
+            WorkConnectionRouter workConnectionRouter
+    ) {
+        this(state, name, 0, workConnectionRouter);
+    }
+
+
+    public AetherCloudClient(
+            ClientState state,
+            String name,
+            int loginApiVersion,
+            WorkConnectionRouter workConnectionRouter
+    ) {
+
         Objects.requireNonNull(state);
 
         if (loginApiVersion < 0) {
@@ -123,6 +149,7 @@ public final class AetherCloudClient implements Destroyable {
         this.clientState = state;
         this.name = name;
         this.loginApiVersion = loginApiVersion;
+        this.workConnectionRouter = Objects.requireNonNull(workConnectionRouter);
 
         logClientContext =
                 Log.of(
@@ -246,7 +273,18 @@ public final class AetherCloudClient implements Destroyable {
         putServerDescriptor(serverDescriptor);
         return connections.computeIfAbsent(sid, s -> {
             try (var ln = logClientContext.context()) {
-                ConnectionWork conn = new ConnectionWork(this, serverDescriptor);
+
+
+                var resolved = workConnectionRouter.resolve(serverDescriptor);
+                ConnectionWork conn = (resolved != null)
+                        ? new ConnectionWork(
+                                this,
+                                serverDescriptor,
+                                resolved
+                        )
+                        : new ConnectionWork(this, serverDescriptor);
+
+
                 conn.stateListeners.add(isWritable -> {
                     if (!isWritable) {
                         UUID uid = getUid();
@@ -617,7 +655,7 @@ public final class AetherCloudClient implements Destroyable {
         return clientState.getUid() != null;
     }
 
-    public void confirmRegistration(FinishResult regResp) {
+    public void confirmRegistration(RegistrationDirectResult regResp) {
         if (!regStatus.compareAndSet(RegStatus.BEGIN, RegStatus.CONFIRM)) {
             Log.info("Already registration");
             return;
@@ -687,6 +725,10 @@ public final class AetherCloudClient implements Destroyable {
     public UUID getAlias() {
         return clientState.getAlias();
     }
+
+
+
+
 
     public void onMessage(ABiConsumer<UUID, byte[]> consumer) {
         onClientStream(m -> {

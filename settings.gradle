@@ -14,6 +14,7 @@ plugins {
 rootProject.name = 'cloud-client'
 include ':client'
 include ':cli'
+include ':work-proxy'
 include ':chat'
 include ':pointToPoint'
 include ':smarthome'

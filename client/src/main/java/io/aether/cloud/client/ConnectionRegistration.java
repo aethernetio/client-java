@@ -22,8 +22,7 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
     private final KeySymmetric tempKeyNative = CryptoUtils.of(tempKey);
     private final CryptoEngine tempKeyCp = tempKey.toCryptoEngine();
     volatile ServerRegistrationApiRemote safeApi;
-    volatile GlobalRegServerApiRemote globalApi;
-    private CryptoEngine gcp;
+
 
     public ConnectionRegistration(AetherCloudClient client, URI uri) {
         super(client, uri, ClientApiRegUnsafe.META, RegistrationRootApi.META);
@@ -48,45 +47,79 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
     }
 
     private void regProcess(CryptoEngine asymCE) {
-        safeApi = rootApi.openEnter(client.getCryptLib(), r -> ClientApiRegSafe.EMPTY, asymCE::encrypt, "reg safe");
+        safeApi = rootApi.openEnter(
+                client.getCryptLib(),
+                r -> ClientApiRegSafe.EMPTY,
+                asymCE::encrypt,
+                "reg safe"
+        );
+
         Log.info("RegConn: Asym public key was received.");
+
         safeApi.setReturnKey(tempKeyNative);
-        safeApi.requestWorkProofData(client.getParent(), PowMethod.AE_BCRYPT_CRC32)
+        safeApi.requestWorkProofData(
+                        client.getParent(),
+                        PowMethod.AE_BCRYPT_CRC32
+                )
                 .to(wpd -> {
-                    Log.info("RegConn: WorkProofData has been received. Starting PoW calculation.");
-                    var passwords = WorkProofUtil.generateProofOfWorkPool(
-                            wpd.getSalt(),
-                            wpd.getSuffix(),
-                            wpd.getMaxHashVal(),
-                            wpd.getPoolSize(),
-                            5300);
-                    if (!client.verifySign(CryptoUtils.of(wpd.getGlobalKey()))) {
-                        Log.error("RegConn: Global key verification failed.");
-                        throw new RuntimeException();
-                    }
-                    gcp = CryptoEngine.of(CryptoUtils.of(wpd.getGlobalKey().getKey()).asAsymmetric().toCryptoEngine(), client.getMasterKey().toCryptoEngine());
-                    safeApi.setReturnKey(tempKeyNative);
-                    globalApi = safeApi.openRegistration(wpd.getSalt(), wpd.getSuffix(), passwords, client.getParent(), r -> GlobalRegClientApi.EMPTY, gcp::encrypt, "global");
-                    try (var l = globalApi.getFastMetaContext().lock()) {
-                        globalApi.setMasterKey(CryptoUtils.of(client.getMasterKey()));
-                        globalApi.finish()
-                                .to(d -> {
-                                    Log.trace("RegConn: registration step finish.");
-                                    Log.info("RegConn: Registration confirmed.");
-                                    resolveCloud(d.getCloud(), asymCE).to(() -> {
-                                        Log.info("RegConn: resolve cloud.");
-                                        client.confirmRegistration(d);
-                                    });
-                                }).addListener((f) -> {
-                                    if (!f.isDone()) {
-                                        Log.error("flush task canceled 1! $f", "f", f);
-                                    } else {
-                                        connectFuture.done();
-                                    }
+                    Log.info(
+                            "RegConn: WorkProofData has been received. "
+                                    + "Starting PoW calculation."
+                    );
+
+                    var passwords =
+                            WorkProofUtil.generateProofOfWorkPool(
+                                    wpd.getSalt(),
+                                    wpd.getSuffix(),
+                                    wpd.getMaxHashVal(),
+                                    wpd.getPoolSize(),
+                                    5300
+                            );
+
+                    safeApi.registrationDirect(
+                                    wpd.getSalt(),
+                                    wpd.getSuffix(),
+                                    passwords,
+                                    client.getParent(),
+                                    CryptoUtils.of(client.getMasterKey())
+                            )
+                            .to(d -> {
+                                Log.trace(
+                                        "RegConn: registration step finish."
+                                );
+                                Log.info(
+                                        "RegConn: Registration confirmed."
+                                );
+
+                                resolveCloud(
+                                        d.getCloud(),
+                                        asymCE
+                                ).to(() -> {
+                                    Log.info("RegConn: resolve cloud.");
+                                    client.confirmRegistration(d);
                                 });
-                    }
-                }, 6, () -> Log.warn("RegConn: timeout requestWorkProofData"));
+                            })
+                            .addListener(f -> {
+                                if (!f.isDone()) {
+                                    Log.error(
+                                            "flush task canceled 1! $f",
+                                            "f",
+                                            f
+                                    );
+                                } else {
+                                    connectFuture.done();
+                                }
+                            });
+                }, 6, () ->
+                        Log.warn(
+                                "RegConn: timeout requestWorkProofData"
+                        )
+                );
     }
+
+
+
+
 
     public AFuture resolveCloud(Cloud cloud) {
         AFuture res = AFuture.make();
@@ -124,10 +157,8 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
 
     @Override
     public void enterGlobal(GlobalRegClientApiStream stream) {
-        stream.asIn()
-                .convert(gcp::decrypt)
-                .ctx(globalApi.getFastMetaContext())
-                .accept();
+        // Legacy ClientApiRegUnsafe compatibility.
+        // registrationDirect does not open GlobalApi.
     }
 
     @Override

@@ -1,0 +1,43 @@
+
+plugins {
+    id 'java-library'
+    id 'application'
+}
+
+
+
+dependencies {
+    api "io.aether:client-server-work-api:+"
+    api "io.aether:core:+"
+
+    implementation "io.aether:net-virtual:+"
+
+    implementation project(':client')
+
+
+
+
+
+    testImplementation "io.aether:net-virtual:+"
+
+    testImplementation "io.aether.crypto:sodium:+"
+    testImplementation "io.aether.crypto:hydrogen-fast:+"
+
+
+    testImplementation "org.junit.jupiter:junit-jupiter:5.10.0"
+    testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    testLogging {
+        events "passed", "failed", "skipped"
+        exceptionFormat "full"
+    }
+}
+
+
+
+application {
+    mainClass = 'io.aether.cloud.proxy.AetherProxyMain'
+}

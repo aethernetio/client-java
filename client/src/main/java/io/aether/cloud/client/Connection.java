@@ -62,6 +62,11 @@ public abstract class Connection<LT, RT extends RemoteApi> implements Destroyabl
         return rootApi;
     }
 
+    public URI getUri() {
+        return uri;
+    }
+
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;

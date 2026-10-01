@@ -1,0 +1,55 @@
+
+# Aether customer-hosted proxy — example configuration.
+#
+# The proxy behaves as a normal Aether work/registration server for the
+# clients that register through it, while forwarding the registration flow
+# and most authorized API calls to the original Aether infrastructure.
+#
+# For every downstream client the proxy exposes a single work endpoint
+# (proxy.sid), not one endpoint per original work server.
+
+# ---------------------------------------------------------------------------
+# Proxy identity (downstream-facing)
+# ---------------------------------------------------------------------------
+# The proxy's own SID as it appears in the downstream client's own cloud.
+# Use a large value that does not collide with original Aether server IDs.
+proxy.sid=30000
+
+# Registration listener (what downstream clients connect to for registration)
+registration.listen=tcp://0.0.0.0:19010
+
+# Work listener (what downstream clients connect to for their work session)
+work.listen=udp://0.0.0.0:19020
+
+# Public work URI that is returned to clients in the proxy ServerDescriptor.
+# It must be reachable from client machines; it is usually different from
+# work.listen because work.listen may be bound to 0.0.0.0.
+work.public=udp://proxy.customer.example:19020
+
+# ---------------------------------------------------------------------------
+# Original Aether infrastructure (proxy as an upstream client)
+# ---------------------------------------------------------------------------
+upstream.registration=tcp://registration.aethernet.io:9010
+
+# ---------------------------------------------------------------------------
+# Proxy registration asymmetric keys (root-signed)
+# ---------------------------------------------------------------------------
+# One per supported CryptoLib. The downstream client verifies the public
+# half against its trusted root signers, so the pair must be signed by a
+# root key the standard client already trusts.
+#
+# Test pair keys are provided by AbstractTestStarter in the aether/tests
+# module; production deployments must provision their own root-signed keys.
+#
+# proxy.registrationKey.SODIUM=SODIUM:<pub-hex>:<sign-hex>:<priv-hex>
+# proxy.registrationKey.HYDROGEN=HYDROGEN:<pub-hex>:<sign-hex>:<priv-hex>
+
+
+# ---------------------------------------------------------------------------
+# Persistent state directory
+# ---------------------------------------------------------------------------
+# Contains proxy.meta (validated against proxy.sid at startup) and one
+# <uid>.state file per registered downstream client. Must persist across
+# proxy restarts; the proxy refuses to start if this directory belongs to
+# a different proxy.sid.
+state.dir=./proxy-state
