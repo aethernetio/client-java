@@ -69,7 +69,6 @@ public class PointToPointTest {
 
 
             Log.info("clients is registered uid1: $uid1 uid2: $uid2", "uid1", client1.getUid(), "uid2", client2.getUid());
-            System.out.println("AETHER_HYDROGEN_STATE uid=" + client2.getUid() + " key=" + clientConfig2.getMasterKey() + " state=" + java.util.Base64.getEncoder().encodeToString(clientConfig2.save()));
 
             AFuture checkReceiveMessage = AFuture.make();
             var message = new byte[]{1, 2, 3, 4};
