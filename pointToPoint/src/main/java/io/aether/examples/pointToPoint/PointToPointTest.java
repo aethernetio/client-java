@@ -53,7 +53,7 @@ public class PointToPointTest {
         if (clientConfig1 == null)
             clientConfig1 = new ClientStateInMemory(parent, registrationUri, null, CryptoLib.SODIUM);
         if (clientConfig2 == null)
-            clientConfig2 = new ClientStateInMemory(parent, registrationUri, null, CryptoLib.HYDROGEN);
+            clientConfig2 = new ClientStateInMemory(parent, registrationUri, null, CryptoLib.P256_AES_GCM);
         clientConfig1.getPingDuration().set(100L);
         clientConfig2.getPingDuration().set(100L);
         AetherCloudClient client1 = new AetherCloudClient(clientConfig1, "client1");
@@ -69,6 +69,9 @@ public class PointToPointTest {
 
 
             Log.info("clients is registered uid1: $uid1 uid2: $uid2", "uid1", client1.getUid(), "uid2", client2.getUid());
+
+            System.out.println("AETHER_HYDROGEN_STATE uid=" + client2.getUid() + " key=" + clientConfig2.getMasterKey() + " state=" + java.util.Base64.getEncoder().encodeToString(clientConfig2.save()));
+
 
 
             AFuture checkReceiveMessage = AFuture.make();

@@ -62,7 +62,12 @@ public class ClientStateInMemory implements ClientState, ToString {
         this.registrationUri.addAll(registrationUri);
         if (rootSigners != null)
             this.rootSigners.addAll(rootSigners);
-        this.rootSigners.addAll(Set.of(SignChecker.of("SODIUM:4F202A94AB729FE9B381613AE77A8A7D89EDAB9299C3320D1A0B994BA710CCEB"), SignChecker.of("HYDROGEN:883B4D7E0FB04A38CA12B3A451B00942048858263EE6E6D61150F2EF15F40343")));
+
+        this.rootSigners.addAll(Set.of(
+                SignChecker.of("SODIUM:4F202A94AB729FE9B381613AE77A8A7D89EDAB9299C3320D1A0B994BA710CCEB"),
+                SignChecker.of("HYDROGEN:883B4D7E0FB04A38CA12B3A451B00942048858263EE6E6D61150F2EF15F40343"),
+                SignChecker.of("P256_AES_GCM:EF966FB69E67239CA874F87452BBDECF8086B4ED67DC1F2A66D1458C3D66F2D848A3E56FF537F06528D8114D5B0B668A0DD9C896AAF7908C67AC5DDB49DAEFA9")));
+
     }
 
     public ClientStateInMemory(UUID parentUid, List<URI> registrationUri) {
