@@ -70,6 +70,7 @@ public class PointToPointTest {
 
             Log.info("clients is registered uid1: $uid1 uid2: $uid2", "uid1", client1.getUid(), "uid2", client2.getUid());
 
+
             AFuture checkReceiveMessage = AFuture.make();
             var message = new byte[]{1, 2, 3, 4};
             AtomicLong sendTime = new AtomicLong();
