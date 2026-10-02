@@ -156,7 +156,8 @@ public final class ProxyUpstreamRegistrationSession
 
     public ARFuture<RecoveryResult> recovery(
             UUID uid,
-            Key masterKey
+            Key oldMasterKey,
+            Key newMasterKey
     ) {
         return requestOriginalAsymmetricKey().mapRFuture(asymCE -> {
             safeApi = rootApi.openEnter(
@@ -166,7 +167,11 @@ public final class ProxyUpstreamRegistrationSession
                     "proxy upstream recovery safe"
             );
             safeApi.setReturnKey(tempKeyNative);
-            return safeApi.recovery(uid, masterKey);
+            return safeApi.recovery(
+                    uid,
+                    oldMasterKey,
+                    newMasterKey
+            );
         });
     }
 

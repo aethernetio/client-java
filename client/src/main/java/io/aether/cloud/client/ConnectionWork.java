@@ -532,12 +532,16 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
 
 
     @Override
+
+
     public void sendSafeApiData(LoginClientStream data) {
         data.asIn()
                 .convert(cryptoEngine::decrypt)
                 .ctx(authorizedApi.getFastMetaContext())
                 .accept();
     }
+
+
 
 
     public ServerDescriptor getServerDescriptor() {

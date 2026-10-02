@@ -205,7 +205,8 @@ public final class ProxyServerRegistrationApiImpl
     @Override
     public ARFuture<RecoveryResult> recovery(
             UUID uid,
-            Key masterKey
+            Key oldMasterKey,
+            Key newMasterKey
     ) {
         ARFuture<RecoveryResult> result = ARFuture.make();
 
@@ -220,7 +221,11 @@ public final class ProxyServerRegistrationApiImpl
             session.connect();
 
             ProxyUpstreamRegistrationSession recoverySession = session;
-            session.recovery(uid, masterKey).to(
+            session.recovery(
+                    uid,
+                    oldMasterKey,
+                    newMasterKey
+            ).to(
                     recovered -> {
                         recoverySession.close();
                         result.done(recovered);
