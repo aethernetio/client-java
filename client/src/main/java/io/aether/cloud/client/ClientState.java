@@ -59,6 +59,12 @@ public interface ClientState {
 
     Set<SignChecker> getRootSigners();
 
+
+    io.aether.api.clienttypes.PeerIdentityCredentials getPeerIdentityCredentials();
+
+    void setPeerIdentityCredentials(io.aether.api.clienttypes.PeerIdentityCredentials credentials);
+
+
     interface ServerInfo {
 
         int getServerId();

@@ -72,6 +72,9 @@ public final class AetherCloudClient implements Destroyable {
     final CloudPriorityManager priorityManager = new CloudPriorityManager();
     private final ClientState clientState;
 
+    private final PeerIdentityManager peerIdentityManager;
+
+
     private final int timeout1 = 6;
     private final int loginApiVersion;
 
@@ -147,6 +150,9 @@ public final class AetherCloudClient implements Destroyable {
         }
 
         this.clientState = state;
+
+        this.peerIdentityManager = new PeerIdentityManager(this);
+
         this.name = name;
         this.loginApiVersion = loginApiVersion;
         this.workConnectionRouter = Objects.requireNonNull(workConnectionRouter);
@@ -178,6 +184,14 @@ public final class AetherCloudClient implements Destroyable {
         startFuture.to(() -> {
             forceUpdateStateFromCache().to(state::saveState);
         });
+
+        startFuture.to(() -> {
+            var idFuture = peerIdentityManager.getOrIssue();
+            idFuture.onError(e -> Log.warn(
+                    "Peer identity issuance failed; will retry on demand",
+                    "error", String.valueOf(e)));
+        });
+
     }
 
 
@@ -504,6 +518,12 @@ public final class AetherCloudClient implements Destroyable {
     public UUID getUid() {
         return clientState.getUid();
     }
+
+
+    public ARFuture<PeerIdentity> getPeerIdentity() {
+        return peerIdentityManager.getOrIssue();
+    }
+
 
     public <T> ARFuture<T> getAuthApi1(@NotNull AFunction<AuthorizedApi, ARFuture<T>> t) {
         if (destroyer.isDestroyed())

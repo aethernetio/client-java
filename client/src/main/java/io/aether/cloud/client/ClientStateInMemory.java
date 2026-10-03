@@ -51,6 +51,9 @@ public class ClientStateInMemory implements ClientState, ToString {
 
     private volatile Key masterKey;
 
+    private volatile io.aether.api.clienttypes.PeerIdentityCredentials peerIdentityCredentials;
+
+
     public ClientStateInMemory(UUID parentUid, List<URI> registrationUri, Set<SignChecker> rootSigners) {
         this(parentUid, registrationUri, rootSigners, CryptoLib.HYDROGEN);
     }
@@ -187,6 +190,18 @@ public class ClientStateInMemory implements ClientState, ToString {
         return rootSigners;
     }
 
+
+    @Override
+    public io.aether.api.clienttypes.PeerIdentityCredentials getPeerIdentityCredentials() {
+        return peerIdentityCredentials;
+    }
+
+    @Override
+    public void setPeerIdentityCredentials(io.aether.api.clienttypes.PeerIdentityCredentials credentials) {
+        this.peerIdentityCredentials = credentials;
+    }
+
+
     public ServerInfo getServerInfo(int sid) {
         return servers.computeIfAbsent(sid, ServerInfo::new);
     }
@@ -242,7 +257,7 @@ public class ClientStateInMemory implements ClientState, ToString {
             var weightsMap = cc.getWeights();
             var weightsArray = weightsMap.entrySet().stream().map(e -> new io.aether.api.clienttypes.CloudWeight(e.getKey(), e.getValue())).toArray(io.aether.api.clienttypes.CloudWeight[]::new);
             return new io.aether.api.clienttypes.ClientInfo(s.getUid(), cc.toCloud(), weightsArray);
-        }).toArray(io.aether.api.clienttypes.ClientInfo.class), flow(rootSigners).map(io.aether.crypto.SignChecker::getPublicKey).map(io.aether.api.CryptoUtils::of).cast(KeySignPublic.class).toArray(KeySignPublic.class), cryptoLib, pingDuration.getNow(), parentUid, countServersForRegistration, timeoutForConnectToRegistrationServer, uid, alias, masterKey);
+}).toArray(io.aether.api.clienttypes.ClientInfo.class), flow(rootSigners).map(io.aether.crypto.SignChecker::getPublicKey).map(io.aether.api.CryptoUtils::of).cast(KeySignPublic.class).toArray(KeySignPublic.class), cryptoLib, pingDuration.getNow(), parentUid, countServersForRegistration, timeoutForConnectToRegistrationServer, uid, alias, masterKey, peerIdentityCredentials);
     }
 
     public void loadState(File data) {
@@ -268,6 +283,9 @@ public class ClientStateInMemory implements ClientState, ToString {
             this.parentUid = dto.getParentUid();
             this.masterKey = dto.getMasterKey();
             this.cryptoLib = dto.getCryptoLib();
+
+            this.peerIdentityCredentials = dto.getPeerIdentityCredentials();
+
             this.rootSigners.addAll(flow(dto.getRootSigners()).map(v -> CryptoUtils.of(v).asSignPublic().toSignChecker()).toSet());
             this.countServersForRegistration = dto.getCountServersForRegistration();
             this.timeoutForConnectToRegistrationServer = dto.getTimeoutForConnectToRegistrationServer();

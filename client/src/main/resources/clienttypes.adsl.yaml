@@ -10,6 +10,12 @@ types:
       uid: UUID
       cloud: Cloud
       weights: CloudWeight[]
+
+  PeerIdentityCredentials:
+    fields:
+      identity: PeerIdentity
+      privateKey: KeySignPrivate
+
   ClientStateForSave:
     fields:
       registrationUri: URI[]
@@ -24,3 +30,5 @@ types:
       uid: UUID
       alias: UUID
       masterKey: Key
+
+      peerIdentityCredentials: PeerIdentityCredentials?
