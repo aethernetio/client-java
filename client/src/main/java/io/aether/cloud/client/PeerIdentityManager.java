@@ -21,6 +21,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicReference;
 
+import io.aether.utils.futures.AFuture;
+import io.aether.utils.interfaces.Destroyable;
+import java.util.concurrent.CancellationException;
+
+
 /**
  * Package-private helper responsible for the peer identity lifecycle:
  * validating persisted credentials, generating a fresh signing pair,
@@ -30,10 +35,11 @@ import java.util.concurrent.atomic.AtomicReference;
  * <p>Concurrent callers share a single in-flight issuance (lock-free CAS).
  * Failed issuance clears the in-flight marker so the next caller can retry.
  */
-final class PeerIdentityManager {
+final class PeerIdentityManager implements Destroyable {
+
 
     private static final byte[] PROBE =
-            "AETHER_PEER_IDENTITY_LOCAL_PAIR_CHECK_V1".getBytes(StandardCharsets.US_ASCII);
+            "AETHER_PEER_IDENTITY_LOCAL_PAIR_CHECK_V1\0".getBytes(StandardCharsets.US_ASCII);
 
     private final AetherCloudClient client;
     private final AtomicReference<ARFuture<PeerIdentity>> inFlight = new AtomicReference<>();
@@ -43,17 +49,24 @@ final class PeerIdentityManager {
     }
 
 
-    ARFuture<PeerIdentity> getOrIssue() {
-        PeerIdentity persisted = validatePersisted();
-        if (persisted != null) {
-            return ARFuture.of(persisted);
-        }
 
+    ARFuture<PeerIdentity> getOrIssue() {
         while (true) {
             ARFuture<PeerIdentity> existing = inFlight.get();
             if (existing != null) {
                 return existing;
             }
+
+            PeerIdentity persisted = validatePersisted();
+
+            existing = inFlight.get();
+            if (existing != null) {
+                return existing;
+            }
+            if (persisted != null) {
+                return ARFuture.of(persisted);
+            }
+
             ARFuture<PeerIdentity> created = ARFuture.make();
             if (inFlight.compareAndSet(null, created)) {
                 beginIssueLifecycle(created);
@@ -61,6 +74,7 @@ final class PeerIdentityManager {
             }
         }
     }
+
 
     private void beginIssueLifecycle(ARFuture<PeerIdentity> result) {
         if (client.destroyer.isDestroyed()) {
@@ -80,21 +94,31 @@ final class PeerIdentityManager {
         }
     }
 
+
     private void proceedWhenReady(ARFuture<PeerIdentity> result) {
+        if (result.isFinalStatus()) {
+            return;
+        }
         if (client.destroyer.isDestroyed()) {
             inFlight.compareAndSet(result, null);
             result.tryError(new java.util.concurrent.CancellationException(
                     "Client destroyed before peer identity issuance"));
             return;
         }
+
         PeerIdentity revalidated = validatePersisted();
         if (revalidated != null) {
             inFlight.compareAndSet(result, null);
             result.tryDone(revalidated);
             return;
         }
+
         client.getAuthApi(api -> {
+            if (result.isFinalStatus() || client.destroyer.isDestroyed()) {
+                return;
+            }
             try {
+
                 CryptoLib lib = client.getCryptLib();
                 CryptoProvider provider = CryptoProviderFactory.getProvider(lib.name());
                 PairSignKeys pair = provider.createSignKeys();
@@ -255,4 +279,15 @@ final class PeerIdentityManager {
                     "error", String.valueOf(e));
         }
     }
+
+    @Override
+    public AFuture destroy(boolean force) {
+        ARFuture<PeerIdentity> current = inFlight.getAndSet(null);
+        if (current != null && !current.isFinalStatus()) {
+            current.tryError(new CancellationException(
+                    "Peer identity lifecycle canceled: client destroyed"));
+        }
+        return AFuture.completed();
+    }
+
 }

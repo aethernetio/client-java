@@ -152,6 +152,7 @@ public final class AetherCloudClient implements Destroyable {
         this.clientState = state;
 
         this.peerIdentityManager = new PeerIdentityManager(this);
+        this.destroyer.add(peerIdentityManager);
 
         this.name = name;
         this.loginApiVersion = loginApiVersion;

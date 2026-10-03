@@ -257,7 +257,7 @@ public class ClientStateInMemory implements ClientState, ToString {
             var weightsMap = cc.getWeights();
             var weightsArray = weightsMap.entrySet().stream().map(e -> new io.aether.api.clienttypes.CloudWeight(e.getKey(), e.getValue())).toArray(io.aether.api.clienttypes.CloudWeight[]::new);
             return new io.aether.api.clienttypes.ClientInfo(s.getUid(), cc.toCloud(), weightsArray);
-}).toArray(io.aether.api.clienttypes.ClientInfo.class), flow(rootSigners).map(io.aether.crypto.SignChecker::getPublicKey).map(io.aether.api.CryptoUtils::of).cast(KeySignPublic.class).toArray(KeySignPublic.class), cryptoLib, pingDuration.getNow(), parentUid, countServersForRegistration, timeoutForConnectToRegistrationServer, uid, alias, masterKey, peerIdentityCredentials);
+        }).toArray(io.aether.api.clienttypes.ClientInfo.class), flow(rootSigners).map(io.aether.crypto.SignChecker::getPublicKey).map(io.aether.api.CryptoUtils::of).cast(KeySignPublic.class).toArray(KeySignPublic.class), cryptoLib, pingDuration.getNow(), parentUid, countServersForRegistration, timeoutForConnectToRegistrationServer, uid, alias, masterKey, peerIdentityCredentials);
     }
 
     public void loadState(File data) {
