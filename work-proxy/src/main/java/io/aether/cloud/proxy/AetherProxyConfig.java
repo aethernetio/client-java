@@ -3,6 +3,10 @@ package io.aether.cloud.proxy;
 
 import io.aether.api.common.CryptoLib;
 import io.aether.crypto.PairAsymKeysSigned;
+
+import io.aether.api.common.SignedKey;
+import io.aether.api.common.KeySignPrivate;
+
 import io.aether.crypto.SignChecker;
 
 import java.io.IOException;
@@ -43,42 +47,27 @@ public record AetherProxyConfig(
         URI workPublic,
         List<URI> upstreamRegistrationUris,
         Map<CryptoLib, PairAsymKeysSigned> registrationKeys,
+
         List<SignChecker> rootSigners,
+        List<SignedKey> serverSigningKeys,
+        List<KeySignPrivate> serverSigningPrivateKeys,
         Path stateDir
+
 ) {
 
     public AetherProxyConfig {
         upstreamRegistrationUris =
                 List.copyOf(upstreamRegistrationUris);
         registrationKeys = Map.copyOf(registrationKeys);
+
         rootSigners = List.copyOf(rootSigners);
+        serverSigningKeys = List.copyOf(serverSigningKeys);
+        serverSigningPrivateKeys = List.copyOf(serverSigningPrivateKeys);
+
     }
 
 
-    /**
-     * Backward-compatible constructor without a persistent state directory.
-     * The proxy then runs in in-memory mode with no persistence.
-     */
-    public AetherProxyConfig(
-            short proxySid,
-            URI registrationListen,
-            URI workListen,
-            URI workPublic,
-            List<URI> upstreamRegistrationUris,
-            Map<CryptoLib, PairAsymKeysSigned> registrationKeys,
-            List<SignChecker> rootSigners
-    ) {
-        this(
-                proxySid,
-                registrationListen,
-                workListen,
-                workPublic,
-                upstreamRegistrationUris,
-                registrationKeys,
-                rootSigners,
-                null
-        );
-    }
+
 
 
     public static AetherProxyConfig load(Path path)
@@ -133,6 +122,23 @@ public record AetherProxyConfig(
                         "HYDROGEN:883B4D7E0FB04A38CA12B3A451B00942048858263EE6E6D61150F2EF15F40343")
         );
 
+
+        List<SignedKey> serverSigningKeys = new ArrayList<>();
+        for (String part : required(properties, "proxy.serverSigningKey").split(",")) {
+            if (!part.isBlank()) {
+                serverSigningKeys.add(parseServerSigningKey(part.trim()));
+            }
+        }
+
+        List<KeySignPrivate> serverSigningPrivateKeys = new ArrayList<>();
+        for (String part : required(properties, "proxy.serverSigningPrivateKey").split(",")) {
+            if (!part.isBlank()) {
+                serverSigningPrivateKeys.add(parseServerSigningPrivateKey(part.trim()));
+            }
+        }
+
+
+
         return new AetherProxyConfig(
                 proxySid,
                 registrationListen,
@@ -140,8 +146,12 @@ public record AetherProxyConfig(
                 workPublic,
                 upstreamRegistrationUris,
                 registrationKeys,
+
                 rootSigners,
+                serverSigningKeys,
+                serverSigningPrivateKeys,
                 stateDir
+
         );
     }
 
@@ -151,10 +161,33 @@ public record AetherProxyConfig(
                 workPublic,
                 upstreamRegistrationUris,
                 registrationKeys,
+
                 rootSigners,
+
+                serverSigningKeys.toArray(new SignedKey[0]),
+                serverSigningPrivateKeys.toArray(new KeySignPrivate[0]),
+
                 stateDir
+
         );
     }
+
+
+    private static SignedKey parseServerSigningKey(String value) {
+        String provider = value.substring(0, value.indexOf(':'));
+        var cp = io.aether.crypto.CryptoProviderFactory.getProvider(provider);
+        return io.aether.api.CryptoUtils.of(cp.createSignedKey(value));
+    }
+
+    private static KeySignPrivate parseServerSigningPrivateKey(String value) {
+        io.aether.crypto.AKey key = io.aether.crypto.AKey.of(value);
+        if (!(key instanceof io.aether.crypto.AKey.SignPrivate)) {
+            throw new IllegalArgumentException(
+                    "proxy.serverSigningPrivateKey must be SIGN_PRIVATE: " + value);
+        }
+        return (KeySignPrivate) io.aether.api.CryptoUtils.of(key);
+    }
+
 
     private static String required(
             Properties properties,

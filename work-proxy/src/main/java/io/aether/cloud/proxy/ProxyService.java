@@ -6,6 +6,10 @@ import io.aether.api.common.CloudConfig;
 import io.aether.api.common.IPAddress;
 import io.aether.api.common.IPAddressAndPortsListUtil;
 import io.aether.api.common.ServerDescriptor;
+
+import io.aether.api.common.SignedKey;
+import io.aether.api.common.KeySignPrivate;
+
 import io.aether.api.common.ServerDescriptorWithGeo;
 import io.aether.api.common.ServerType;
 import io.aether.cloud.proxy.util.Grid;
@@ -35,6 +39,10 @@ import io.aether.api.clientserverapi.GlobalApiStream;
 import io.aether.api.clientserverapi.GlobalRegClientApiStream;
 import io.aether.api.common.CryptoLib;
 import io.aether.crypto.AKey;
+
+import io.aether.crypto.CryptoProviderFactory;
+import io.aether.crypto.Signer;
+
 import io.aether.crypto.CryptoEngine;
 import io.aether.net.fastMeta.AutoFlushContext;
 import io.aether.utils.futures.ARFuture;
@@ -69,6 +77,12 @@ public final class ProxyService {
             > registrationKeys;
     private final java.util.List<io.aether.crypto.SignChecker> rootSigners;
 
+    private final java.util.Map<io.aether.api.common.CryptoLib, SignedKey>
+            serverSigningKeys = new java.util.EnumMap<>(io.aether.api.common.CryptoLib.class);
+    private final java.util.Map<io.aether.api.common.CryptoLib, Signer>
+            serverSigners = new java.util.EnumMap<>(io.aether.api.common.CryptoLib.class);
+
+
 
     private final Grid messageGrid =
             new Grid(MESSAGE_GRID_CAPACITY) {
@@ -101,6 +115,10 @@ public final class ProxyService {
                     > registrationKeys,
 
             java.util.List<io.aether.crypto.SignChecker> rootSigners,
+
+            SignedKey[] serverSigningKeys,
+            KeySignPrivate[] serverSigningPrivateKeys,
+
             Path stateDir
 
     ) {
@@ -115,9 +133,15 @@ public final class ProxyService {
         this.store = new ProxyClientStore(stateDir, proxySid);
         this.store.initialize();
 
+        initServerSigning(serverSigningKeys, serverSigningPrivateKeys);
+
+
         this.proxyDescriptor = new ServerDescriptor(
+
                 proxySid,
-                IPAddressAndPortsListUtil.of(List.of(proxyWorkPublicUri))
+                IPAddressAndPortsListUtil.of(List.of(proxyWorkPublicUri)),
+                serverSigningKeysArray()
+
         );
     }
 
@@ -255,6 +279,107 @@ public final class ProxyService {
 
 
 
+
+    private void initServerSigning(
+            SignedKey[] signingKeys,
+            KeySignPrivate[] signingPrivateKeys) {
+        if (signingKeys == null || signingPrivateKeys == null) {
+            throw new IllegalStateException("Proxy server signing keys are not configured");
+        }
+
+        java.util.Map<io.aether.api.common.CryptoLib, io.aether.crypto.AKey.SignPublic>
+                publicByLib = new java.util.EnumMap<>(io.aether.api.common.CryptoLib.class);
+        for (SignedKey signingKey : signingKeys) {
+            if (signingKey == null) {
+                throw new IllegalStateException("Proxy signing key entry is null");
+            }
+            io.aether.crypto.SignedKey publicSigned = CryptoUtils.of(signingKey);
+            io.aether.crypto.AKey publicKey = publicSigned.getKey();
+            if (!(publicKey instanceof io.aether.crypto.AKey.SignPublic)) {
+                throw new IllegalStateException("Proxy signing key must be SIGN_PUBLIC");
+            }
+
+            if (!publicSigned.getSign().getProviderName()
+                    .equalsIgnoreCase(publicKey.getProviderName())) {
+                throw new IllegalStateException(
+                        "Proxy signing key sign provider mismatch for " + publicKey.getProviderName());
+            }
+
+            io.aether.api.common.CryptoLib lib = cryptoLibOf(publicKey);
+            if (publicByLib.put(lib, (io.aether.crypto.AKey.SignPublic) publicKey) != null) {
+                throw new IllegalStateException("Duplicate proxy signing key for " + lib);
+            }
+        }
+
+        java.util.Map<io.aether.api.common.CryptoLib, io.aether.crypto.AKey.SignPrivate>
+                privateByLib = new java.util.EnumMap<>(io.aether.api.common.CryptoLib.class);
+        for (KeySignPrivate signingPrivateKey : signingPrivateKeys) {
+            if (signingPrivateKey == null) {
+                throw new IllegalStateException("Proxy signing private key entry is null");
+            }
+            io.aether.crypto.AKey priv = CryptoUtils.of(signingPrivateKey);
+            if (!(priv instanceof io.aether.crypto.AKey.SignPrivate)) {
+                throw new IllegalStateException("Proxy signing private key must be SIGN_PRIVATE");
+            }
+            io.aether.api.common.CryptoLib lib = cryptoLibOf(priv);
+            if (privateByLib.put(lib, (io.aether.crypto.AKey.SignPrivate) priv) != null) {
+                throw new IllegalStateException("Duplicate proxy signing private key for " + lib);
+            }
+        }
+
+        for (io.aether.api.common.CryptoLib lib : io.aether.api.common.CryptoLib.values()) {
+            io.aether.crypto.AKey.SignPublic publicKey = publicByLib.get(lib);
+            io.aether.crypto.AKey.SignPrivate privateKey = privateByLib.get(lib);
+            if (publicKey == null) {
+                throw new IllegalStateException("Missing proxy signing key for " + lib);
+            }
+            if (privateKey == null) {
+                throw new IllegalStateException("Missing proxy signing private key for " + lib);
+            }
+            io.aether.crypto.CryptoProvider provider =
+                    CryptoProviderFactory.getProvider(publicKey.getProviderName());
+            Signer signer = provider.createSigner(publicKey, privateKey);
+            byte[] probe = ("aether-proxy-signing-probe:" + lib)
+                    .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            io.aether.crypto.Sign probeSign = signer.sign(probe);
+            if (!signer.checkSign(probe, probeSign)) {
+                throw new IllegalStateException("Proxy signing key pair mismatch for " + lib);
+            }
+            serverSigningKeys.put(lib, signingKeyForLib(signingKeys, lib));
+            serverSigners.put(lib, signer);
+        }
+    }
+
+    private static io.aether.api.common.CryptoLib cryptoLibOf(
+            io.aether.crypto.AKey key) {
+        return io.aether.api.common.CryptoLib.valueOf(
+                key.getProviderName().toUpperCase());
+    }
+
+    private static SignedKey signingKeyForLib(
+            SignedKey[] signingKeys,
+            io.aether.api.common.CryptoLib lib) {
+        for (SignedKey signingKey : signingKeys) {
+            io.aether.crypto.SignedKey publicSigned = CryptoUtils.of(signingKey);
+            if (cryptoLibOf(publicSigned.getKey()) == lib) {
+                return signingKey;
+            }
+        }
+        throw new IllegalStateException("Missing proxy signing key for " + lib);
+    }
+
+    private SignedKey[] serverSigningKeysArray() {
+        java.util.List<SignedKey> keys = new java.util.ArrayList<>();
+        for (io.aether.api.common.CryptoLib lib : io.aether.api.common.CryptoLib.values()) {
+            SignedKey key = serverSigningKeys.get(lib);
+            if (key != null) {
+                keys.add(key);
+            }
+        }
+        return keys.toArray(new SignedKey[0]);
+    }
+
+
     public ServerDescriptor proxyDescriptor() {
         return proxyDescriptor;
     }
@@ -267,7 +392,10 @@ public final class ProxyService {
                 proxyDescriptor.getIpAddress(),
                 0.0,
                 0.0,
-                ServerType.WORK
+
+                ServerType.WORK,
+                serverSigningKeysArray()
+
         );
 
     }

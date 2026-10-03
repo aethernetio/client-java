@@ -11,6 +11,12 @@ import io.aether.cloud.client.ClientCloud;
 import io.aether.cloud.client.ClientStateInMemory;
 import io.aether.crypto.AKey;
 import io.aether.crypto.CryptoProviderFactory;
+
+import io.aether.api.common.KeySignPrivate;
+import io.aether.api.common.SignedKey;
+import io.aether.crypto.PairSignKeys;
+import io.aether.crypto.Signer;
+
 import io.aether.net.virtual.VirtualFastMetaNet;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
@@ -54,9 +60,17 @@ class ProxyRestartWorkLoginTest {
                 PROXY_SID,
                 workUri,
                 List.of(URI.create("tcp://localhost:23990")),
+
                 Map.of(),
+
                 List.of(),
+
+                PROXY_SIGNING_KEYS.toArray(new SignedKey[0]),
+                PROXY_SIGNING_PRIVATE_KEYS.toArray(new KeySignPrivate[0]),
+
+
                 stateDir
+
         );
     }
 
@@ -78,7 +92,8 @@ class ProxyRestartWorkLoginTest {
         state.getServerInfo(ORIGINAL_SID).setDescriptor(
                 new ServerDescriptor(
                         ORIGINAL_SID,
-                        IPAddressAndPortsListUtil.of(List.of(originalWorkUri))));
+                        IPAddressAndPortsListUtil.of(List.of(originalWorkUri)),
+                        ORIGINAL_SID_SIGNING_KEYS));
         return state;
     }
 
@@ -100,7 +115,8 @@ class ProxyRestartWorkLoginTest {
         state.getServerInfo(PROXY_SID).setDescriptor(
                 new ServerDescriptor(
                         PROXY_SID,
-                        IPAddressAndPortsListUtil.of(List.of(proxyWorkUri))));
+                        IPAddressAndPortsListUtil.of(List.of(proxyWorkUri)),
+                        PROXY_SID_SIGNING_KEYS));
         return state;
     }
 
@@ -230,5 +246,60 @@ class ProxyRestartWorkLoginTest {
         }
         return future.getNow();
     }
+
+
+    private static final java.util.Map<io.aether.api.common.CryptoLib, Signer> TEST_ROOT_SIGNERS =
+            newTestRootSigners();
+    private static final java.util.Map<io.aether.api.common.CryptoLib, PairSignKeys>
+            PROXY_PAIR = newServerPairs();
+    private static final java.util.Map<io.aether.api.common.CryptoLib, PairSignKeys>
+            ORIGINAL_SID_PAIR = newServerPairs();
+
+    private static final List<SignedKey> PROXY_SIGNING_KEYS = signedKeys(PROXY_PAIR);
+    private static final List<KeySignPrivate> PROXY_SIGNING_PRIVATE_KEYS =
+            privateKeys(PROXY_PAIR);
+    private static final SignedKey[] PROXY_SID_SIGNING_KEYS =
+            signedKeys(PROXY_PAIR).toArray(new SignedKey[0]);
+    private static final SignedKey[] ORIGINAL_SID_SIGNING_KEYS =
+            signedKeys(ORIGINAL_SID_PAIR).toArray(new SignedKey[0]);
+
+    private static java.util.Map<io.aether.api.common.CryptoLib, Signer> newTestRootSigners() {
+        java.util.Map<io.aether.api.common.CryptoLib, Signer> result =
+                new java.util.EnumMap<>(io.aether.api.common.CryptoLib.class);
+        for (io.aether.api.common.CryptoLib lib : io.aether.api.common.CryptoLib.values()) {
+            result.put(lib, CryptoProviderFactory.getProvider(lib.name())
+                    .createSignKeys().toSigner());
+        }
+        return result;
+    }
+
+    private static java.util.Map<io.aether.api.common.CryptoLib, PairSignKeys> newServerPairs() {
+        java.util.Map<io.aether.api.common.CryptoLib, PairSignKeys> result =
+                new java.util.EnumMap<>(io.aether.api.common.CryptoLib.class);
+        for (io.aether.api.common.CryptoLib lib : io.aether.api.common.CryptoLib.values()) {
+            result.put(lib, CryptoProviderFactory.getProvider(lib.name()).createSignKeys());
+        }
+        return result;
+    }
+
+    private static List<SignedKey> signedKeys(
+            java.util.Map<io.aether.api.common.CryptoLib, PairSignKeys> pairs) {
+        List<SignedKey> result = new java.util.ArrayList<>();
+        for (io.aether.api.common.CryptoLib lib : io.aether.api.common.CryptoLib.values()) {
+            result.add(CryptoUtils.of(new io.aether.crypto.SignedKey(
+                    pairs.get(lib).getPublicKey(), TEST_ROOT_SIGNERS.get(lib))));
+        }
+        return result;
+    }
+
+    private static List<KeySignPrivate> privateKeys(
+            java.util.Map<io.aether.api.common.CryptoLib, PairSignKeys> pairs) {
+        List<KeySignPrivate> result = new java.util.ArrayList<>();
+        for (io.aether.api.common.CryptoLib lib : io.aether.api.common.CryptoLib.values()) {
+            result.add(CryptoUtils.of(pairs.get(lib).getPrivateKey()));
+        }
+        return result;
+    }
+
 
 }
