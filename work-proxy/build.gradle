@@ -20,9 +20,11 @@ dependencies {
 
     testImplementation "io.aether:net-virtual:+"
 
-    testImplementation "io.aether.crypto:sodium:+"
-    testImplementation "io.aether.crypto:hydrogen-fast:+"
-    testImplementation "io.aether.crypto:p256-aes-gcm:+"
+
+    implementation "io.aether.crypto:sodium:+"
+    implementation "io.aether.crypto:hydrogen-fast:+"
+    implementation "io.aether.crypto:p256-aes-gcm:+"
+
 
 
     testImplementation "org.junit.jupiter:junit-jupiter:5.10.0"
