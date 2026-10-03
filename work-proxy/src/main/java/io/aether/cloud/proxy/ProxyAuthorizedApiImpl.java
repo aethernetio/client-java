@@ -74,6 +74,13 @@ public class ProxyAuthorizedApiImpl
     }
 
     @Override
+    public ARFuture<io.aether.api.common.PeerIdentity> issuePeerIdentity(
+            io.aether.api.common.KeySignPublic key) {
+        return ARFuture.of(service.issuePeerIdentity(client.uid(), key));
+    }
+
+
+    @Override
     public void flushLoginStream(byte[] data) {
         if (backId != -1) {
             transport.sendMulti(backId, data);

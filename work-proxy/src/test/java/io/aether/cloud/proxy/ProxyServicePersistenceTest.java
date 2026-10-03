@@ -345,6 +345,60 @@ class ProxyServicePersistenceTest {
     }
 
 
+
+    @Test
+    void issuePeerIdentityIsSignedByProxyIdentity(@TempDir Path dir) {
+        ProxyService service = newService(dir);
+        try {
+            java.util.List<io.aether.crypto.SignChecker> trustedRoots =
+                    new java.util.ArrayList<>(TEST_ROOT_SIGNERS.values());
+            java.util.Map<io.aether.api.common.CryptoLib, SignedKey> proxyKeyByLib =
+                    new java.util.EnumMap<>(io.aether.api.common.CryptoLib.class);
+            for (SignedKey sk : service.proxyDescriptor().getSigningKeys()) {
+                var cryptoSk = CryptoUtils.of(sk);
+                proxyKeyByLib.put(
+                        io.aether.api.common.CryptoLib.valueOf(
+                                cryptoSk.getKey().getProviderName().toUpperCase()),
+                        sk);
+            }
+
+            UUID uid = UUID.randomUUID();
+            for (io.aether.api.common.CryptoLib lib
+                    : io.aether.api.common.CryptoLib.values()) {
+                var peerPair = CryptoProviderFactory.getProvider(lib.name())
+                        .createSignKeys();
+                io.aether.api.common.KeySignPublic peerPublic =
+                        CryptoUtils.of(peerPair.getPublicKey());
+
+                io.aether.api.common.PeerIdentity identity =
+                        service.issuePeerIdentity(uid, peerPublic);
+
+                assertEquals(uid, identity.getData().getUid());
+
+                assertEquals(lib.name(),
+                        CryptoUtils.of(identity.getData().getKey()).getProviderName());
+
+                assertTrue(java.util.Arrays.equals(
+                        peerPublic.getData(),
+                        identity.getData().getKey().getData()));
+
+                SignedKey expectedProxyKey = proxyKeyByLib.get(lib);
+                assertNotNull(expectedProxyKey, "missing proxy key for " + lib);
+                assertTrue(java.util.Arrays.equals(
+                        expectedProxyKey.getKey().getData(),
+                        identity.getServerSigningKey().getKey().getData()),
+                        "credential must carry proxy signing key for " + lib);
+
+                assertTrue(
+                        io.aether.api.PeerIdentityCrypto.verify(identity, trustedRoots),
+                        "Proxy offline verify failed for " + lib);
+            }
+        } finally {
+            service.destroy(true).waitSuccessful();
+        }
+    }
+
+
     private static final java.util.Map<io.aether.api.common.CryptoLib, Signer> TEST_ROOT_SIGNERS =
             newTestRootSigners();
     private static final java.util.Map<io.aether.api.common.CryptoLib, PairSignKeys>
