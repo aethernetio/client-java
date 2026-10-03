@@ -42,7 +42,18 @@ final class PeerIdentityManager implements Destroyable {
             "AETHER_PEER_IDENTITY_LOCAL_PAIR_CHECK_V1\0".getBytes(StandardCharsets.US_ASCII);
 
     private final AetherCloudClient client;
-    private final AtomicReference<ARFuture<PeerIdentity>> inFlight = new AtomicReference<>();
+    private final AtomicReference<Attempt> inFlight = new AtomicReference<>();
+
+
+    private enum AttemptState {
+        ACTIVE, COMMITTING, CANCELLED
+    }
+
+    private static final class Attempt {
+        final ARFuture<PeerIdentity> future = ARFuture.make();
+        final AtomicReference<AttemptState> state = new AtomicReference<>(AttemptState.ACTIVE);
+    }
+
 
     PeerIdentityManager(AetherCloudClient client) {
         this.client = client;
@@ -52,73 +63,81 @@ final class PeerIdentityManager implements Destroyable {
 
     ARFuture<PeerIdentity> getOrIssue() {
         while (true) {
-            ARFuture<PeerIdentity> existing = inFlight.get();
+            Attempt existing = inFlight.get();
             if (existing != null) {
-                return existing;
+                return existing.future;
             }
 
             PeerIdentity persisted = validatePersisted();
 
             existing = inFlight.get();
             if (existing != null) {
-                return existing;
+                return existing.future;
             }
             if (persisted != null) {
                 return ARFuture.of(persisted);
             }
 
-            ARFuture<PeerIdentity> created = ARFuture.make();
+            Attempt created = new Attempt();
             if (inFlight.compareAndSet(null, created)) {
                 beginIssueLifecycle(created);
-                return created;
+                return created.future;
             }
         }
     }
 
 
-    private void beginIssueLifecycle(ARFuture<PeerIdentity> result) {
+    private void beginIssueLifecycle(Attempt attempt) {
         if (client.destroyer.isDestroyed()) {
-            inFlight.compareAndSet(result, null);
-            result.tryError(new java.util.concurrent.CancellationException(
-                    "Client destroyed before peer identity issuance"));
+            if (attempt.state.compareAndSet(AttemptState.ACTIVE, AttemptState.CANCELLED)) {
+                inFlight.compareAndSet(attempt, null);
+                attempt.future.tryError(new CancellationException(
+                        "Client destroyed before peer identity issuance"));
+            }
             return;
         }
         if (client.getUid() == null) {
-            client.startFuture.to(() -> proceedWhenReady(result));
-            client.startFuture.onError(err -> {
-                inFlight.compareAndSet(result, null);
-                result.tryError(err);
-            });
+            client.startFuture.to(() -> proceedWhenReady(attempt));
+            client.startFuture.onError(err -> failAttempt(attempt, err));
         } else {
-            proceedWhenReady(result);
+            proceedWhenReady(attempt);
         }
     }
 
 
-    private void proceedWhenReady(ARFuture<PeerIdentity> result) {
-        if (result.isFinalStatus()) {
+    private void proceedWhenReady(Attempt attempt) {
+        if (attempt.state.get() != AttemptState.ACTIVE) {
             return;
         }
         if (client.destroyer.isDestroyed()) {
-            inFlight.compareAndSet(result, null);
-            result.tryError(new java.util.concurrent.CancellationException(
-                    "Client destroyed before peer identity issuance"));
+            if (attempt.state.compareAndSet(AttemptState.ACTIVE, AttemptState.CANCELLED)) {
+                inFlight.compareAndSet(attempt, null);
+                attempt.future.tryError(new CancellationException(
+                        "Client destroyed before peer identity issuance"));
+            }
             return;
         }
-
         PeerIdentity revalidated = validatePersisted();
         if (revalidated != null) {
-            inFlight.compareAndSet(result, null);
-            result.tryDone(revalidated);
+            if (attempt.state.compareAndSet(AttemptState.ACTIVE, AttemptState.COMMITTING)) {
+                inFlight.compareAndSet(attempt, null);
+                attempt.future.tryDone(revalidated);
+            }
             return;
         }
-
         client.getAuthApi(api -> {
-            if (result.isFinalStatus() || client.destroyer.isDestroyed()) {
+            if (attempt.state.get() != AttemptState.ACTIVE) {
+                return;
+            }
+            if (client.destroyer.isDestroyed()) {
+                if (attempt.state.compareAndSet(AttemptState.ACTIVE, AttemptState.CANCELLED)) {
+                    inFlight.compareAndSet(attempt, null);
+                    attempt.future.tryError(new CancellationException(
+                            "Client destroyed before peer identity issuance"));
+                }
                 return;
             }
             try {
-
                 CryptoLib lib = client.getCryptLib();
                 CryptoProvider provider = CryptoProviderFactory.getProvider(lib.name());
                 PairSignKeys pair = provider.createSignKeys();
@@ -126,16 +145,22 @@ final class PeerIdentityManager implements Destroyable {
                 AKey.SignPrivate privateKey = pair.getPrivateKey();
 
                 api.issuePeerIdentity(publicDto).to(identity -> {
+                    if (attempt.state.get() != AttemptState.ACTIVE) {
+                        return;
+                    }
                     if (!validateIssued(identity, publicDto, privateKey)) {
-                        inFlight.compareAndSet(result, null);
-                        result.tryError(new IllegalStateException(
+                        failAttempt(attempt, new IllegalStateException(
                                 "Server returned invalid PeerIdentity"));
                         return;
                     }
+                    PeerIdentityCredentials creds = new PeerIdentityCredentials(
+                            identity,
+                            CryptoUtils.of(privateKey));
+                    if (!attempt.state.compareAndSet(
+                            AttemptState.ACTIVE, AttemptState.COMMITTING)) {
+                        return;
+                    }
                     try {
-                        PeerIdentityCredentials creds = new PeerIdentityCredentials(
-                                identity,
-                                CryptoUtils.of(privateKey));
                         client.getClientState().setPeerIdentityCredentials(creds);
                         try {
                             client.getClientState().saveState();
@@ -143,19 +168,15 @@ final class PeerIdentityManager implements Destroyable {
                             client.getClientState().setPeerIdentityCredentials(null);
                             throw persistError;
                         }
-                        inFlight.compareAndSet(result, null);
-                        result.tryDone(identity);
+                        inFlight.compareAndSet(attempt, null);
+                        attempt.future.tryDone(identity);
                     } catch (RuntimeException e) {
-                        inFlight.compareAndSet(result, null);
-                        result.tryError(e);
+                        inFlight.compareAndSet(attempt, null);
+                        attempt.future.tryError(e);
                     }
-                }).onError(err -> {
-                    inFlight.compareAndSet(result, null);
-                    result.tryError(err);
-                });
+                }).onError(err -> failAttempt(attempt, err));
             } catch (RuntimeException e) {
-                inFlight.compareAndSet(result, null);
-                result.tryError(e);
+                failAttempt(attempt, e);
             }
         });
     }
@@ -271,6 +292,15 @@ final class PeerIdentityManager implements Destroyable {
         return true;
     }
 
+
+    private void failAttempt(Attempt attempt, Throwable error) {
+        if (attempt.state.compareAndSet(AttemptState.ACTIVE, AttemptState.CANCELLED)) {
+            inFlight.compareAndSet(attempt, null);
+        }
+        attempt.future.tryError(error);
+    }
+
+
     private void clear() {
         try {
             client.getClientState().setPeerIdentityCredentials(null);
@@ -282,10 +312,13 @@ final class PeerIdentityManager implements Destroyable {
 
     @Override
     public AFuture destroy(boolean force) {
-        ARFuture<PeerIdentity> current = inFlight.getAndSet(null);
-        if (current != null && !current.isFinalStatus()) {
-            current.tryError(new CancellationException(
-                    "Peer identity lifecycle canceled: client destroyed"));
+        Attempt current = inFlight.get();
+        if (current != null) {
+            if (current.state.compareAndSet(AttemptState.ACTIVE, AttemptState.CANCELLED)) {
+                inFlight.compareAndSet(current, null);
+                current.future.tryError(new CancellationException(
+                        "Peer identity lifecycle canceled: client destroyed"));
+            }
         }
         return AFuture.completed();
     }
