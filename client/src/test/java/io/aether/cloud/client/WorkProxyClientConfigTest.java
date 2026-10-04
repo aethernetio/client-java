@@ -23,14 +23,17 @@ class WorkProxyClientConfigTest {
         return path;
     }
 
+
     private static ServerDescriptor descriptor(short sid) {
         return new ServerDescriptor(
                 sid,
                 io.aether.api.common.IPAddressAndPortsListUtil.of(
                         java.util.List.of()
-                )
+                ),
+                new io.aether.api.common.SignedKey[0]
         );
     }
+
 
     @Test
     void loadsRoutesAndResolvesBySid() throws IOException {

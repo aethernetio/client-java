@@ -16,14 +16,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class WorkConnectionRoutesTest {
 
 
+
     private static ServerDescriptor descriptor(short sid) {
         return new ServerDescriptor(
                 sid,
                 io.aether.api.common.IPAddressAndPortsListUtil.of(
                         java.util.List.of()
-                )
+                ),
+                new io.aether.api.common.SignedKey[0]
         );
     }
+
 
 
     @Test

@@ -8,6 +8,15 @@ plugins {
 dependencies {
     api "io.aether:client-server-work-api:+"
     api "io.aether:core:+"
+
+
+
+    testImplementation "io.aether.crypto:sodium:+"
+    testImplementation "io.aether.crypto:hydrogen-fast:+"
+    testImplementation "io.aether.crypto:p256-aes-gcm:+"
+
+
+
     implementation "com.fasterxml.jackson.core:jackson-databind:2.15.0"
 }
 
