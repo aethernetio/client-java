@@ -251,18 +251,16 @@ public final class AetherCloudClient implements Destroyable {
         startFuture.to(this::startScheduledTask);
 
 
+
         startFuture.to(() -> {
             try {
-                Log.info("DIAG ensureLanPeerTransport start");
-                ensureLanPeerTransport()
-                        .to(t -> Log.info("DIAG ensureLanPeerTransport success directPort=$p",
-                                "p", t.getDirectPort()))
-                        .onError(error ->
-                                Log.warn("LAN peer transport auto-start failed; continuing without it", error));
+                ensureLanPeerTransport().onError(error ->
+                        Log.warn("LAN peer transport auto-start failed; continuing without it", error));
             } catch (RuntimeException error) {
                 Log.warn("LAN peer transport auto-start threw; continuing without it", error);
             }
         });
+
 
 
     }

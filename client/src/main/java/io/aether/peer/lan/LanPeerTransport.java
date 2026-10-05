@@ -199,7 +199,7 @@ public final class LanPeerTransport implements AutoCloseable {
         directThread.setDaemon(true);
         directThread.start();
 
-        Log.info("DIAG LanPeerTransport.start success directPort=$p", "p", getDirectPort());
+
 
 
 
@@ -344,7 +344,6 @@ public final class LanPeerTransport implements AutoCloseable {
         // observer can tell which uid we are looking for.
         byte senderHash1 = LanPeerCodec.hash1(manager.getLocalUid());
 
-        Log.info("DIAG sendProbeNow wantedUids=$w", "w", wantedUids.size());
 
         CryptoLib[] cryptoLibs = manager.supportedCryptoLibs()
                 .toArray(new CryptoLib[0]);
@@ -440,9 +439,6 @@ public final class LanPeerTransport implements AutoCloseable {
             return;
         }
 
-        Log.info("DIAG handleProbe target=$t ourHash=$h",
-                "t", probe.getTargetHash1(),
-                "h", LanPeerCodec.hash1(manager.getLocalUid()));
 
         byte ourHash1 = LanPeerCodec.hash1(manager.getLocalUid());
         // Only respond when the PROBE's target hash points at us.
@@ -553,10 +549,6 @@ public final class LanPeerTransport implements AutoCloseable {
             return true;
         }
 
-        Log.info("DIAG tryHandleSearch target=$t ownHash=$h senderUid=$s",
-                "t", search.getTargetHash1(),
-                "h", LanPeerCodec.hash1(manager.getLocalUid()),
-                "s", search.getSenderUid());
 
         if (LanPeerCodec.hash1(manager.getLocalUid()) != search.getTargetHash1()) {
             // Not for us; ignore silently.
@@ -591,7 +583,6 @@ public final class LanPeerTransport implements AutoCloseable {
         }
         LanLinkKey key = new LanLinkKey(remoteUid, endpoint.getAddress(), endpoint.getPort());
 
-        Log.info("DIAG observeAsInit uid=$u endpoint=$e", "u", remoteUid, "e", endpoint);
 
         LanLinkEntry existing = registry.get(key);
         if (existing != null) {
@@ -618,13 +609,12 @@ public final class LanPeerTransport implements AutoCloseable {
             return winner.link;
         }
 
+
         try {
-            Log.info("DIAG observeAsInit start() called uid=$u", "u", remoteUid);
             candidate.start();
-            Log.info("DIAG observeAsInit link started uid=$u", "u", remoteUid);
-        } catch (RuntimeException e) {
-            Log.warn("DIAG observeAsInit start failed uid=$u", "u", remoteUid, e);
+        } catch (RuntimeException ignored) {
         }
+
 
         return candidate;
     }
@@ -651,7 +641,6 @@ public final class LanPeerTransport implements AutoCloseable {
         }
         LanLinkKey key = new LanLinkKey(remoteUid, endpoint.getAddress(), endpoint.getPort());
 
-        Log.info("DIAG observeAsResp uid=$u endpoint=$e", "u", remoteUid, "e", endpoint);
 
         LanLinkEntry existing = registry.get(key);
         if (existing != null) {
@@ -678,13 +667,12 @@ public final class LanPeerTransport implements AutoCloseable {
             return winner.link;
         }
 
+
         try {
-            Log.info("DIAG observeAsResp start() called uid=$u", "u", remoteUid);
             candidate.start();
-            Log.info("DIAG observeAsResp link started uid=$u", "u", remoteUid);
-        } catch (RuntimeException e) {
-            Log.warn("DIAG observeAsResp start failed uid=$u", "u", remoteUid, e);
+        } catch (RuntimeException ignored) {
         }
+
 
         return candidate;
     }
@@ -730,7 +718,6 @@ public final class LanPeerTransport implements AutoCloseable {
         }
         PeerLink link;
 
-        Log.info("DIAG handleDirect HELLO claimedUid=$u source=$s", "u", claimedUid, "s", source);
 
         try {
             link = observePeerAsResponder(claimedUid, source);
@@ -740,7 +727,6 @@ public final class LanPeerTransport implements AutoCloseable {
         try {
             link.acceptFrame(data);
 
-            Log.info("DIAG handleDirect acceptFrame ok uid=$u", "u", claimedUid);
 
         } catch (PeerConnectionException
                 | PeerLoginException

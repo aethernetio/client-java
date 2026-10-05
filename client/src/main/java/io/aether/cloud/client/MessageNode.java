@@ -171,13 +171,12 @@ public class MessageNode implements ToString {
             return true;
         }
 
+
         PeerConnectionManager manager = client.getPeerConnectionManager();
         if (manager == null || !manager.isConnected(consumer)) {
-            Log.info("DIAG tryFlushAllViaPeer uid=$u manager=$m connected=$c",
-                    "u", consumer, "m", manager != null,
-                    "c", manager != null && manager.isConnected(consumer));
             return false;
         }
+
 
         List<Tuple2<byte[], AFuture>> snapshot = new ArrayList<>(bufferOut);
         for (Tuple2<byte[], AFuture> pending : snapshot) {
@@ -197,7 +196,6 @@ public class MessageNode implements ToString {
                 return false;
             }
         }
-        Log.info("peer-first hit (grace flush) to $uid", "uid", consumer);
         return true;
     }
 
@@ -217,18 +215,12 @@ public class MessageNode implements ToString {
     private AFuture trySendViaPeer(byte[] msg) {
         AetherCloudClient owner = client;
         if (owner == null) return null;
+
         PeerConnectionManager manager = owner.getPeerConnectionManager();
-        if (manager == null) {
-            Log.info("DIAG trySendViaPeer uid=$u manager==null", "u", consumer);
-            return null;
-        }
-        if (!manager.isConnected(consumer)) {
-            Log.info("DIAG trySendViaPeer uid=$u !isConnected", "u", consumer);
-            return null;
-        }
+        if (manager == null) return null;
+        if (!manager.isConnected(consumer)) return null;
         try {
             if (!manager.sendMessage(consumer, msg)) {
-                Log.info("DIAG trySendViaPeer uid=$u sendMessage false", "u", consumer);
                 return null;
             }
         } catch (RuntimeException e) {
@@ -236,7 +228,7 @@ public class MessageNode implements ToString {
             return null;
         }
 
-        Log.info("peer-first hit; delivering directly to $uid", "uid", consumer);
+
 
         AFuture f = AFuture.make();
         f.done();
