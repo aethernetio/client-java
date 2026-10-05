@@ -72,30 +72,55 @@ public class PointToPointTest {
 
 
 
-            AFuture checkReceiveMessage = AFuture.make();
+
+            AFuture firstReceive = AFuture.make();
+            AFuture secondReceive = AFuture.make();
+            AFuture thirdReceive = AFuture.make();
             var message = new byte[]{1, 2, 3, 4};
             AtomicLong sendTime = new AtomicLong();
+            AtomicLong receivedCount = new AtomicLong();
             client2.onMessage((uid, msg) -> {
+                long idx = receivedCount.incrementAndGet();
                 long receiveTime = System.currentTimeMillis();
                 long deliveryTime = receiveTime - sendTime.get();
-                if (checkReceiveMessage.tryDone()) {
+                if (idx == 1) {
                     Log.info("First message confirm. Delivery time: $time ms", "time", deliveryTime);
-                } else {
-                    Log.warn("Second message confirm. Delivery time: $time ms", "time", deliveryTime);
+                    firstReceive.tryDone();
+                } else if (idx == 2) {
+                    Log.info("Second message confirm. Delivery time: $time ms", "time", deliveryTime);
+                    secondReceive.tryDone();
+                } else if (idx == 3) {
+                    Log.info("Third message confirm (post-recheck). Delivery time: $time ms", "time", deliveryTime);
+                    thirdReceive.tryDone();
                 }
             });
             Log.info("START two clients!");
             Thread.currentThread().setName("MAIN THREAD");
             sendTime.set(System.currentTimeMillis());
-            client1.sendMessage(client2.getUid(), message).to(() -> {
-                client1.destroy(false).onError(testDoneFuture::error);
-            });
-            checkReceiveMessage.to(() -> {
-                Log.info("TEST IS DONE!");
-                client2.destroy(false)
-                        .to(testDoneFuture)
-                        .onError(testDoneFuture::error);
+            client1.sendMessage(client2.getUid(), message);
+            firstReceive.to(() -> {
+                // Second message immediately after the first — the peer
+                // link, if it was established during the first grace
+                // window, must be reused without a new probe/grace wait.
+                sendTime.set(System.currentTimeMillis());
+                client1.sendMessage(client2.getUid(), message);
+                secondReceive.to(() -> {
+                    // Third message after >10s (the PEER_PROBE_RECHECK_MS
+                    // interval). The existing peer link must still be used
+                    // first; recheck must not re-enter grace/cloud.
+                    RU.sleep(11_000);
+                    sendTime.set(System.currentTimeMillis());
+                    client1.sendMessage(client2.getUid(), message);
+                    thirdReceive.to(() -> {
+                        Log.info("TEST IS DONE!");
+                        client1.destroy(false).onError(testDoneFuture::error);
+                        client2.destroy(false)
+                                .to(testDoneFuture)
+                                .onError(testDoneFuture::error);
+                    }).onError(testDoneFuture::error);
+                }).onError(testDoneFuture::error);
             }).onError(testDoneFuture::error);
+
         }).onError(testDoneFuture::error);
         return testDoneFuture;
     }

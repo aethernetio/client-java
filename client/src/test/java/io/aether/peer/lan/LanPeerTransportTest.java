@@ -8,7 +8,10 @@ import io.aether.api.common.KeySignPrivate;
 import io.aether.api.common.KeySignPublic;
 import io.aether.api.common.PeerIdentity;
 import io.aether.api.common.PeerIdentityData;
-import io.aether.api.peerlanapi.PeerLanBeacon;
+
+import io.aether.api.peerlanapi.PeerLanProbe;
+import io.aether.api.peerlanapi.PeerLanSearch;
+
 import io.aether.crypto.CryptoProvider;
 import io.aether.crypto.CryptoProviderFactory;
 import io.aether.crypto.PairSignKeys;
@@ -86,33 +89,65 @@ class LanPeerTransportTest {
         return cond.getAsBoolean();
     }
 
+
     @Test
-    void lanBeaconCodecRoundTripsAndRejectsMalformedData() {
-        PeerLanBeacon beacon = new PeerLanBeacon(ALICE_UID, CryptoLib.SODIUM, 54321);
-        byte[] encoded = LanPeerBeaconCodec.encode(beacon);
-        PeerLanBeacon decoded = LanPeerBeaconCodec.decode(encoded);
-        assertEquals(ALICE_UID, decoded.getUid());
-        assertEquals(CryptoLib.SODIUM, decoded.getCryptoLib());
+    void lanProbeCodecRoundTripsAndRejectsMalformedData() {
+        PeerLanProbe probe = new PeerLanProbe((byte) 0x42, 54321, new CryptoLib[]{CryptoLib.SODIUM}, (byte) 0);
+        byte[] encoded = LanPeerCodec.encodeProbe(probe);
+        PeerLanProbe decoded = LanPeerCodec.decodeProbe(encoded);
+        assertEquals((byte) 0x42, decoded.getSenderHash1());
         assertEquals(54321, decoded.getDirectPort());
+        assertArrayEquals(new CryptoLib[]{CryptoLib.SODIUM}, decoded.getCryptoLibs());
 
         // wrong domain
         byte[] wrongDomain = encoded.clone();
         wrongDomain[0] ^= 0x01;
-        assertThrows(LanPeerTransportException.class, () -> LanPeerBeaconCodec.decode(wrongDomain));
+        assertThrows(LanPeerTransportException.class, () -> LanPeerCodec.decodeProbe(wrongDomain));
 
         // trailing bytes
         byte[] withTrailing = java.util.Arrays.copyOf(encoded, encoded.length + 1);
         withTrailing[encoded.length] = 0x42;
-        assertThrows(LanPeerTransportException.class, () -> LanPeerBeaconCodec.decode(withTrailing));
+        assertThrows(LanPeerTransportException.class, () -> LanPeerCodec.decodeProbe(withTrailing));
 
         // port 0
         assertThrows(LanPeerTransportException.class,
-                () -> LanPeerBeaconCodec.encode(new PeerLanBeacon(ALICE_UID, CryptoLib.SODIUM, 0)));
+                () -> LanPeerCodec.encodeProbe(new PeerLanProbe((byte) 0, 0, new CryptoLib[]{CryptoLib.SODIUM}, (byte) 0)));
 
         // port > 65535
         assertThrows(LanPeerTransportException.class,
-                () -> LanPeerBeaconCodec.encode(new PeerLanBeacon(ALICE_UID, CryptoLib.SODIUM, 70000)));
+                () -> LanPeerCodec.encodeProbe(new PeerLanProbe((byte) 0, 70000, new CryptoLib[]{CryptoLib.SODIUM}, (byte) 0)));
+
+        // empty cryptoLibs
+        assertThrows(LanPeerTransportException.class,
+                () -> LanPeerCodec.encodeProbe(new PeerLanProbe((byte) 0, 12345, new CryptoLib[0], (byte) 0)));
     }
+
+    @Test
+    void lanSearchCodecRoundTrips() {
+        UUID sender = UUID.fromString("00000000-0000-0000-0000-00000000abcd");
+        PeerLanSearch search = new PeerLanSearch((byte) 0x77, new CryptoLib[]{CryptoLib.HYDROGEN}, sender);
+        byte[] encoded = LanPeerCodec.encodeSearch(search);
+        PeerLanSearch decoded = LanPeerCodec.decodeSearch(encoded);
+        assertEquals((byte) 0x77, decoded.getTargetHash1());
+        assertEquals(sender, decoded.getSenderUid());
+        assertArrayEquals(new CryptoLib[]{CryptoLib.HYDROGEN}, decoded.getCryptoLibs());
+
+        // wrong tag — probe must not decode as search
+        byte[] probeBytes = LanPeerCodec.encodeProbe(
+                new PeerLanProbe((byte) 1, 12345, new CryptoLib[]{CryptoLib.SODIUM}, (byte) 0));
+        assertThrows(LanPeerTransportException.class, () -> LanPeerCodec.decodeSearch(probeBytes));
+    }
+
+    @Test
+    void hash1IsDeterministicAndDiffersForDifferentUids() {
+        byte a1 = LanPeerCodec.hash1(ALICE_UID);
+        byte a2 = LanPeerCodec.hash1(ALICE_UID);
+        assertEquals(a1, a2, "same uid must hash to same byte");
+        byte b1 = LanPeerCodec.hash1(BOB_UID);
+        // 1-byte hash; collision possible but these two fixed test uids don't collide
+        assertNotEquals(a1, b1);
+    }
+
 
     @Test
     void realUdpPeerConnectionWorksForEveryCryptoLib() throws Exception {

@@ -30,10 +30,14 @@ package io.aether.peer.lan;
  */
 
 
+
+import io.aether.api.common.CryptoLib;
+import io.aether.logger.Log;
 import io.aether.api.peerapi.PeerFrame;
 import io.aether.api.peerapi.PeerFrameType;
 import io.aether.api.peerapi.PeerHello;
-import io.aether.api.peerlanapi.PeerLanBeacon;
+import io.aether.api.peerlanapi.PeerLanProbe;
+import io.aether.api.peerlanapi.PeerLanSearch;
 import io.aether.peer.PeerConnection;
 import io.aether.peer.PeerConnectionException;
 import io.aether.peer.PeerConnectionManager;
@@ -42,6 +46,7 @@ import io.aether.peer.PeerLink;
 import io.aether.peer.PeerLoginException;
 import io.aether.peer.PeerPacketException;
 import io.aether.peer.PeerStreamException;
+
 
 import java.io.IOException;
 import java.net.DatagramPacket;
@@ -53,6 +58,7 @@ import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -65,8 +71,10 @@ public final class LanPeerTransport implements AutoCloseable {
 
     private static final String MULTICAST_ADDRESS = "239.255.72.65";
     private static final int MULTICAST_PORT = 57321;
-    private static final long BEACON_INTERVAL_SECONDS = 5L;
+
+    private static final long PROBE_INTERVAL_SECONDS = 30L;
     private static final int MAX_DIRECT_DATAGRAM = 65507;
+
 
     private static final class LanLinkKey {
         private final UUID remoteUid;
@@ -114,11 +122,12 @@ public final class LanPeerTransport implements AutoCloseable {
     private final AtomicBoolean started = new AtomicBoolean();
     private final AtomicBoolean closed = new AtomicBoolean();
     private final Map<LanLinkKey, LanLinkEntry> registry = new ConcurrentHashMap<>();
+    private final Set<UUID> wantedUids = ConcurrentHashMap.newKeySet();
 
     private MulticastSocket discoverySocket;
     private DatagramSocket directSocket;
     private InetAddress multicastAddress;
-    private ScheduledExecutorService beaconScheduler;
+    private ScheduledExecutorService probeScheduler;
     private Thread discoveryThread;
     private Thread directThread;
 
@@ -160,18 +169,27 @@ public final class LanPeerTransport implements AutoCloseable {
         if (closed.get()) {
             throw new IllegalStateException("LanPeerTransport is closed");
         }
+
         try {
             multicastAddress = InetAddress.getByName(MULTICAST_ADDRESS);
-            discoverySocket = new MulticastSocket(MULTICAST_PORT);
-            discoverySocket.setReuseAddress(true);
-            discoverySocket.setTimeToLive(1);
-            discoverySocket.joinGroup(multicastAddress);
+            // Bind order matters: create an unbound MulticastSocket, set
+            // SO_REUSEADDR, and only then bind. On Linux this lets several
+            // instances in the same JVM (or several JVMs on the same host)
+            // share the well-known multicast port, which is required for
+            // loopback tests and for multi-instance hosts.
+            MulticastSocket ms = new MulticastSocket(null);
+            ms.setReuseAddress(true);
+            ms.setTimeToLive(1);
+            ms.bind(new InetSocketAddress(MULTICAST_PORT));
+            ms.joinGroup(multicastAddress);
+            discoverySocket = ms;
             directSocket = new DatagramSocket(0);
         } catch (IOException e) {
             closeQuietly();
             started.set(false);
             throw new LanPeerTransportException("Failed to start LAN transport", e);
         }
+
 
         discoveryThread = new Thread(this::discoveryLoop, "aether-lan-discovery");
         discoveryThread.setDaemon(true);
@@ -181,14 +199,19 @@ public final class LanPeerTransport implements AutoCloseable {
         directThread.setDaemon(true);
         directThread.start();
 
+        Log.info("DIAG LanPeerTransport.start success directPort=$p", "p", getDirectPort());
+
+
+
         ThreadFactory tf = r -> {
-            Thread t = new Thread(r, "aether-lan-beacon");
+            Thread t = new Thread(r, "aether-lan-probe");
             t.setDaemon(true);
             return t;
         };
-        beaconScheduler = Executors.newSingleThreadScheduledExecutor(tf);
-        beaconScheduler.scheduleAtFixedRate(this::sendBeaconSafely, 0,
-                BEACON_INTERVAL_SECONDS, TimeUnit.SECONDS);
+        probeScheduler = Executors.newSingleThreadScheduledExecutor(tf);
+        probeScheduler.scheduleAtFixedRate(this::sendProbeSafely, 0,
+                PROBE_INTERVAL_SECONDS, TimeUnit.SECONDS);
+
     }
 
     @Override
@@ -196,9 +219,11 @@ public final class LanPeerTransport implements AutoCloseable {
         if (!closed.compareAndSet(false, true)) {
             return;
         }
-        if (beaconScheduler != null) {
-            beaconScheduler.shutdownNow();
+
+        if (probeScheduler != null) {
+            probeScheduler.shutdownNow();
         }
+
         if (discoverySocket != null) {
             discoverySocket.close();
         }
@@ -296,32 +321,91 @@ public final class LanPeerTransport implements AutoCloseable {
         }
     }
 
-    private void sendBeaconSafely() {
+
+    private void sendProbeSafely() {
         try {
-            sendBeacon();
+            sendProbeNow();
         } catch (RuntimeException ignored) {
         }
     }
 
-    private void sendBeacon() {
+
+    private void sendProbeNow() {
         MulticastSocket s = discoverySocket;
         DatagramSocket d = directSocket;
         if (s == null || s.isClosed() || d == null || d.isClosed()) {
             return;
         }
-        PeerLanBeacon beacon = new PeerLanBeacon(
-                manager.getLocalUid(),
-                manager.getCryptoLib(),
-                d.getLocalPort()
-        );
-        byte[] encoded = LanPeerBeaconCodec.encode(beacon);
-        DatagramPacket packet = new DatagramPacket(
-                encoded, encoded.length, multicastAddress, MULTICAST_PORT);
-        try {
-            s.send(packet);
-        } catch (IOException ignored) {
+        if (wantedUids.isEmpty()) {
+            return;
+        }
+        // One PROBE per wanted uid: the packet carries the target hash so
+        // only the intended recipient needs to respond, and no multicast
+        // observer can tell which uid we are looking for.
+        byte senderHash1 = LanPeerCodec.hash1(manager.getLocalUid());
+
+        Log.info("DIAG sendProbeNow wantedUids=$w", "w", wantedUids.size());
+
+        CryptoLib[] cryptoLibs = manager.supportedCryptoLibs()
+                .toArray(new CryptoLib[0]);
+        int directPort = d.getLocalPort();
+        for (UUID targetUid : wantedUids) {
+            byte targetHash1 = LanPeerCodec.hash1(targetUid);
+            PeerLanProbe probe = new PeerLanProbe(
+                    senderHash1,
+                    directPort,
+                    cryptoLibs,
+                    targetHash1
+            );
+            byte[] encoded;
+            try {
+                encoded = LanPeerCodec.encodeProbe(probe);
+            } catch (LanPeerTransportException e) {
+                continue;
+            }
+            DatagramPacket packet = new DatagramPacket(
+                    encoded, encoded.length, multicastAddress, MULTICAST_PORT);
+            try {
+                s.send(packet);
+            } catch (IOException ignored) {
+            }
         }
     }
+
+
+    /**
+     * Register interest in contacting the given uid on the local network
+     * and immediately broadcast a PROBE so any matching peer can respond.
+     *
+     * <p>Idempotent: repeated calls for the same uid only ensure the uid is
+     * in {@link #wantedUids} and trigger one immediate PROBE. Callers can
+     * rely on {@code MessageNode.send} to invoke this on every outbound
+     * message without flooding the LAN.
+     */
+    public void probeFor(UUID targetUid) {
+        if (targetUid == null || closed.get() || !started.get()) {
+            return;
+        }
+        if (targetUid.equals(manager.getLocalUid())) {
+            return;
+        }
+        wantedUids.add(targetUid);
+        sendProbeSafely();
+    }
+
+    /**
+     * @return true if the given uid is currently in the wanted set
+     */
+    public boolean isWanted(UUID uid) {
+        return uid != null && wantedUids.contains(uid);
+    }
+
+    public void forgetWanted(UUID uid) {
+        if (uid != null) {
+            wantedUids.remove(uid);
+        }
+    }
+
 
     private void discoveryLoop() {
         byte[] buffer = new byte[2048];
@@ -335,7 +419,7 @@ public final class LanPeerTransport implements AutoCloseable {
                 s.receive(packet);
                 byte[] data = new byte[packet.getLength()];
                 System.arraycopy(packet.getData(), packet.getOffset(), data, 0, packet.getLength());
-                handleBeacon(data, packet.getAddress());
+                handleProbe(data, packet.getAddress());
             } catch (IOException e) {
                 if (closed.get()) {
                     return;
@@ -345,25 +429,80 @@ public final class LanPeerTransport implements AutoCloseable {
         }
     }
 
-    private void handleBeacon(byte[] data, InetAddress source) {
-        PeerLanBeacon beacon;
+
+
+    private void handleProbe(byte[] data, InetAddress source) {
+
+        PeerLanProbe probe;
         try {
-            beacon = LanPeerBeaconCodec.decode(data);
+            probe = LanPeerCodec.decodeProbe(data);
         } catch (LanPeerTransportException e) {
             return;
         }
-        if (beacon.getUid().equals(manager.getLocalUid())) {
+
+        Log.info("DIAG handleProbe target=$t ourHash=$h",
+                "t", probe.getTargetHash1(),
+                "h", LanPeerCodec.hash1(manager.getLocalUid()));
+
+        byte ourHash1 = LanPeerCodec.hash1(manager.getLocalUid());
+        // Only respond when the PROBE's target hash points at us.
+        if (probe.getTargetHash1() != ourHash1) {
             return;
         }
-        if (beacon.getCryptoLib() != manager.getCryptoLib()) {
+        // Ignore our own PROBE looped back on the multicast socket.
+        if (probe.getSenderHash1() == ourHash1
+                && probe.getDirectPort() == getDirectPort()) {
             return;
         }
-        InetSocketAddress endpoint = new InetSocketAddress(source, beacon.getDirectPort());
+        // Reply SEARCH: targetHash1 = PROBE.senderHash1 (so the original
+        // searcher recognizes itself). We are the target now, and we
+        // expect the searcher to open the handshake as responder.
+        sendSearch(source, probe.getDirectPort(), probe.getSenderHash1());
+    }
+
+
+    /**
+     * Send a unicast SEARCH reply to the source of a PROBE. The SEARCH
+     * carries our uid openly (unicast — no multicast sniffer sees it) and
+     * the one-byte hash of the target uid we are looking for, so the target
+     * can recognize itself without leaking to passive observers.
+     */
+
+    /**
+     * Send a unicast SEARCH reply to the source of a PROBE.
+     *
+     * <p>Carries our uid openly (unicast — passive multicast observers never
+     * see it) and the target hash copied from the PROBE's {@code senderHash1}.
+     * The recipient compares that byte against {@code hash1(ownUid)} to
+     * recognize itself as the intended searcher.
+     *
+     * @param targetAddress source address of the triggering PROBE
+     * @param targetPort    direct port advertised in the PROBE
+     * @param targetHash1   sender hash from the PROBE
+     */
+    private void sendSearch(InetAddress targetAddress, int targetPort, byte targetHash1) {
+        DatagramSocket d = directSocket;
+        if (d == null || d.isClosed()) {
+            return;
+        }
+        if (targetAddress == null || targetPort < 1 || targetPort > 65535) {
+            return;
+        }
+        PeerLanSearch search = new PeerLanSearch(
+                targetHash1,
+                manager.supportedCryptoLibs().toArray(new CryptoLib[0]),
+                manager.getLocalUid()
+        );
+        byte[] encoded = LanPeerCodec.encodeSearch(search);
+        DatagramPacket packet = new DatagramPacket(
+                encoded, encoded.length, targetAddress, targetPort);
         try {
-            observePeer(beacon.getUid(), endpoint);
-        } catch (RuntimeException ignored) {
+            d.send(packet);
+        } catch (IOException ignored) {
         }
     }
+
+
 
     private void directLoop() {
         byte[] buffer = new byte[MAX_DIRECT_DATAGRAM];
@@ -377,7 +516,12 @@ public final class LanPeerTransport implements AutoCloseable {
                 s.receive(packet);
                 byte[] data = new byte[packet.getLength()];
                 System.arraycopy(packet.getData(), packet.getOffset(), data, 0, packet.getLength());
-                handleDirect(data, new InetSocketAddress(packet.getAddress(), packet.getPort()));
+
+                InetSocketAddress source = new InetSocketAddress(packet.getAddress(), packet.getPort());
+                if (!tryHandleSearch(data, source)) {
+                    handleDirect(data, source);
+                }
+
             } catch (IOException e) {
                 if (closed.get()) {
                     return;
@@ -386,6 +530,166 @@ public final class LanPeerTransport implements AutoCloseable {
             }
         }
     }
+
+    /**
+     * Attempt to interpret an inbound direct-frame payload as a SEARCH
+     * packet. On success and if our uid hash matches the requested target,
+     * register ourselves as an outgoing candidate link to the searcher (with
+     * forced-initiator role) so we can send the first HELLO.
+     *
+     * @return {@code true} if the payload was a SEARCH packet (handled or
+     *         ignored); {@code false} if it was not a SEARCH and should be
+     *         treated as a normal peer frame
+     */
+    private boolean tryHandleSearch(byte[] data, InetSocketAddress source) {
+        PeerLanSearch search;
+        try {
+            search = LanPeerCodec.decodeSearch(data);
+        } catch (LanPeerTransportException e) {
+            return false;
+        }
+        UUID senderUid = search.getSenderUid();
+        if (senderUid == null || senderUid.equals(manager.getLocalUid())) {
+            return true;
+        }
+
+        Log.info("DIAG tryHandleSearch target=$t ownHash=$h senderUid=$s",
+                "t", search.getTargetHash1(),
+                "h", LanPeerCodec.hash1(manager.getLocalUid()),
+                "s", search.getSenderUid());
+
+        if (LanPeerCodec.hash1(manager.getLocalUid()) != search.getTargetHash1()) {
+            // Not for us; ignore silently.
+            return true;
+        }
+        try {
+            observePeerAsInitiator(senderUid, source);
+        } catch (RuntimeException ignored) {
+        }
+        return true;
+    }
+
+    /**
+     * Create a link to the given peer and force our side to act as the
+     * handshake initiator. Used when we received a SEARCH packet addressed
+     * to us: the searcher does not yet know we exist, so we must send the
+     * first HELLO regardless of UID ordering.
+     */
+    public PeerLink observePeerAsInitiator(UUID remoteUid, InetSocketAddress endpoint) {
+        if (closed.get()) {
+            throw new LanPeerTransportException("LanPeerTransport is closed");
+        }
+        if (remoteUid == null) {
+            throw new LanPeerTransportException("remoteUid is null");
+        }
+        if (endpoint == null || endpoint.getAddress() == null
+                || endpoint.getPort() < 1 || endpoint.getPort() > 65535) {
+            throw new LanPeerTransportException("Invalid endpoint");
+        }
+        if (remoteUid.equals(manager.getLocalUid())) {
+            throw new LanPeerTransportException("Cannot observe self");
+        }
+        LanLinkKey key = new LanLinkKey(remoteUid, endpoint.getAddress(), endpoint.getPort());
+
+        Log.info("DIAG observeAsInit uid=$u endpoint=$e", "u", remoteUid, "e", endpoint);
+
+        LanLinkEntry existing = registry.get(key);
+        if (existing != null) {
+            PeerLink link = existing.link;
+            if (link.isFailed()) {
+                try {
+                    link.restart();
+                } catch (RuntimeException ignored) {
+                }
+            }
+            return link;
+        }
+        PeerLink candidate = manager.createLink(
+                remoteUid,
+                frame -> sendDirect(endpoint, frame),
+                Boolean.TRUE);
+        LanLinkEntry entry = new LanLinkEntry(remoteUid, endpoint, candidate);
+        LanLinkEntry winner = registry.putIfAbsent(key, entry);
+        if (winner != null) {
+            try {
+                candidate.close();
+            } catch (RuntimeException ignored) {
+            }
+            return winner.link;
+        }
+
+        try {
+            Log.info("DIAG observeAsInit start() called uid=$u", "u", remoteUid);
+            candidate.start();
+            Log.info("DIAG observeAsInit link started uid=$u", "u", remoteUid);
+        } catch (RuntimeException e) {
+            Log.warn("DIAG observeAsInit start failed uid=$u", "u", remoteUid, e);
+        }
+
+        return candidate;
+    }
+
+    /**
+     * Create a link to the given peer and force our side to act as the
+     * handshake responder. Used when we received an inbound HELLO from a
+     * peer we did not know: the sender already acted as initiator and sent
+     * its HELLO, so we must not race it by sending our own HELLO.
+     */
+    public PeerLink observePeerAsResponder(UUID remoteUid, InetSocketAddress endpoint) {
+        if (closed.get()) {
+            throw new LanPeerTransportException("LanPeerTransport is closed");
+        }
+        if (remoteUid == null) {
+            throw new LanPeerTransportException("remoteUid is null");
+        }
+        if (endpoint == null || endpoint.getAddress() == null
+                || endpoint.getPort() < 1 || endpoint.getPort() > 65535) {
+            throw new LanPeerTransportException("Invalid endpoint");
+        }
+        if (remoteUid.equals(manager.getLocalUid())) {
+            throw new LanPeerTransportException("Cannot observe self");
+        }
+        LanLinkKey key = new LanLinkKey(remoteUid, endpoint.getAddress(), endpoint.getPort());
+
+        Log.info("DIAG observeAsResp uid=$u endpoint=$e", "u", remoteUid, "e", endpoint);
+
+        LanLinkEntry existing = registry.get(key);
+        if (existing != null) {
+            PeerLink link = existing.link;
+            if (link.isFailed()) {
+                try {
+                    link.restart();
+                } catch (RuntimeException ignored) {
+                }
+            }
+            return link;
+        }
+        PeerLink candidate = manager.createLink(
+                remoteUid,
+                frame -> sendDirect(endpoint, frame),
+                Boolean.FALSE);
+        LanLinkEntry entry = new LanLinkEntry(remoteUid, endpoint, candidate);
+        LanLinkEntry winner = registry.putIfAbsent(key, entry);
+        if (winner != null) {
+            try {
+                candidate.close();
+            } catch (RuntimeException ignored) {
+            }
+            return winner.link;
+        }
+
+        try {
+            Log.info("DIAG observeAsResp start() called uid=$u", "u", remoteUid);
+            candidate.start();
+            Log.info("DIAG observeAsResp link started uid=$u", "u", remoteUid);
+        } catch (RuntimeException e) {
+            Log.warn("DIAG observeAsResp start failed uid=$u", "u", remoteUid, e);
+        }
+
+        return candidate;
+    }
+
+
 
     private void handleDirect(byte[] data, InetSocketAddress source) {
         LanLinkEntry routed = findEntryByEndpoint(source);
@@ -425,13 +729,19 @@ public final class LanPeerTransport implements AutoCloseable {
             return;
         }
         PeerLink link;
+
+        Log.info("DIAG handleDirect HELLO claimedUid=$u source=$s", "u", claimedUid, "s", source);
+
         try {
-            link = observePeer(claimedUid, source);
+            link = observePeerAsResponder(claimedUid, source);
         } catch (RuntimeException e) {
             return;
         }
         try {
             link.acceptFrame(data);
+
+            Log.info("DIAG handleDirect acceptFrame ok uid=$u", "u", claimedUid);
+
         } catch (PeerConnectionException
                 | PeerLoginException
                 | PeerPacketException

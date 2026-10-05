@@ -48,7 +48,7 @@ public class ProxyAuthorizedApiImpl
     protected final ClientApiSafeRemote safeRemoteApi;
     protected final ProxyLoginApiImpl.LoginStreamTransport transport;
     protected final ProxyLoginApiImpl.LoginStreamSession loginStreamSession;
-    public byte backId = -1;
+    public short backId = -1;
 
     public ProxyAuthorizedApiImpl(
             ProxyService service,
@@ -69,7 +69,7 @@ public class ProxyAuthorizedApiImpl
 
 
     @Override
-    public void backId(byte id) {
+    public void backId(short id) {
         this.backId = id;
     }
 

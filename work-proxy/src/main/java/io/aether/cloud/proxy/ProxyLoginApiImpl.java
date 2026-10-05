@@ -82,21 +82,30 @@ public final class ProxyLoginApiImpl implements LoginApi {
         );
     }
 
+
     private LoginStreamTransport createLoginStreamTransport(
             ProxyClientDescriptor client,
-            CryptoEngine engine
+            CryptoEngine engine,
+            short backId
     ) {
         return new LoginStreamTransport() {
             @Override
             public void send(byte[] data) {
                 byte[] encrypted = engine.encrypt(data);
-                remoteRootApi.sendSafeApiData(
-                        LoginClientStream.Out.send(encrypted)
-                );
+                if (backId < 0) {
+                    remoteRootApi.sendSafeApiData(
+                            LoginClientStream.Out.send(encrypted)
+                    );
+                } else {
+                    remoteRootApi.sendSafeApiDataMulti(
+                            backId,
+                            LoginClientStream.Out.send(encrypted)
+                    );
+                }
             }
 
             @Override
-            public void sendMulti(byte routeId, byte[] data) {
+            public void sendMulti(short routeId, byte[] data) {
                 byte[] encrypted = engine.encrypt(data);
                 remoteRootApi.sendSafeApiDataMulti(
                         routeId,
@@ -106,15 +115,18 @@ public final class ProxyLoginApiImpl implements LoginApi {
         };
     }
 
+
+
     private void acceptLoginStream(
             ProxyClientDescriptor client,
             LoginStream data,
-            CryptoEngine engine
+            CryptoEngine engine,
+            short backId
     ) {
         Objects.requireNonNull(engine);
         try {
             LoginStreamTransport transport =
-                    createLoginStreamTransport(client, engine);
+                    createLoginStreamTransport(client, engine, backId);
 
             LoginStream.In in = data
                     .asIn()
@@ -154,15 +166,18 @@ public final class ProxyLoginApiImpl implements LoginApi {
         }
     }
 
+
     @Override
     public ARFuture<Long> getTimeUTC() {
         return ARFuture.of(System.currentTimeMillis());
     }
 
-    private void login(ProxyClientDescriptor client, LoginStream data) {
+
+    private void login(ProxyClientDescriptor client, LoginStream data, short backId) {
         Objects.requireNonNull(client.symmetricEngine());
-        acceptLoginStream(client, data, client.symmetricEngine());
+        acceptLoginStream(client, data, client.symmetricEngine(), backId);
     }
+
 
     @Override
     public ARFuture<IpInfo> getMyIp() {
@@ -189,7 +204,7 @@ public final class ProxyLoginApiImpl implements LoginApi {
             ctx.close();
             return;
         }
-        login(client, data);
+        login(client, data, (short) -1);
     }
 
     @Override
@@ -205,13 +220,46 @@ public final class ProxyLoginApiImpl implements LoginApi {
             ctx.close();
             return;
         }
-        login(client, data);
+        login(client, data, (short) -1);
     }
+
+
+    @Override
+    public void loginByUIDMulti(UUID uid, short backId, LoginStream data) {
+        ProxyClientDescriptor client = service.clients().getByUid(uid);
+        if (client == null) {
+            Log.warn(
+                    "ProxyLoginApiImpl: loginByUIDMulti unknown uid",
+                    "uid",
+                    uid
+            );
+            ctx.close();
+            return;
+        }
+        login(client, data, backId);
+    }
+
+    @Override
+    public void loginByAliasMulti(UUID alias, short backId, LoginStream data) {
+        ProxyClientDescriptor client =
+                service.clients().getByAlias(alias);
+        if (client == null) {
+            Log.warn(
+                    "ProxyLoginApiImpl: loginByAliasMulti unknown alias",
+                    "alias",
+                    alias
+            );
+            ctx.close();
+            return;
+        }
+        login(client, data, backId);
+    }
+
 
     interface LoginStreamTransport {
         void send(byte[] data);
 
-        void sendMulti(byte routeId, byte[] data);
+        void sendMulti(short routeId, byte[] data);
     }
 
     interface LoginStreamRouting {

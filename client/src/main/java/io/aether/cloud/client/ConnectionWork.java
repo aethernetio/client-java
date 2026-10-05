@@ -12,6 +12,7 @@ import io.aether.logger.Log;
 
 import io.aether.utils.RU;
 import io.aether.utils.flow.Flow;
+import io.aether.peer.PeerConnectionManager;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
 import io.aether.utils.tuples.Tuple2;
@@ -291,11 +292,24 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             return;
         }
 
+
         for (var messageNode : client.messageNodeMap.values()) {
 
-
-
             if (!messageNode.connectionsOut.contains(this)) {
+                continue;
+            }
+
+
+            // Peer-first attempt: always try to drain the node's buffer via
+            // the peer link first. If the link is up, everything is
+            // delivered directly and we skip the cloud path entirely.
+            if (messageNode.tryFlushAllViaPeer()) {
+                continue;
+            }
+            // If a probe is still in its grace window, hold the node for a
+            // bit longer so the LAN handshake can finish. After the window
+            // expires we fall through to the ordinary cloud path.
+            if (messageNode.isPeerProbeGraceActive()) {
                 continue;
             }
 
@@ -305,6 +319,8 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                     new ArrayList<>();
             int currentBatchSize = 0;
             final int maxBatchBytes = 512 * 1024;
+
+
 
 
             for (Tuple2<byte[], AFuture> pending : messageNode.bufferOut) {
@@ -526,9 +542,16 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
 
 
     @Override
-    public void sendSafeApiDataMulti(byte backId, LoginClientStream data) {
-        throw new UnsupportedOperationException();
+
+    public void sendSafeApiDataMulti(short backId, LoginClientStream data) {
+        PeerServerRelay relay = client.getPeerServerRelay();
+        if (relay == null) {
+            throw new UnsupportedOperationException(
+                    "Multi-backId send requires a configured PeerServerRelay");
+        }
+        relay.onBackIdData(backId, data.data);
     }
+
 
 
     @Override

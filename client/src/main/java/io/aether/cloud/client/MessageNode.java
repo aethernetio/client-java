@@ -11,6 +11,7 @@ import io.aether.utils.ToString;
 import io.aether.utils.dataio.DataInOutStatic;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
+import io.aether.peer.PeerConnectionManager;
 import io.aether.utils.interfaces.AConsumer;
 import io.aether.utils.interfaces.AFunction;
 import io.aether.utils.slots.EventConsumerWithQueue;
@@ -19,6 +20,10 @@ import io.aether.utils.tuples.Tuple2;
 
 import java.util.Deque;
 import java.util.Set;
+
+import java.util.ArrayList;
+import java.util.List;
+
 import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedDeque;
 
@@ -30,6 +35,30 @@ public class MessageNode implements ToString {
     final Set<ConnectionWork> connectionsOut = new ConcurrentHashSet<>();
     final Deque<Tuple2<byte[], AFuture>> bufferOut = new ConcurrentLinkedDeque<>();
     private final AetherCloudClient client;
+
+
+    /**
+     * Grace window (milliseconds) after a fresh LAN probe during which the
+     * message stays queued instead of falling back to the cloud path. This
+     * gives the LAN handshake a chance to complete on the first contact
+     * with a peer. Subsequent messages for the same uid do not re-enter
+     * this grace window — the probe keeps running in the background, but
+     * messages are queued for cloud delivery immediately.
+     */
+    private static final long PEER_PROBE_GRACE_MS = 3000L;
+
+    /**
+     * How often to re-trigger a LAN probe for a uid that has not yet been
+     * reached via the peer link. When this interval elapses, the next
+     * outbound message re-arms the grace window so the peer gets another
+     * chance to be discovered.
+     */
+    private static final long PEER_PROBE_RECHECK_MS = 10_000L;
+
+    private volatile long peerProbeGraceUntilMs = 0L;
+    private volatile long lastPeerProbeAtMs = 0L;
+
+
     private volatile MessageEventListener strategy;
 
     public MessageNode(AetherCloudClient client, UUID consumer, MessageEventListener strategy) {
@@ -62,8 +91,42 @@ public class MessageNode implements ToString {
         this.strategy = strategy;
     }
 
+
+
     public AFuture send(byte[] msg) {
         if (msg == null || msg.length == 0) return AFuture.completed();
+
+        AFuture peerAttempt = trySendViaPeer(msg);
+        if (peerAttempt != null) {
+            return peerAttempt;
+        }
+
+
+        long now = System.currentTimeMillis();
+        long sinceLastProbeMs = now - lastPeerProbeAtMs;
+        if (sinceLastProbeMs >= PEER_PROBE_RECHECK_MS) {
+            // Fresh interest in this uid (first message, or recheck
+            // interval elapsed): arm the grace window so this message is
+            // held while LAN discovery + handshake have a chance to
+            // complete.
+
+
+            client.probeLanFor(consumer);
+            lastPeerProbeAtMs = now;
+            // Arm the grace window: hold this message while LAN discovery
+            // (including the async LAN stack bootstrap and the LAN
+            // handshake) completes. If nothing is found within the window,
+            // ConnectionWork falls back to the ordinary cloud path.
+            peerProbeGraceUntilMs = now + PEER_PROBE_GRACE_MS;
+
+
+        }
+        // Otherwise: a probe is already in flight (or recently completed
+        // without success). Do not hold this message — it goes to the
+        // cloud queue immediately; the background peer link, if it comes
+        // up before flush, will still be preferred by tryFlushAllViaPeer.
+
+
         if (bufferOut.size() >= 50) {
             Tuple2<byte[], AFuture> oldest = bufferOut.pollFirst();
             if (oldest != null) {
@@ -79,6 +142,108 @@ public class MessageNode implements ToString {
         }
         return f;
     }
+
+    /**
+     * @return true while a LAN probe initiated by {@link #send} is still
+     *         within its grace window — the caller should keep the message
+     *         queued and retry {@link #tryFlushAllViaPeer} on each tick.
+     */
+    public boolean isPeerProbeGraceActive() {
+        return System.currentTimeMillis() < peerProbeGraceUntilMs;
+    }
+
+    /**
+     * Attempt to flush every queued message via the peer link in one pass.
+     *
+     * <p>Called from {@link ConnectionWork#flushBackgroundRequests} while a
+     * peer-probe grace window is open. If the peer link has become
+     * established since the last tick, this delivers all pending messages
+     * directly through {@link PeerConnectionManager#sendMessage} and
+     * completes their futures. If the link is still not available, the
+     * messages stay queued and this method returns {@code false} so the
+     * caller keeps waiting.
+     *
+     * @return {@code true} if every queued message was handed off through
+     *         the peer link; {@code false} if the peer link is not ready
+     */
+    public boolean tryFlushAllViaPeer() {
+        if (bufferOut.isEmpty()) {
+            return true;
+        }
+
+        PeerConnectionManager manager = client.getPeerConnectionManager();
+        if (manager == null || !manager.isConnected(consumer)) {
+            Log.info("DIAG tryFlushAllViaPeer uid=$u manager=$m connected=$c",
+                    "u", consumer, "m", manager != null,
+                    "c", manager != null && manager.isConnected(consumer));
+            return false;
+        }
+
+        List<Tuple2<byte[], AFuture>> snapshot = new ArrayList<>(bufferOut);
+        for (Tuple2<byte[], AFuture> pending : snapshot) {
+            if (!bufferOut.remove(pending)) {
+                continue;
+            }
+            try {
+                if (manager.sendMessage(consumer, pending.val1())) {
+                    pending.val2().tryDone();
+                } else {
+                    bufferOut.addLast(pending);
+                    return false;
+                }
+            } catch (RuntimeException e) {
+                Log.warn("Peer-first grace flush failed, keeping message queued", e);
+                bufferOut.addLast(pending);
+                return false;
+            }
+        }
+        Log.info("peer-first hit (grace flush) to $uid", "uid", consumer);
+        return true;
+    }
+
+
+    /**
+     * Peer-first attempt: if a direct LAN/peer link to the consumer is
+     * currently established, hand the payload off to it instead of
+     * enqueueing for cloud delivery. Returns {@code null} when the peer
+     * route is not currently usable, so the caller falls back to the
+     * ordinary cloud path.
+     *
+     * <p>The returned future mirrors the cloud path's contract: it is
+     * completed when the payload has been accepted by a transport (peer
+     * channel here), not when the recipient has actually received it.
+     */
+
+    private AFuture trySendViaPeer(byte[] msg) {
+        AetherCloudClient owner = client;
+        if (owner == null) return null;
+        PeerConnectionManager manager = owner.getPeerConnectionManager();
+        if (manager == null) {
+            Log.info("DIAG trySendViaPeer uid=$u manager==null", "u", consumer);
+            return null;
+        }
+        if (!manager.isConnected(consumer)) {
+            Log.info("DIAG trySendViaPeer uid=$u !isConnected", "u", consumer);
+            return null;
+        }
+        try {
+            if (!manager.sendMessage(consumer, msg)) {
+                Log.info("DIAG trySendViaPeer uid=$u sendMessage false", "u", consumer);
+                return null;
+            }
+        } catch (RuntimeException e) {
+            Log.warn("Peer-first send failed, falling back to cloud", e);
+            return null;
+        }
+
+        Log.info("peer-first hit; delivering directly to $uid", "uid", consumer);
+
+        AFuture f = AFuture.make();
+        f.done();
+        return f;
+    }
+
+
 
     public UUID getConsumerUUID() {
         return consumer;
