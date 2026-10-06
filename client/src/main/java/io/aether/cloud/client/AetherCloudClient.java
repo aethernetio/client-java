@@ -26,6 +26,7 @@ import io.aether.utils.ConcurrentHashSet;
 
 import io.aether.peer.PeerConnectionManager;
 import io.aether.peer.PeerLocalIdentity;
+import io.aether.peer.PeerKeyRegistry;
 import io.aether.peer.lan.LanPeerTransport;
 
 import io.aether.utils.Destroyer;
@@ -80,6 +81,7 @@ public final class AetherCloudClient implements Destroyable {
     private final ClientState clientState;
 
     private final PeerIdentityManager peerIdentityManager;
+    private final PeerKeyRegistry peerKeyRegistry = new PeerKeyRegistry();
 
     private final AtomicReference<PeerServerRelay> peerServerRelay = new AtomicReference<>();
 
@@ -183,6 +185,26 @@ public final class AetherCloudClient implements Destroyable {
         return lanPeerTransport;
     }
 
+
+    /**
+     * Pin the long-term signing public key for a peer UID.
+     *
+     * The pin is local trust configuration and has priority over a
+     * server-certified PeerIdentity carrying another key.
+     */
+    public void registerPeerKey(UUID uid, KeySignPublic key) {
+        peerKeyRegistry.register(uid, key);
+    }
+
+    /**
+     * Remove the explicit signing-key pin for a peer UID. Future handshakes
+     * fall back to the normal Aether root/server PeerIdentity chain.
+     */
+    public void unregisterPeerKey(UUID uid) {
+        peerKeyRegistry.unregister(uid);
+    }
+
+
     /**
      * Ask the LAN transport (if it has been started) to broadcast a probe
      * for the given uid. This is a cheap, idempotent operation: it never
@@ -223,7 +245,13 @@ public final class AetherCloudClient implements Destroyable {
         }
 
         Set<SignChecker> roots = clientState.getRootSigners();
-        return new PeerLocalIdentity(identity, creds.getPrivateKey(), new ArrayList<>(roots));
+
+        return new PeerLocalIdentity(
+                identity,
+                creds.getPrivateKey(),
+                new ArrayList<>(roots),
+                peerKeyRegistry);
+
 
     }
 
