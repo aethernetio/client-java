@@ -75,10 +75,17 @@ public class ProxyAuthorizedApiImpl
 
 
     @Override
-    public void requestSignedUid(io.aether.api.common.KeySignPublic key) {
-        io.aether.api.common.Sign sign = service.requestSignedUid(client.uid(), key);
-        safeRemoteApi.sendSignedUid(sign);
+    public void requestSignedUid(io.aether.api.common.KeySignPublic[] keys) {
+        if (keys == null || keys.length == 0) {
+            throw new io.aether.net.fastMeta.AetherException("keys is empty");
+        }
+        io.aether.api.common.Sign[] signs = new io.aether.api.common.Sign[keys.length];
+        for (int i = 0; i < keys.length; i++) {
+            signs[i] = service.requestSignedUid(client.uid(), keys[i]);
+        }
+        safeRemoteApi.sendSignedUid(signs);
     }
+
 
 
 

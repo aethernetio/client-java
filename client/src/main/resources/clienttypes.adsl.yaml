@@ -11,12 +11,16 @@ types:
       cloud: Cloud
       weights: CloudWeight[]
 
+
   PeerIdentityCredentials:
     fields:
-#      Подпись от сервера (publicKey+uid)
+#     #      Подпись от сервера над (uid + publicKey). Ключи и подписи
+#     #      хранятся по одной записи на каждую поддерживаемую CryptoLib,
+#     #      чтобы клиент мог подключаться к пиру на любой библиотеке.
       sign: Sign
       publicKey: KeySignPublic
       privateKey: KeySignPrivate
+
 
   ClientStateForSave:
     fields:
@@ -33,4 +37,4 @@ types:
       alias: UUID
       masterKey: Key
 
-      peerIdentityCredentials: PeerIdentityCredentials?
+      peerIdentityCredentials: PeerIdentityCredentials[]?

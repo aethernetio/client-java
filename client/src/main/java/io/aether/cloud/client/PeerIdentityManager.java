@@ -37,11 +37,15 @@ final class PeerIdentityManager implements Destroyable {
         final ARFuture<PeerIdentityCredentials> future = ARFuture.make();
         final AtomicReference<AttemptState> state = new AtomicReference<>(AttemptState.ACTIVE);
         volatile ARFuture<Sign> pendingSignedUid;
+
+        volatile ARFuture<Sign[]> pendingSignedUids;
+
     }
 
     PeerIdentityManager(AetherCloudClient client) {
         this.client = client;
     }
+
 
     ARFuture<PeerIdentityCredentials> getOrIssue() {
         while (true) {
@@ -49,14 +53,14 @@ final class PeerIdentityManager implements Destroyable {
             if (existing != null) {
                 return existing.future;
             }
-            PeerIdentityCredentials persisted = validatePersisted();
+            PeerIdentityCredentials[] persisted = validatePersisted();
             existing = inFlight.get();
             if (existing != null) {
                 return existing.future;
             }
             if (persisted != null) {
                 client.onPeerIdentityReady(persisted);
-                return ARFuture.of(persisted);
+                return ARFuture.of(persisted[0]);
             }
             Attempt created = new Attempt();
             if (inFlight.compareAndSet(null, created)) {
@@ -65,6 +69,7 @@ final class PeerIdentityManager implements Destroyable {
             }
         }
     }
+
 
     private void beginIssueLifecycle(Attempt attempt) {
         if (client.destroyer.isDestroyed()) {
@@ -80,6 +85,7 @@ final class PeerIdentityManager implements Destroyable {
         }
     }
 
+
     private void proceedWhenReady(Attempt attempt) {
         if (attempt.state.get() != AttemptState.ACTIVE) {
             return;
@@ -89,17 +95,19 @@ final class PeerIdentityManager implements Destroyable {
                     "Client destroyed before peer identity issuance"));
             return;
         }
-        PeerIdentityCredentials revalidated = validatePersisted();
+        PeerIdentityCredentials[] revalidated = validatePersisted();
         if (revalidated != null) {
             if (attempt.state.compareAndSet(AttemptState.ACTIVE, AttemptState.COMMITTING)) {
                 inFlight.compareAndSet(attempt, null);
                 client.onPeerIdentityReady(revalidated);
-                attempt.future.tryDone(revalidated);
+                attempt.future.tryDone(revalidated[0]);
             }
             return;
         }
         client.getAuthApi(api -> issueViaServer(attempt, api));
     }
+
+
 
     private void issueViaServer(Attempt attempt, io.aether.api.clientserverapi.AuthorizedApi api) {
         if (attempt.state.get() != AttemptState.ACTIVE) {
@@ -111,41 +119,55 @@ final class PeerIdentityManager implements Destroyable {
             return;
         }
         try {
-            CryptoLib lib = client.getCryptLib();
-            CryptoProvider provider = CryptoProviderFactory.getProvider(lib.name());
-            PairSignKeys pair = provider.createSignKeys();
-            KeySignPublic publicDto = CryptoUtils.of(pair.getPublicKey());
-            AKey.SignPrivate privateKey = pair.getPrivateKey();
+            CryptoLib[] all = CryptoLib.values();
+            KeySignPublic[] publics = new KeySignPublic[all.length];
+            AKey.SignPrivate[] privs = new AKey.SignPrivate[all.length];
+            for (int i = 0; i < all.length; i++) {
+                CryptoProvider provider = CryptoProviderFactory.getProvider(all[i].name());
+                PairSignKeys pair = provider.createSignKeys();
+                publics[i] = CryptoUtils.of(pair.getPublicKey());
+                privs[i] = pair.getPrivateKey();
+            }
 
-            ARFuture<Sign> pending = ARFuture.make();
-            attempt.pendingSignedUid = pending;
+            ARFuture<Sign[]> pending = ARFuture.make();
+            attempt.pendingSignedUids = pending;
 
-            api.requestSignedUid(publicDto);
+            api.requestSignedUid(publics);
 
-            pending.to(signedUid -> commitIssued(
-                    attempt, signedUid, publicDto, privateKey
+            pending.to(signs -> commitIssued(
+                    attempt, signs, publics, privs
             )).onError(err -> failAttempt(attempt, err));
         } catch (RuntimeException e) {
             failAttempt(attempt, e);
         }
     }
 
+
+
     private void commitIssued(
             Attempt attempt,
-            Sign signedUid,
-            KeySignPublic publicDto,
-            AKey.SignPrivate privateKey
+            Sign[] signedUids,
+            KeySignPublic[] publics,
+            AKey.SignPrivate[] privs
     ) {
         if (attempt.state.get() != AttemptState.ACTIVE) {
             return;
         }
-        if (!validateSignedUid(signedUid, publicDto)) {
+        if (signedUids == null || signedUids.length != publics.length) {
             failAttempt(attempt, new IllegalStateException(
-                    "Server returned invalid signed uid"));
+                    "Server returned wrong number of signed uids"));
             return;
         }
-        PeerIdentityCredentials creds = new PeerIdentityCredentials(
-                signedUid, publicDto, CryptoUtils.of(privateKey));
+        PeerIdentityCredentials[] creds = new PeerIdentityCredentials[publics.length];
+        for (int i = 0; i < publics.length; i++) {
+            if (!validateSignedUid(signedUids[i], publics[i])) {
+                failAttempt(attempt, new IllegalStateException(
+                        "Server returned invalid signed uid at " + i));
+                return;
+            }
+            creds[i] = new PeerIdentityCredentials(
+                    signedUids[i], publics[i], CryptoUtils.of(privs[i]));
+        }
         if (!attempt.state.compareAndSet(
                 AttemptState.ACTIVE, AttemptState.COMMITTING)) {
             return;
@@ -160,15 +182,15 @@ final class PeerIdentityManager implements Destroyable {
             }
             inFlight.compareAndSet(attempt, null);
             client.onPeerIdentityReady(creds);
-            attempt.future.tryDone(creds);
+            attempt.future.tryDone(creds[0]);
         } catch (RuntimeException e) {
             inFlight.compareAndSet(attempt, null);
             attempt.future.tryError(e);
         }
     }
 
-    void onSignedUid(Sign sign) {
-        if (sign == null) {
+    void onSignedUid(Sign[] signs) {
+        if (signs == null || signs.length == 0) {
             return;
         }
         Attempt current = inFlight.get();
@@ -176,57 +198,60 @@ final class PeerIdentityManager implements Destroyable {
             Log.warn("Received signedUid without a pending attempt; dropping");
             return;
         }
-        ARFuture<Sign> pending = current.pendingSignedUid;
+        ARFuture<Sign[]> pending = current.pendingSignedUids;
         if (pending == null) {
             Log.warn("Received signedUid before requestSignedUid was sent; dropping");
             return;
         }
-        pending.tryDone(sign);
+        pending.tryDone(signs);
     }
 
-    private PeerIdentityCredentials validatePersisted() {
-        PeerIdentityCredentials creds = client.getClientState().getPeerIdentityCredentials();
-        if (creds == null) {
+    private PeerIdentityCredentials[] validatePersisted() {
+        PeerIdentityCredentials[] creds = client.getClientState().getPeerIdentityCredentials();
+        if (creds == null || creds.length == 0) {
             return null;
         }
         try {
-            Sign sign = creds.getSign();
-            KeySignPublic publicDto = creds.getPublicKey();
-            KeySignPrivate privKeyDto = creds.getPrivateKey();
-            if (sign == null || publicDto == null || privKeyDto == null) {
-                clear();
-                return null;
-            }
-            String lib = client.getCryptLib().name();
-
-            AKey.SignPublic publicKey;
-            AKey.SignPrivate privateKey;
-            try {
-                publicKey = CryptoUtils.of(publicDto);
-                privateKey = CryptoUtils.of(privKeyDto);
-            } catch (RuntimeException e) {
-                clear();
-                return null;
-            }
-            if (publicKey.getProviderName() == null
-                    || !publicKey.getProviderName().equalsIgnoreCase(lib)
-                    || privateKey.getProviderName() == null
-                    || !privateKey.getProviderName().equalsIgnoreCase(lib)) {
-                clear();
-                return null;
-            }
-
-            if (!validateSignedUid(sign, publicDto)) {
-                clear();
-                return null;
-            }
-
-            CryptoProvider provider = CryptoProviderFactory.getProvider(lib);
-            Signer signer = provider.createSigner(publicKey, privateKey);
-io.aether.crypto.Sign probe = signer.sign(PROBE);
-            if (!signer.checkSign(PROBE, probe)) {
-                clear();
-                return null;
+            for (PeerIdentityCredentials c : creds) {
+                if (c == null) {
+                    clear();
+                    return null;
+                }
+                Sign sign = c.getSign();
+                KeySignPublic publicDto = c.getPublicKey();
+                KeySignPrivate privKeyDto = c.getPrivateKey();
+                if (sign == null || publicDto == null || privKeyDto == null) {
+                    clear();
+                    return null;
+                }
+                AKey.SignPublic publicKey;
+                AKey.SignPrivate privateKey;
+                try {
+                    publicKey = CryptoUtils.of(publicDto);
+                    privateKey = CryptoUtils.of(privKeyDto);
+                } catch (RuntimeException e) {
+                    clear();
+                    return null;
+                }
+                if (publicKey.getProviderName() == null
+                        || privateKey.getProviderName() == null
+                        || !publicKey.getProviderName()
+                                .equalsIgnoreCase(privateKey.getProviderName())) {
+                    clear();
+                    return null;
+                }
+                if (!validateSignedUid(sign, publicDto)) {
+                    clear();
+                    return null;
+                }
+                CryptoProvider provider =
+                        CryptoProviderFactory.getProvider(publicKey.getProviderName());
+                Signer signer = provider.createSigner(publicKey, privateKey);
+                io.aether.crypto.Sign probe = signer.sign(PROBE);
+                if (!signer.checkSign(PROBE, probe)) {
+                    clear();
+                    return null;
+                }
             }
             return creds;
         } catch (RuntimeException e) {
@@ -241,13 +266,12 @@ io.aether.crypto.Sign probe = signer.sign(PROBE);
         }
         try {
             AKey.SignPublic expectedAKey = CryptoUtils.of(expectedPublic);
-            return expectedAKey.getProviderName() != null
-                    && expectedAKey.getProviderName().equalsIgnoreCase(
-                            client.getCryptLib().name());
+            return expectedAKey.getProviderName() != null;
         } catch (RuntimeException e) {
             return false;
         }
     }
+
 
     private void failAttempt(Attempt attempt, Throwable error) {
         if (attempt.state.compareAndSet(AttemptState.ACTIVE, AttemptState.CANCELLED)) {

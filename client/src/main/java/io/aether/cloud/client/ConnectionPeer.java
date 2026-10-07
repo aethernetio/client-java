@@ -53,7 +53,7 @@ final class ConnectionPeer implements AutoCloseable {
 
 
     private final AetherCloudClient client;
-    private final PeerIdentityCredentials creds;
+    private final PeerIdentityCredentials[] creds;
     private final AtomicBoolean closed = new AtomicBoolean();
 
 
@@ -80,7 +80,7 @@ final class ConnectionPeer implements AutoCloseable {
     private final Map<Short, UUID> wantedHashes = new ConcurrentHashMap<>();
 
 
-    ConnectionPeer(AetherCloudClient client, PeerIdentityCredentials creds) {
+    ConnectionPeer(AetherCloudClient client, PeerIdentityCredentials[] creds) {
         this.client = client;
         this.creds = creds;
     }
@@ -192,6 +192,7 @@ final class ConnectionPeer implements AutoCloseable {
 
 
 
+
     private void onHello(
             MetaContext ctx,
             short uidHash,
@@ -200,8 +201,6 @@ final class ConnectionPeer implements AutoCloseable {
             SignedKey[] peerKeys,
             short[] requestUidHash
     ) {
-
-
         String endpoint = endpointOf(ctx);
         Log.info("ConnectionPeer: hello received",
                 "myUid", client.getUid(),
@@ -219,17 +218,9 @@ final class ConnectionPeer implements AutoCloseable {
             return;
         }
 
-
-
-        try {
-            verifyChain(serverKeys, peerSigns, peerKeys);
-        } catch (RuntimeException e) {
-            Log.warn("ConnectionPeer: hello chain verification failed", e);
-            return;
-        }
-
-        Log.info("ConnectionPeer: hello chain verified",
-                "theirHash", uidHash);
+        // Case 1: someone is looking for us — reply unicast with our keys.
+        // We don't verify the caller: he is a stranger to us (we don't know
+        // his uid), and our public keys are not secret.
         boolean theyWantUs = false;
         if (requestUidHash != null) {
             short myHash = shortHash(client.getUid());
@@ -240,14 +231,75 @@ final class ConnectionPeer implements AutoCloseable {
                 }
             }
         }
-        Log.info("ConnectionPeer: hello routing decision",
-                "theirHash", uidHash,
-                "theyWantUs", theyWantUs,
-                "weWantThem", wantedHashes.containsKey(uidHash));
+        if (theyWantUs) {
+            Log.info("ConnectionPeer: hello is addressed to us, replying with our keys",
+                    "theirHash", uidHash, "endpoint", endpoint);
+            try {
+                answerHello();
+            } catch (RuntimeException e) {
+                Log.warn("ConnectionPeer: failed to reply to hello", e);
+            }
+        }
 
+        // Case 2: this is a reply to a probe we sent — we know the uid of
+        // the responder from wantedHashes, and can now verify his chain.
+        UUID remoteUid = wantedHashes.get(uidHash);
+        if (remoteUid != null) {
+            Log.info("ConnectionPeer: hello matches a peer we are looking for",
+                    "theirHash", uidHash, "theirUid", remoteUid);
+            try {
+                verifyChain(remoteUid, serverKeys, peerSigns, peerKeys);
+            } catch (RuntimeException e) {
+                Log.warn("ConnectionPeer: hello chain verification failed for known peer",
+                        "theirUid", remoteUid, "error", String.valueOf(e));
+                return;
+            }
+            Log.info("ConnectionPeer: hello chain verified",
+                    "theirUid", remoteUid, "theirHash", uidHash);
+            // Session opening goes here (next step).
+        } else {
+            Log.info("ConnectionPeer: hello does not match any known peer; ignoring",
+                    "theirHash", uidHash);
+        }
     }
 
+    /**
+     * Unicast reply with our own uid-hash, server keys, sign keys, and
+     * (when we have one) an ephemeral asymmetric key. This reply is
+     * delivered to the caller's {@code sendToRemote} endpoint — i.e. the
+     * address he sent the hello from.
+     */
+
+
+    private void answerHello() {
+        short myHash = shortHash(client.getUid());
+        SignedKey[] serverKeys = localServerKeys();
+        SignedKey[] peerSigns = localPeerSigns();
+        SignedKey[] peerKeys = new SignedKey[0];
+        for (FastMetaBroadcast<PeerRootApi> bc : broadcasts) {
+            bc.send(PeerRootApi.META, remote ->
+                    remote.hello(myHash, serverKeys, peerSigns, peerKeys, new short[0]));
+        }
+    }
+
+
+
+
+
+    /**
+     * Verifies a remote peer's chain when we already know his uid:
+     * <pre>
+     *   root → serverKey
+     *   serverKey → (remoteUid || peerSign.key)
+     *   peerSign.key → peerKey.key
+     * </pre>
+     * Every step is filtered by provider name: a checkSign call with a
+     * checker from a different crypto library throws IllegalArgumentException
+     * (e.g. "Sign must be a P256AesGcmSign instance"), so we never mix
+     * libraries across a step.
+     */
     private void verifyChain(
+            UUID remoteUid,
             SignedKey[] serverKeys,
             SignedKey[] peerSigns,
             SignedKey[] peerKeys
@@ -256,63 +308,115 @@ final class ConnectionPeer implements AutoCloseable {
             throw new IllegalArgumentException("null chain component");
         }
         Iterable<SignChecker> roots = client.getClientState().getRootSigners();
-        boolean serverOk = false;
+
+        // Step 1: collect every serverKey that is signed by one of our roots.
+        java.util.List<SignedKey> trustedServerKeys = new ArrayList<>();
         for (SignedKey sk : serverKeys) {
+            String lib = providerOf(sk);
             for (SignChecker root : roots) {
-                if (root.checkSign(sk.getKey().getData(),
-                        CryptoUtils.of(sk.getSign()))) {
-                    serverOk = true;
+                if (!lib.equalsIgnoreCase(root.getCryptoProvider().getCryptoLibName())) {
+                    continue;
+                }
+                if (root.checkSign(sk.getKey().getData(), CryptoUtils.of(sk.getSign()))) {
+                    trustedServerKeys.add(sk);
                     break;
                 }
             }
-            if (serverOk) {
+        }
+        if (trustedServerKeys.isEmpty()) {
+            throw new IllegalStateException("no trusted server key");
+        }
+        Log.info("ConnectionPeer: chain step 1/3 OK — server key trusted",
+                "theirUid", remoteUid, "trustedServerKeys", trustedServerKeys.size());
+
+        // Step 2: at least one peerSign is signed by one of the trusted server
+        // keys over the payload (META_UUID(remoteUid) || META(peerSign.key)).
+        // The identity issued to the peer may have been signed by a different
+        // server instance than the first matching key, so try every trusted
+        // server key whose lib matches the peer sign lib.
+        SignedKey verifiedPeerSign = null;
+        String trustedLib = null;
+
+        for (SignedKey ps : peerSigns) {
+            String psLib = providerOf(ps);
+            for (SignedKey tsk : trustedServerKeys) {
+                String tskLib = providerOf(tsk);
+                if (!psLib.equalsIgnoreCase(tskLib)) {
+                    Log.info("ConnectionPeer: step2 lib mismatch",
+                            "psLib", psLib, "tskLib", tskLib);
+                    continue;
+                }
+                SignChecker serverChecker = CryptoUtils.of(tsk.getKey())
+                        .asSignPublic().toSignChecker();
+
+                byte[] signedBytes = serverAttestationBytes(remoteUid, ps);
+                io.aether.crypto.SignChecker serverCheckerForLog = CryptoUtils.of(tsk.getKey())
+                        .asSignPublic().toSignChecker();
+                boolean ok = serverCheckerForLog.checkSign(signedBytes, CryptoUtils.of(ps.getSign()));
+                Log.info("ConnectionPeer: step2 hex",
+                        "serverKeyHex", io.aether.utils.HexUtils.toHexString(tsk.getKey().getData()),
+                        "peerSignKeyHex", io.aether.utils.HexUtils.toHexString(((io.aether.api.common.KeySignPublic) ps.getKey()).getData()),
+                        "payloadHex", io.aether.utils.HexUtils.toHexString(signedBytes),
+                        "signHex", io.aether.utils.HexUtils.toHexString(ps.getSign().getData()));
+
+                Log.info("ConnectionPeer: step2 try",
+                        "psLib", psLib, "tskLib", tskLib,
+                        "signedBytesLen", signedBytes.length,
+                        "signLen", ps.getSign().getData().length,
+                        "ok", ok);
+                if (ok) {
+                    verifiedPeerSign = ps;
+                    trustedLib = psLib;
+                    break;
+                }
+            }
+            if (verifiedPeerSign != null) {
                 break;
             }
         }
-        if (!serverOk) {
-            throw new IllegalStateException("no trusted server key");
+
+        if (verifiedPeerSign == null) {
+            throw new IllegalStateException("peer sign not signed by server");
         }
-        for (SignedKey ps : peerSigns) {
-            boolean ok = false;
-            for (SignedKey sk : serverKeys) {
-                AKey.SignPublic serverPub;
-                try {
-                    serverPub = CryptoUtils.of(sk.getKey()).asSignPublic();
-                } catch (RuntimeException e) {
-                    continue;
-                }
-                SignChecker checker = serverPub.toSignChecker();
-                if (checker.checkSign(ps.getKey().getData(),
-                        CryptoUtils.of(ps.getSign()))) {
-                    ok = true;
-                    break;
-                }
-            }
-            if (!ok) {
-                throw new IllegalStateException("peer sign not signed by server");
-            }
-        }
+        Log.info("ConnectionPeer: chain step 2/3 OK — peer sign trusted",
+                "theirUid", remoteUid, "lib", trustedLib);
+
+        // Step 3: at least one peerKey is signed by the verified peerSign.
+        SignChecker peerSignChecker = CryptoUtils.of(verifiedPeerSign.getKey())
+                .asSignPublic().toSignChecker();
+        SignedKey verifiedPeerKey = null;
         for (SignedKey pk : peerKeys) {
-            boolean ok = false;
-            for (SignedKey ps : peerSigns) {
-                AKey.SignPublic peerSignPub;
-                try {
-                    peerSignPub = CryptoUtils.of(ps.getKey()).asSignPublic();
-                } catch (RuntimeException e) {
-                    continue;
-                }
-                SignChecker checker = peerSignPub.toSignChecker();
-                if (checker.checkSign(pk.getKey().getData(),
-                        CryptoUtils.of(pk.getSign()))) {
-                    ok = true;
-                    break;
-                }
+            if (!trustedLib.equalsIgnoreCase(providerOf(pk))) {
+                continue;
             }
-            if (!ok) {
-                throw new IllegalStateException("peer key not signed by peer sign");
+            if (peerSignChecker.checkSign(pk.getKey().getData(), CryptoUtils.of(pk.getSign()))) {
+                verifiedPeerKey = pk;
+                break;
             }
         }
+        if (peerKeys.length > 0 && verifiedPeerKey == null) {
+            throw new IllegalStateException("peer key not signed by peer sign");
+        }
+        Log.info("ConnectionPeer: chain step 3/3 OK — peer keys trusted",
+                "theirUid", remoteUid, "peerKeys", peerKeys.length);
     }
+
+    private static String providerOf(SignedKey sk) {
+        if (sk == null || sk.getKey() == null) {
+            return "";
+        }
+        return io.aether.api.CryptoUtils.of(sk.getKey()).getProviderName();
+    }
+
+    private static byte[] serverAttestationBytes(UUID uid, SignedKey peerSign) {
+        io.aether.utils.dataio.DataInOut out = new io.aether.utils.dataio.DataInOut();
+        io.aether.net.fastMeta.FastMeta.META_UUID.serialize(
+                io.aether.net.fastMeta.MetaContext.STUB, uid, out);
+        io.aether.api.common.KeySignPublic.META.serialize(
+                io.aether.net.fastMeta.MetaContext.STUB, (io.aether.api.common.KeySignPublic) peerSign.getKey(), out);
+        return out.toArray();
+    }
+
 
     boolean isConnected(UUID remoteUid) {
         return remotes.containsKey(remoteUid);
@@ -340,11 +444,22 @@ final class ConnectionPeer implements AutoCloseable {
 
         short uidHash = shortHash(targetUid);
         short myHash = shortHash(client.getUid());
-        SignedKey[] peerSigns = new SignedKey[]{
-                new io.aether.api.common.SignedKey(creds.getPublicKey(), creds.getSign())
-        };
-        SignedKey[] peerKeys = new SignedKey[0];
+
+
+        // Announce our own keys. The responder may not be able to
+        // verify them (it doesn't know our uid), but any third party
+        // that recognises our uid-hash can open a session straight
+        // away without an extra round-trip.
+
         SignedKey[] serverKeys = localServerKeys();
+        SignedKey[] peerSigns = localPeerSigns();
+        SignedKey[] peerKeys = new SignedKey[0];
+
+
+        wantedHashes.put(uidHash, targetUid);
+
+
+
 
         Log.info("ConnectionPeer.probeFor: broadcasting hello on all ports",
                 "myUid", client.getUid(),
@@ -382,14 +497,31 @@ final class ConnectionPeer implements AutoCloseable {
             if (d == null || d.getSigningKeys() == null) {
                 continue;
             }
+
             for (SignedKey k : d.getSigningKeys()) {
                 if (k != null) {
                     result.add(k);
+                    Log.info("ConnectionPeer: localServerKey",
+                            "serverId", info.getServerId(),
+                            "provider", io.aether.api.CryptoUtils.of(k.getKey()).getProviderName(),
+                            "keyHex", io.aether.utils.HexUtils.toHexString(k.getKey().getData()));
                 }
             }
+
         }
         return result.toArray(new SignedKey[0]);
     }
+
+
+    private SignedKey[] localPeerSigns() {
+        SignedKey[] result = new SignedKey[creds.length];
+        for (int i = 0; i < creds.length; i++) {
+            result[i] = new io.aether.api.common.SignedKey(
+                    creds[i].getPublicKey(), creds[i].getSign());
+        }
+        return result;
+    }
+
 
 
 

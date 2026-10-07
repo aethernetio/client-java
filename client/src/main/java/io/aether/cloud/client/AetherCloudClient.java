@@ -105,19 +105,22 @@ public final class AetherCloudClient implements Destroyable {
      * credential has been issued and persisted. From this point on the
      * peer-to-peer stack may be started.
      */
-    void onPeerIdentityReady(PeerIdentityCredentials creds) {
-        if (creds == null || destroyer.isDestroyed()) {
+
+    void onPeerIdentityReady(PeerIdentityCredentials[] creds) {
+        if (creds == null || creds.length == 0 || destroyer.isDestroyed()) {
             return;
         }
         ensureConnectionPeer(creds);
     }
+
 
     /**
      * Lazily create the {@link ConnectionPeer} that runs the peer-to-peer
      * broadcast / handshake stack. Idempotent.
      */
 
-    private void ensureConnectionPeer(PeerIdentityCredentials creds) {
+
+    private void ensureConnectionPeer(PeerIdentityCredentials[] creds) {
         if (destroyer.isDestroyed()) {
             return;
         }
@@ -125,6 +128,7 @@ public final class AetherCloudClient implements Destroyable {
             return;
         }
         ConnectionPeer fresh = new ConnectionPeer(this, creds);
+
         if (connectionPeer.compareAndSet(null, fresh)) {
             try {
                 fresh.start();
@@ -1030,11 +1034,22 @@ public final class AetherCloudClient implements Destroyable {
         appliedConfigsRequests.getFuture(new AppliedConfig(subjectUid, version));
     }
 
+
     public void putServerDescriptor(ServerDescriptor s) {
         servers.put((int) s.getId(), s);
         clientState.getServerInfo(s.getId()).setDescriptor(s);
-        Log.debug("putServerDescriptor is done", "descriptor", s);
+        java.util.List<String> keyHexes = new java.util.ArrayList<>();
+        if (s.getSigningKeys() != null) {
+            for (var k : s.getSigningKeys()) {
+                if (k != null) keyHexes.add(io.aether.api.CryptoUtils.of(k.getKey()).getProviderName() + ":" +
+                        io.aether.utils.HexUtils.toHexString(k.getKey().getData()));
+            }
+        }
+        Log.info("AetherCloudClient: putServerDescriptor",
+                "sid", s.getId(),
+                "keys", keyHexes);
     }
+
 
     public ARFuture<IpInfo> getMyIp() {
         ARFuture<IpInfo> result = ARFuture.make();

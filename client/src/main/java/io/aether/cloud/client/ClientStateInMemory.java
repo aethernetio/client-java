@@ -51,7 +51,7 @@ public class ClientStateInMemory implements ClientState, ToString {
 
     private volatile Key masterKey;
 
-    private volatile io.aether.api.clienttypes.PeerIdentityCredentials peerIdentityCredentials;
+    private volatile io.aether.api.clienttypes.PeerIdentityCredentials[] peerIdentityCredentials;
 
 
     public ClientStateInMemory(UUID parentUid, List<URI> registrationUri, Set<SignChecker> rootSigners) {
@@ -192,14 +192,15 @@ public class ClientStateInMemory implements ClientState, ToString {
 
 
     @Override
-    public io.aether.api.clienttypes.PeerIdentityCredentials getPeerIdentityCredentials() {
+    public io.aether.api.clienttypes.PeerIdentityCredentials[] getPeerIdentityCredentials() {
         return peerIdentityCredentials;
     }
 
     @Override
-    public void setPeerIdentityCredentials(io.aether.api.clienttypes.PeerIdentityCredentials credentials) {
+    public void setPeerIdentityCredentials(io.aether.api.clienttypes.PeerIdentityCredentials[] credentials) {
         this.peerIdentityCredentials = credentials;
     }
+
 
 
     public ServerInfo getServerInfo(int sid) {

@@ -233,8 +233,10 @@ class ClientApiSafeImpl implements ClientApiSafe {
     private void sendCloudConfig(CloudConfig cc) {
         client.applyCloudConfig(cc);
     }
+
     @Override
-    public void sendSignedUid(Sign sign) {
-        client.peerIdentityManager().onSignedUid(sign);
+    public void sendSignedUid(Sign[] signs) {
+        client.peerIdentityManager().onSignedUid(signs);
     }
+
 }
