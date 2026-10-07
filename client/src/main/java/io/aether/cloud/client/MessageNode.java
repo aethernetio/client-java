@@ -11,7 +11,6 @@ import io.aether.utils.ToString;
 import io.aether.utils.dataio.DataInOutStatic;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
-import io.aether.peer.PeerConnectionManager;
 import io.aether.utils.interfaces.AConsumer;
 import io.aether.utils.interfaces.AFunction;
 import io.aether.utils.slots.EventConsumerWithQueue;
@@ -94,9 +93,18 @@ public class MessageNode implements ToString {
 
 
     public AFuture send(byte[] msg) {
+
+        Log.info("MessageNode.send: entry",
+                "from", client.getUid(), "to", consumer,
+                "bytes", msg.length);
+
         if (msg == null || msg.length == 0) return AFuture.completed();
 
         AFuture peerAttempt = trySendViaPeer(msg);
+
+        Log.info("MessageNode.send: trySendViaPeer result",
+                "to", consumer, "peerAttempt", peerAttempt == null ? "null" : "present");
+
         if (peerAttempt != null) {
             return peerAttempt;
         }
@@ -110,6 +118,10 @@ public class MessageNode implements ToString {
             // held while LAN discovery + handshake have a chance to
             // complete.
 
+
+
+            Log.info("MessageNode.send: arming peer probe",
+                    "to", consumer, "sinceLastProbeMs", sinceLastProbeMs);
 
             client.probeLanFor(consumer);
             lastPeerProbeAtMs = now;
@@ -158,7 +170,7 @@ public class MessageNode implements ToString {
      * <p>Called from {@link ConnectionWork#flushBackgroundRequests} while a
      * peer-probe grace window is open. If the peer link has become
      * established since the last tick, this delivers all pending messages
-     * directly through {@link PeerConnectionManager#sendMessage} and
+     * directly through {@link ConnectionPeer#sendMessage} and
      * completes their futures. If the link is still not available, the
      * messages stay queued and this method returns {@code false} so the
      * caller keeps waiting.
@@ -172,7 +184,7 @@ public class MessageNode implements ToString {
         }
 
 
-        PeerConnectionManager manager = client.getPeerConnectionManager();
+        ConnectionPeer manager = client.getConnectionPeer();
         if (manager == null || !manager.isConnected(consumer)) {
             return false;
         }
@@ -214,11 +226,22 @@ public class MessageNode implements ToString {
 
     private AFuture trySendViaPeer(byte[] msg) {
         AetherCloudClient owner = client;
+
+        Log.info("MessageNode.trySendViaPeer: entry",
+                "from", client.getUid(), "to", consumer,
+                "owner", owner == null ? "null" : "present");
+
         if (owner == null) return null;
 
-        PeerConnectionManager manager = owner.getPeerConnectionManager();
+        ConnectionPeer manager = owner.getConnectionPeer();
         if (manager == null) return null;
         if (!manager.isConnected(consumer)) return null;
+
+        Log.info("MessageNode.trySendViaPeer: connectionPeer state",
+                "to", consumer,
+                "manager", manager == null ? "null" : "present",
+                "connected", manager != null && manager.isConnected(consumer));
+
         try {
             if (!manager.sendMessage(consumer, msg)) {
                 return null;

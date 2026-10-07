@@ -12,7 +12,6 @@ import io.aether.logger.Log;
 
 import io.aether.utils.RU;
 import io.aether.utils.flow.Flow;
-import io.aether.peer.PeerConnectionManager;
 import io.aether.utils.futures.AFuture;
 import io.aether.utils.futures.ARFuture;
 import io.aether.utils.tuples.Tuple2;
@@ -542,15 +541,11 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
 
 
     @Override
-
     public void sendSafeApiDataMulti(short backId, LoginClientStream data) {
-        PeerServerRelay relay = client.getPeerServerRelay();
-        if (relay == null) {
-            throw new UnsupportedOperationException(
-                    "Multi-backId send requires a configured PeerServerRelay");
-        }
-        relay.onBackIdData(backId, data.data);
+        throw new UnsupportedOperationException(
+                "Multi-backId send requires a configured peer relay");
     }
+
 
 
 

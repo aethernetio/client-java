@@ -73,11 +73,13 @@ public class ProxyAuthorizedApiImpl
         this.backId = id;
     }
 
+
     @Override
-    public ARFuture<io.aether.api.common.PeerIdentity> issuePeerIdentity(
-            io.aether.api.common.KeySignPublic key) {
-        return ARFuture.of(service.issuePeerIdentity(client.uid(), key));
+    public void requestSignedUid(io.aether.api.common.KeySignPublic key) {
+        io.aether.api.common.Sign sign = service.requestSignedUid(client.uid(), key);
+        safeRemoteApi.sendSignedUid(sign);
     }
+
 
 
     @Override

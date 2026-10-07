@@ -13,7 +13,9 @@ types:
 
   PeerIdentityCredentials:
     fields:
-      identity: PeerIdentity
+#      Подпись от сервера (publicKey+uid)
+      sign: Sign
+      publicKey: KeySignPublic
       privateKey: KeySignPrivate
 
   ClientStateForSave:

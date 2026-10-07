@@ -24,10 +24,8 @@ import io.aether.net.fastMeta.MetaContext;
 import io.aether.net.fastMeta.RemoteApi;
 import io.aether.utils.ConcurrentHashSet;
 
-import io.aether.peer.PeerConnectionManager;
-import io.aether.peer.PeerLocalIdentity;
-import io.aether.peer.PeerKeyRegistry;
-import io.aether.peer.lan.LanPeerTransport;
+
+
 
 import io.aether.utils.Destroyer;
 import io.aether.utils.RU;
@@ -80,180 +78,89 @@ public final class AetherCloudClient implements Destroyable {
     final CloudPriorityManager priorityManager = new CloudPriorityManager();
     private final ClientState clientState;
 
+
+
+
+
     private final PeerIdentityManager peerIdentityManager;
-    private final PeerKeyRegistry peerKeyRegistry = new PeerKeyRegistry();
-
-    private final AtomicReference<PeerServerRelay> peerServerRelay = new AtomicReference<>();
-
-
-
-    public PeerServerRelay getPeerServerRelay() {
-        return peerServerRelay.get();
-    }
-
-    public void setPeerServerRelay(PeerServerRelay relay) {
-        peerServerRelay.set(relay);
-    }
-
-    /**
-     * Lazily create the {@link PeerServerRelay}. Lock-free: winners of the
-     * CAS install their instance and every concurrent caller that lost the
-     * race closes its own instance and returns the winner.
-     */
-    public PeerServerRelay ensurePeerServerRelay() {
-        PeerServerRelay existing = peerServerRelay.get();
-        if (existing != null) {
-            return existing;
-        }
-        PeerServerRelay fresh = new PeerServerRelay(this);
-        if (peerServerRelay.compareAndSet(null, fresh)) {
-            destroyer.add(fresh::close);
-            return fresh;
-        }
-        try {
-            fresh.close();
-        } catch (RuntimeException ignored) {
-        }
-        return peerServerRelay.get();
-    }
 
 
 
 
-    private volatile PeerConnectionManager peerConnectionManager;
-    private volatile LanPeerTransport lanPeerTransport;
-    private final AtomicReference<ARFuture<LanPeerTransport>> lanStackFuture = new AtomicReference<>();
 
+    private final AtomicReference<ConnectionPeer> connectionPeer = new AtomicReference<>();
 
-    /**
-     * Lazily create the LAN peer transport (if not yet created), bind it to
-     * the local {@link PeerServerRelay} and start discovery. Idempotent:
-     * calling this more than once returns the same instance.
-     *
-     * <p>The transport requires a {@link PeerLocalIdentity} built from the
-     * client's issued peer identity and root signers, plus a
-     * {@link PeerConnectionManager} that routes inbound peer frames through
-     * the relay handler factory.
-     */
-
-    public ARFuture<LanPeerTransport> ensureLanPeerTransport() {
-        ARFuture<LanPeerTransport> existing = lanStackFuture.get();
-        if (existing != null) {
-            return existing;
-        }
-        ARFuture<LanPeerTransport> fresh = ARFuture.make();
-        if (!lanStackFuture.compareAndSet(null, fresh)) {
-            return lanStackFuture.get();
-        }
-        // Winner of the CAS is responsible for the async initialization.
-        // On failure we clear the slot so a later caller can retry.
-        getPeerIdentity().to(identity -> {
-            try {
-                PeerLocalIdentity localIdentity = buildLocalPeerIdentity(identity);
-                PeerServerRelay relay = ensurePeerServerRelay();
-
-                PeerConnectionManager manager = new PeerConnectionManager(
-                        localIdentity,
-                        relay.handlerFactory((uid, data) ->
-                                getMessageNode(uid, MessageEventListener.DEFAULT)
-                                        .sendMessageFromServerToClient(data)));
-
-                relay.bindManager(manager);
-                LanPeerTransport transport = new LanPeerTransport(manager);
-                transport.start();
-                destroyer.add(transport::close);
-                this.peerConnectionManager = manager;
-                this.lanPeerTransport = transport;
-                fresh.tryDone(transport);
-            } catch (RuntimeException e) {
-                lanStackFuture.compareAndSet(fresh, null);
-                fresh.tryError(e);
-            }
-        }).onError(error -> {
-            lanStackFuture.compareAndSet(fresh, null);
-            fresh.tryError(error);
-        });
-        return fresh;
-    }
-
-
-    public PeerConnectionManager getPeerConnectionManager() {
-        return peerConnectionManager;
-    }
-
-    public LanPeerTransport getLanPeerTransport() {
-        return lanPeerTransport;
+    public ConnectionPeer getConnectionPeer() {
+        return connectionPeer.get();
     }
 
 
     /**
      * Pin the long-term signing public key for a peer UID.
-     *
-     * The pin is local trust configuration and has priority over a
-     * server-certified PeerIdentity carrying another key.
      */
-    public void registerPeerKey(UUID uid, KeySignPublic key) {
-        peerKeyRegistry.register(uid, key);
-    }
-
-    /**
-     * Remove the explicit signing-key pin for a peer UID. Future handshakes
-     * fall back to the normal Aether root/server PeerIdentity chain.
-     */
-    public void unregisterPeerKey(UUID uid) {
-        peerKeyRegistry.unregister(uid);
-    }
 
 
     /**
-     * Ask the LAN transport (if it has been started) to broadcast a probe
-     * for the given uid. This is a cheap, idempotent operation: it never
-     * throws and does nothing when LAN discovery is unavailable, so callers
-     * can invoke it unconditionally on the hot path of every outbound
-     * message that is not yet covered by an established peer-link.
+     * Invoked by {@link PeerIdentityManager} once the server-signed uid
+     * credential has been issued and persisted. From this point on the
+     * peer-to-peer stack may be started.
+     */
+    void onPeerIdentityReady(PeerIdentityCredentials creds) {
+        if (creds == null || destroyer.isDestroyed()) {
+            return;
+        }
+        ensureConnectionPeer(creds);
+    }
+
+    /**
+     * Lazily create the {@link ConnectionPeer} that runs the peer-to-peer
+     * broadcast / handshake stack. Idempotent.
      */
 
-    public void probeLanFor(java.util.UUID targetUid) {
-        if (targetUid == null) {
+    private void ensureConnectionPeer(PeerIdentityCredentials creds) {
+        if (destroyer.isDestroyed()) {
             return;
         }
-        LanPeerTransport transport = lanPeerTransport;
-        if (transport != null) {
-            transport.probeFor(targetUid);
+        if (connectionPeer.get() != null) {
             return;
         }
-        // LAN stack not yet ready — trigger lazy creation and queue the
-        // probe as soon as the transport is bound. Idempotent: repeated
-        // calls before the transport exists just re-trigger ensure(), and
-        // the probeFor on the ready transport is cheap.
+        ConnectionPeer fresh = new ConnectionPeer(this, creds);
+        if (connectionPeer.compareAndSet(null, fresh)) {
+            try {
+                fresh.start();
+                destroyer.add(fresh::close);
+            } catch (RuntimeException error) {
+                connectionPeer.compareAndSet(fresh, null);
+                try {
+                    fresh.close();
+                } catch (RuntimeException ignored) {
+                }
+                Log.warn("ConnectionPeer start failed; peer-to-peer unavailable", error);
+            }
+            return;
+        }
         try {
-            ensureLanPeerTransport()
-                    .to(t -> t.probeFor(targetUid))
-                    .onError(e -> Log.warn("probeLanFor: LAN stack unavailable", e));
-        } catch (RuntimeException e) {
-            Log.warn("probeLanFor: LAN stack trigger failed", e);
+            fresh.close();
+        } catch (RuntimeException ignored) {
         }
     }
 
 
 
-    private PeerLocalIdentity buildLocalPeerIdentity(PeerIdentity identity) {
-        PeerIdentityCredentials creds = clientState.getPeerIdentityCredentials();
-        if (creds == null) {
-            throw new IllegalStateException(
-                    "Peer identity credentials are missing; issue peer identity first");
+    public void probeLanFor(UUID targetUid) {
+        ConnectionPeer peer = connectionPeer.get();
+        Log.info("probeLanFor: called",
+                "targetUid", targetUid,
+                "connectionPeer", peer == null ? "null" : "present",
+                "myUid", clientState.getUid());
+        if (peer != null) {
+            peer.probeFor(targetUid);
+        } else {
+            Log.info("probeLanFor: skipped — ConnectionPeer not started yet");
         }
-
-        Set<SignChecker> roots = clientState.getRootSigners();
-
-        return new PeerLocalIdentity(
-                identity,
-                creds.getPrivateKey(),
-                new ArrayList<>(roots),
-                peerKeyRegistry);
-
-
     }
+
+
 
 
 
@@ -280,14 +187,6 @@ public final class AetherCloudClient implements Destroyable {
 
 
 
-        startFuture.to(() -> {
-            try {
-                ensureLanPeerTransport().onError(error ->
-                        Log.warn("LAN peer transport auto-start failed; continuing without it", error));
-            } catch (RuntimeException error) {
-                Log.warn("LAN peer transport auto-start threw; continuing without it", error);
-            }
-        });
 
 
 
@@ -714,14 +613,21 @@ public final class AetherCloudClient implements Destroyable {
         }
     }
 
+    PeerIdentityManager peerIdentityManager() {
+        return peerIdentityManager;
+    }
+
+
     public UUID getUid() {
         return clientState.getUid();
     }
 
 
-    public ARFuture<PeerIdentity> getPeerIdentity() {
+
+    public ARFuture<PeerIdentityCredentials> getPeerIdentity() {
         return peerIdentityManager.getOrIssue();
     }
+
 
 
     public <T> ARFuture<T> getAuthApi1(@NotNull AFunction<AuthorizedApi, ARFuture<T>> t) {

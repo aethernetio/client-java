@@ -386,7 +386,8 @@ public final class ProxyService {
      * <p>The credential is signed by the proxy's own server signing identity
      * (matching {@link #proxyDescriptor()}), never by an upstream server.
      */
-    public io.aether.api.common.PeerIdentity issuePeerIdentity(
+
+    public io.aether.api.common.Sign requestSignedUid(
             UUID uid,
             io.aether.api.common.KeySignPublic peerPublicKey) {
         if (uid == null) {
@@ -406,19 +407,18 @@ public final class ProxyService {
         }
         CryptoLib lib = cryptoLibOf(peerKey);
         Signer signer = serverSigners.get(lib);
-        SignedKey serverSigningKey = serverSigningKeys.get(lib);
-        if (signer == null || serverSigningKey == null) {
+        if (signer == null) {
             throw new IllegalStateException("No proxy signing identity for " + lib);
         }
-
-        io.aether.api.common.PeerIdentityData data =
-                new io.aether.api.common.PeerIdentityData(uid, peerPublicKey);
-        byte[] signedBytes = io.aether.api.PeerIdentityCrypto.signingData(data);
-        io.aether.crypto.Sign sign = signer.sign(signedBytes);
-
-        return new io.aether.api.common.PeerIdentity(
-                data, serverSigningKey, CryptoUtils.of(sign));
+        io.aether.utils.dataio.DataInOut out = new io.aether.utils.dataio.DataInOut();
+        io.aether.net.fastMeta.FastMeta.META_UUID.serialize(
+                io.aether.net.fastMeta.MetaContext.STUB, uid, out);
+        io.aether.api.common.KeySignPublic.META.serialize(
+                io.aether.net.fastMeta.MetaContext.STUB, peerPublicKey, out);
+        io.aether.crypto.Sign sign = signer.sign(out.toArray());
+        return CryptoUtils.of(sign);
     }
+
 
 
 

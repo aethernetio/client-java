@@ -1,0 +1,98 @@
+
+include:
+
+  - ClientServerApi
+  - common
+
+  - common
+
+
+types:
+  ToServerStream:
+    stream:
+      crypto: true
+      api: AuthorizedApi
+      remoteApi: ClientApiSafe
+      keys:
+        sid: short
+  FromServerStream:
+    stream:
+      crypto: true
+      api: ClientApiSafe
+      remoteApi: AuthorizedApi
+      keys:
+        sid: short
+  PeerSessionStream:
+    stream:
+      crypto: true
+      api: PeerAuthorizedApi
+      remoteApi: PeerAuthorizedApi
+api:
+
+  #  Не используем return. Важно чтобы всё работало асинхронно.
+  #  Первый делом когда хотим найти клиента по uid, вычисляем хеш и отправляем широковещаетльный запрос. Если транспорт lan,
+  #  то используем udp. Широковещательный запрос содержит вызов hello. передаем собственные публичные ключи (AsymKey) подписанные
+  #  серверов эфира и ключи (подпись) серверов подписанные.
+  PeerRootApi:
+    methods:
+      #      Широковещательный запрос будет попадать сюда. Ответ происходит таким же широковещательным запросом с этим же методом.
+      #  После этого клиенты знают как получить доступ к PeerAuthorizedApi друг друга.
+      #      используются короткие хеши от uid вместо реального uid. Таким образом если кто-то в сети слушает такие запросы то
+      #  он не сможет связать конкретные ip адреса с настоящим uid.
+
+      hello:
+        id: 4
+        params:
+#         #          Собственный хэш uid
+          uidHash: short
+          serverKeys: SignedKey[]
+#         #     Публичный ключ сервера подписанный корневым ключом. Именно корневой публичный ключ есть у всех клиентов поэтому можно
+#         #     проверить цепочку подписей.
+#         #     публичный ключ подписи клиента. С помощью этого ключа клиент подписывает уже публичный асимметричный ключ
+          peerSigns: SignedKey[]
+#         # подписанные публичные асимметричные ключи для разных библиотек
+          peerKeys: SignedKey[]
+#         #          Список хешей от uid которые ищем.
+          requestUidHash: short[]
+      nonce:
+        id: 6
+        params:
+#         #          Эфемерный nonce этого экземпляра клиента. Обе стороны
+#         #          шлют его вместе с hello/enter, чтобы отличать собственные
+#         #          broadcast-loopback пакеты от чужих.
+          data: int
+      enter:
+
+        id: 5
+        params:
+          stream: PeerSessionStream
+
+  # Encrypted peer-to-peer API: direct payloads plus relay methods.
+  PeerAuthorizedApi:
+    methods:
+      sendMessage:
+        id: 3
+        params:
+          data: byte[]
+      toServer:
+        id: 4
+        params:
+          forUid: UUID
+          backId: short
+          data: byte[]
+      fromServer:
+        id: 5
+        params:
+          backId: short
+          data: byte[]
+      setReceiveWindow:
+        id: 6
+        params:
+          startsInMs: long
+          durationMs: long
+      #Адресат может не раскрывать свою личность пока мы не отправим свой uid
+      sentUid:
+        id: 7
+      #Если по какой-то причине не знаем uid, можем запросить его
+      requestUid:
+        id: 8
