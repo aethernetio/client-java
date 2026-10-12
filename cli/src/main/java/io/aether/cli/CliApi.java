@@ -306,7 +306,16 @@ public class CliApi {
                 AFuture.run(CLI_EXECUTOR, () -> {
                     client.getAuthApi(a -> {
                         Log.info("ChangeGroupApi: got AuthApi, starting add op");
-                        AFuture.all(Flow.flow(uid).map(u -> a.addToAccessGroup(id, u)).map(ARFuture::toFuture).toList()).to(res);
+
+                        AFuture.all(
+                                Flow.flow(uid).map(u -> {
+                                    ARFuture<Boolean> f = client.addToAccessGroupResults.getFuture(
+                                            io.aether.utils.tuples.Tuple2.of(id, u));
+                                    a.addToAccessGroup(id, u);
+                                    return f.toFuture();
+                                }).toList()
+                        ).to(res);
+
                     });
                 });
                 return res.apply(() -> {
@@ -327,7 +336,16 @@ public class CliApi {
                 AFuture.run(CLI_EXECUTOR, () -> {
                     client.getAuthApi(a -> {
                         Log.info("ChangeGroupApi: got AuthApi, starting remove op");
-                        AFuture.all(Flow.flow(uid).map(u -> a.removeFromAccessGroup(id, u)).map(ARFuture::toFuture).toList()).to(res);
+
+                        AFuture.all(
+                                Flow.flow(uid).map(u -> {
+                                    ARFuture<Boolean> f = client.removeFromAccessGroupResults.getFuture(
+                                            io.aether.utils.tuples.Tuple2.of(id, u));
+                                    a.removeFromAccessGroup(id, u);
+                                    return f.toFuture();
+                                }).toList()
+                        ).to(res);
+
                     });
                 });
                 return res.apply(() -> {

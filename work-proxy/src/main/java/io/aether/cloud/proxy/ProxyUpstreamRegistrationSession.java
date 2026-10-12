@@ -4,15 +4,23 @@ package io.aether.cloud.proxy;
 import io.aether.api.CryptoUtils;
 import io.aether.api.clientserverapi.ClientApiRegSafe;
 import io.aether.api.clientserverapi.ClientApiRegSafeStream;
-import io.aether.api.clientserverapi.ClientApiRegUnsafe;
+
+import io.aether.api.clientserverapi.ClientApiUnsafe;
+
 import io.aether.api.clientserverapi.FinishResult;
 import io.aether.api.clientserverapi.GlobalRegClientApiStream;
 
 import io.aether.api.clientserverapi.RecoveryResult;
 
+
+import io.aether.api.clientserverapi.ServerRegistrationApiRemote;
+import io.aether.api.clientserverapi.RegistrationDirectResult;
+
+
 import io.aether.api.clientserverapi.RegistrationRootApi;
 import io.aether.api.clientserverapi.RegistrationRootApiRemote;
-import io.aether.api.clientserverapi.ServerRegistrationApiRemote;
+import io.aether.api.clientserverapi.LoginClientStream;
+
 import io.aether.api.common.Cloud;
 import io.aether.api.common.CryptoLib;
 import io.aether.api.common.KeySymmetric;
@@ -41,7 +49,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * futures; nothing blocks.
  */
 public final class ProxyUpstreamRegistrationSession
-        implements ClientApiRegUnsafe {
+
+        implements ClientApiUnsafe {
+
 
     private final URI upstreamRegistrationUri;
     private final CryptoLib cryptoLib;
@@ -56,6 +66,19 @@ public final class ProxyUpstreamRegistrationSession
     private final AKey.Symmetric tempKey;
     private final KeySymmetric tempKeyNative;
     private final CryptoEngine tempKeyEngine;
+
+
+
+    private final io.aether.utils.slots.AMFuture<io.aether.api.common.SignedKey> asymmetricPublicKeyMFuture
+            = new io.aether.utils.slots.AMFuture<>();
+    private final io.aether.utils.slots.AMFuture<WorkProofDTO> workProofMFuture
+            = new io.aether.utils.slots.AMFuture<>();
+    private final io.aether.utils.slots.AMFuture<ServerDescriptor[]> resolvedServersMFuture
+            = new io.aether.utils.slots.AMFuture<>();
+    private final io.aether.utils.slots.AMFuture<RecoveryResult> recoveryMFuture
+            = new io.aether.utils.slots.AMFuture<>();
+    private final io.aether.utils.slots.AMFuture<RegistrationDirectResult> registrationDirectMFuture
+            = new io.aether.utils.slots.AMFuture<>();
 
 
     private volatile CryptoEngine upstreamAsymEngine;
@@ -85,7 +108,9 @@ public final class ProxyUpstreamRegistrationSession
         RegistrationRootApiRemote remote = FastMetaNet.INSTANCE.get()
                 .makeClient(
                         upstreamRegistrationUri,
-                        ClientApiRegUnsafe.META,
+
+                        ClientApiUnsafe.META,
+
                         RegistrationRootApi.META,
                         ignored -> this
                 );
@@ -98,34 +123,26 @@ public final class ProxyUpstreamRegistrationSession
     }
 
     public ARFuture<ServerDescriptor[]> resolveServers(Cloud cloud) {
-        return safeApi.resolveServers(cloud);
+        safeApi.resolveServers(cloud);
+        return resolvedServersMFuture.mapToARFuture();
     }
 
     private ARFuture<CryptoEngine> requestOriginalAsymmetricKey() {
-        return rootApi.getAsymmetricPublicKey(cryptoLib).map(k -> {
+        rootApi.getAsymmetricPublicKey(cryptoLib);
+        return asymmetricPublicKeyMFuture.mapToARFuture().map(k -> {
             io.aether.crypto.SignedKey kk = CryptoUtils.of(k);
             boolean trusted = false;
             for (SignChecker checker : rootSigners) {
-                if (checker.checkSign(
-                        kk.key().getData(),
-                        kk.sign()
-                )) {
+                if (checker.checkSign(kk.key().getData(), kk.sign())) {
                     trusted = true;
                     break;
                 }
             }
             if (!trusted) {
-                Log.error(
-                        "ProxyUpstreamReg: original key verification failed",
-                        "key",
-                        kk
-                );
-                throw new IllegalStateException(
-                        "Original registration key verification failed"
-                );
+                Log.error("ProxyUpstreamReg: original key verification failed", "key", kk);
+                throw new IllegalStateException("Original registration key verification failed");
             }
-            upstreamAsymEngine =
-                    kk.key().asAsymmetric().toCryptoEngine();
+            upstreamAsymEngine = kk.key().asAsymmetric().toCryptoEngine();
             return upstreamAsymEngine;
         });
     }
@@ -143,10 +160,8 @@ public final class ProxyUpstreamRegistrationSession
                     "proxy upstream reg safe"
             );
             safeApi.setReturnKey(tempKeyNative);
-            return safeApi.requestWorkProofData(
-                    parent,
-                    PowMethod.AE_BCRYPT_CRC32
-            ).map(wpd -> {
+            safeApi.requestWorkProofData(parent, PowMethod.AE_BCRYPT_CRC32);
+            return workProofMFuture.mapToARFuture().map(wpd -> {
                 workProof = wpd;
                 return wpd;
             });
@@ -154,11 +169,7 @@ public final class ProxyUpstreamRegistrationSession
     }
 
 
-    public ARFuture<RecoveryResult> recovery(
-            UUID uid,
-            Key oldMasterKey,
-            Key newMasterKey
-    ) {
+    public ARFuture<RecoveryResult> recovery(UUID uid, Key oldMasterKey, Key newMasterKey) {
         return requestOriginalAsymmetricKey().mapRFuture(asymCE -> {
             safeApi = rootApi.openEnter(
                     cryptoLib,
@@ -167,44 +178,20 @@ public final class ProxyUpstreamRegistrationSession
                     "proxy upstream recovery safe"
             );
             safeApi.setReturnKey(tempKeyNative);
-            return safeApi.recovery(
-                    uid,
-                    oldMasterKey,
-                    newMasterKey
-            );
+            safeApi.recovery(uid, oldMasterKey, newMasterKey);
+            return recoveryMFuture.mapToARFuture();
         });
     }
 
 
 
-    public ARFuture<FinishResult> finish(
-            AKey.Symmetric masterKey,
-            String salt,
-            String suffix,
-            int[] passwords
-    ) {
+    public ARFuture<FinishResult> finish(AKey.Symmetric masterKey, String salt, String suffix, int[] passwords) {
         if (workProof == null) {
-            return ARFuture.ofThrow(
-                    new IllegalStateException(
-                            "WorkProofData is not yet available"
-                    )
-            );
+            return ARFuture.ofThrow(new IllegalStateException("WorkProofData is not yet available"));
         }
-
-        return safeApi.registrationDirect(
-                        salt,
-                        suffix,
-                        passwords,
-                        parent,
-                        CryptoUtils.of(masterKey)
-                )
-                .map(result ->
-                        new FinishResult(
-                                result.getAlias(),
-                                result.getUid(),
-                                result.getCloud()
-                        )
-                );
+        safeApi.registrationDirect(salt, suffix, passwords, parent, CryptoUtils.of(masterKey));
+        return registrationDirectMFuture.mapToARFuture().map(result ->
+                new FinishResult(result.getAlias(), result.getUid(), result.getCloud()));
     }
 
     public void close() {
@@ -224,9 +211,9 @@ public final class ProxyUpstreamRegistrationSession
     }
 
     @Override
-    public void enter(ClientApiRegSafeStream stream) {
+    public void enterRegistration(ClientApiRegSafeStream stream) {
         if (safeApi == null) {
-            Log.warn("ProxyUpstreamReg: enter before safeApi ready");
+            Log.warn("ProxyUpstreamReg: enterRegistration before safeApi ready");
             return;
         }
         stream.asIn()
@@ -235,9 +222,50 @@ public final class ProxyUpstreamRegistrationSession
                 .accept();
     }
 
+
     @Override
-    public void enterGlobal(GlobalRegClientApiStream stream) {
-        // Legacy ClientApiRegUnsafe compatibility.
-        // Upstream registration now uses registrationDirect.
+    public void sendSafeApiDataMulti(short backId, LoginClientStream data) {
+        throw new UnsupportedOperationException("ProxyUpstreamReg: no multi-backId support");
     }
+
+    @Override
+    public void sendSafeApiData(LoginClientStream data) {
+        throw new UnsupportedOperationException("ProxyUpstreamReg: not logged in");
+    }
+
+    @Override
+    public void sendCurrentTimeUtc(long time) {
+        Log.warn("ProxyUpstreamReg: unexpected sendCurrentTimeUtc");
+    }
+
+    @Override
+    public void sendMyIpInfo(io.aether.api.common.IpInfo info) {
+        Log.warn("ProxyUpstreamReg: unexpected sendMyIpInfo");
+    }
+
+    @Override
+    public void sendAsymmetricPublicKey(io.aether.api.common.SignedKey key) {
+        asymmetricPublicKeyMFuture.set(key);
+    }
+
+    @Override
+    public void sendWorkProofData(java.util.UUID parent, WorkProofDTO dto) {
+        workProofMFuture.set(dto);
+    }
+
+    @Override
+    public void sendResolvedServers(ServerDescriptor[] servers) {
+        resolvedServersMFuture.set(servers);
+    }
+
+    @Override
+    public void sendRegistrationDirect(RegistrationDirectResult result) {
+        registrationDirectMFuture.set(result);
+    }
+
+    @Override
+    public void sendRecoveredClientState(RecoveryResult result) {
+        recoveryMFuture.set(result);
+    }
+
 }

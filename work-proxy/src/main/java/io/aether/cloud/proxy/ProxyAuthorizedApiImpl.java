@@ -83,7 +83,7 @@ public class ProxyAuthorizedApiImpl
         for (int i = 0; i < keys.length; i++) {
             signs[i] = service.requestSignedUid(client.uid(), keys[i]);
         }
-        safeRemoteApi.sendSignedUid(signs);
+        safeRemoteApi.sendSignedUid(keys, signs);
     }
 
 
@@ -101,14 +101,10 @@ public class ProxyAuthorizedApiImpl
 
 
     @Override
-    public AFuture ping(long nextConnectMsDuration, long rxWindowMs) {
-        client.applyPing(
-                System.currentTimeMillis(),
-                nextConnectMsDuration,
-                rxWindowMs
-        );
+    public void ping(long nextConnectMsDuration, long rxWindowMs) {
+        client.applyPing(System.currentTimeMillis(), nextConnectMsDuration, rxWindowMs);
         service.flushMessageGrid();
-        return AFuture.completed();
+        safeRemoteApi.sendPingAck();
     }
 
 
@@ -136,27 +132,16 @@ public class ProxyAuthorizedApiImpl
     }
 
     @Override
-    public AFuture sendMessageWithResult(Message msg) {
-        AFuture result = AFuture.make();
+    public void sendMessageWithResult(Message msg) {
         if (!service.clients().isLocal(msg.getUid())) {
-            Log.warn(
-                    "Routing error: non-local recipient reached proxy sendMessage",
+            Log.warn("Routing error: non-local recipient reached proxy sendMessage",
                     "fromUid", client.uid(),
-                    "toUid", msg.getUid()
-            );
-            result.error(new IllegalStateException(
-                    "Recipient is not local to this proxy"));
-            return result;
+                    "toUid", msg.getUid());
+            return;
         }
-        boolean accepted = service.enqueueMessage(client, msg);
-        if (accepted) {
+        if (service.enqueueMessage(client, msg)) {
             service.flushMessageGrid();
-            result.done();
-        } else {
-            result.error(new IllegalStateException(
-                    "Message was not accepted by proxy queue"));
         }
-        return result;
     }
 
 
@@ -254,36 +239,35 @@ public class ProxyAuthorizedApiImpl
 
 
     @Override
-    public ARFuture<ServerDescriptorWithGeo[]> getServers() {
+    public void getServers() {
         var up = client.upstreamClient();
         if (up == null) {
-            return ARFuture.of(new ServerDescriptorWithGeo[]{
+            safeRemoteApi.sendServers(new ServerDescriptorWithGeo[]{
                     service.proxyDescriptorWithGeo()
             });
+            return;
         }
-        return up.getServers().map(descriptors -> {
+        up.serversMFuture.mapToARFuture().to(descriptors -> {
             if (descriptors == null) {
-                return new ServerDescriptorWithGeo[]{
+                safeRemoteApi.sendServers(new ServerDescriptorWithGeo[]{
                         service.proxyDescriptorWithGeo()
-                };
+                });
+                return;
             }
-            ServerDescriptorWithGeo[] out =
-                    new ServerDescriptorWithGeo[descriptors.length + 1];
+            ServerDescriptorWithGeo[] out = new ServerDescriptorWithGeo[descriptors.length + 1];
             System.arraycopy(descriptors, 0, out, 0, descriptors.length);
             out[descriptors.length] = service.proxyDescriptorWithGeo();
-            return out;
+            safeRemoteApi.sendServers(out);
         });
+        up.getAuthApi(AuthorizedApi::getServers);
     }
 
 
     @Override
-    public AFuture openReceiveWindow(long durationMs) {
-        client.openTemporaryReceiveWindow(
-                System.currentTimeMillis(),
-                durationMs
-        );
+    public void openReceiveWindow(long durationMs) {
+        client.openTemporaryReceiveWindow(System.currentTimeMillis(), durationMs);
         service.flushMessageGrid();
-        return AFuture.completed();
+        safeRemoteApi.sendOpenReceiveWindowAck();
     }
 
 
@@ -343,23 +327,14 @@ public class ProxyAuthorizedApiImpl
 
 
     @Override
-    public AFuture selfDestruct() {
-        AFuture result = AFuture.make();
+    public void selfDestruct() {
         var up = client.upstreamClient();
         if (up == null) {
-            service.deleteClient(client.uid(), true)
-                    .to(() -> result.done(), error -> result.error(error));
-            return result;
+            service.deleteClient(client.uid(), true).to(() -> safeRemoteApi.sendSelfDestructAck());
+            return;
         }
-        up.getAuthApi1(api -> {
-            api.selfDestruct().to(
-                    () -> service.deleteClient(client.uid(), true)
-                            .to(() -> result.done(), error -> result.error(error)),
-                    error -> result.error(error)
-            );
-            return ARFuture.of(null);
-        });
-        return result;
+        up.withAuthApi(AuthorizedApi::selfDestruct);
+        service.deleteClient(client.uid(), true).to(() -> safeRemoteApi.sendSelfDestructAck());
     }
 
 
@@ -371,43 +346,78 @@ public class ProxyAuthorizedApiImpl
     }
 
     @Override
-    public ARFuture<UUID> createAccessGroup(UUID owner, UUID[] uids) {
-        return forward(api -> api.createAccessGroup(owner, uids));
+    public void createAccessGroup(UUID owner, UUID[] uids) {
+        var up = client.upstreamClient();
+        if (up == null) return;
+        up.newAccessGroupIdMFuture.mapToARFuture().to(id ->
+                safeRemoteApi.sendNewAccessGroupId(owner, id));
+        up.getAuthApi(api -> api.createAccessGroup(owner, uids));
     }
 
     @Override
-    public ARFuture<Boolean> addToAccessGroup(UUID groupId, UUID uid) {
-        return forward(api -> api.addToAccessGroup(groupId, uid));
+    public void addToAccessGroup(UUID groupId, UUID uid) {
+        var up = client.upstreamClient();
+        if (up == null) return;
+        up.addToAccessGroupResults.getFuture(
+                io.aether.utils.tuples.Tuple2.of(groupId, uid))
+                .to(ok -> safeRemoteApi.sendAddToAccessGroupResult(groupId, uid, ok));
+        up.getAuthApi(api -> api.addToAccessGroup(groupId, uid));
     }
 
     @Override
-    public ARFuture<Boolean> removeFromAccessGroup(UUID groupId, UUID uid) {
-        return forward(api -> api.removeFromAccessGroup(groupId, uid));
+    public void removeFromAccessGroup(UUID groupId, UUID uid) {
+        var up = client.upstreamClient();
+        if (up == null) return;
+        up.removeFromAccessGroupResults.getFuture(
+                io.aether.utils.tuples.Tuple2.of(groupId, uid))
+                .to(ok -> safeRemoteApi.sendRemoveFromAccessGroupResult(groupId, uid, ok));
+        up.getAuthApi(api -> api.removeFromAccessGroup(groupId, uid));
     }
 
     @Override
-    public AFuture checkAccessForSendMessage(UUID uid) {
-        return forwardAFuture(api -> api.checkAccessForSendMessage(uid));
+    public void checkAccessForSendMessage(UUID uid) {
+        var up = client.upstreamClient();
+        if (up == null) return;
+        up.accessCheckAcks.getFuture(uid)
+                .to(ok -> safeRemoteApi.sendAccessCheckAck(uid));
+        up.getAuthApi(api -> api.checkAccessForSendMessage(uid));
     }
 
     @Override
-    public ARFuture<UUID[]> getAccessGroups(UUID uid) {
-        return forward(api -> api.getAccessGroups(uid));
+    public void getAccessGroups(UUID uid) {
+        var up = client.upstreamClient();
+        if (up == null) return;
+        up.clientGroups.getFuture(uid).to(groups ->
+                safeRemoteApi.sendAccessGroupsOfClient(
+                        uid, groups.toArray(new UUID[0])));
+        up.getAuthApi(api -> api.getAccessGroups(uid));
     }
 
     @Override
-    public ARFuture<AccessGroup> getAccessGroup(UUID groupId) {
-        return forward(api -> api.getAccessGroup(groupId));
+    public void getAccessGroup(UUID groupId) {
+        var up = client.upstreamClient();
+        if (up == null) return;
+        up.accessGroups.getFuture(groupId).to(safeRemoteApi::sendAccessGroup);
+        up.getAuthApi(api -> api.getAccessGroup(groupId));
     }
 
     @Override
-    public ARFuture<UUID[]> getAllAccessedClients(UUID uid) {
-        return forward(api -> api.getAllAccessedClients(uid));
+    public void getAllAccessedClients(UUID uid) {
+        var up = client.upstreamClient();
+        if (up == null) return;
+        up.allAccessedClients.getFuture(uid).to(clients ->
+                safeRemoteApi.sendAccessedClients(
+                        uid, clients.toArray(new UUID[0])));
+        up.getAuthApi(api -> api.getAllAccessedClients(uid));
     }
 
     @Override
-    public ARFuture<Boolean> checkAccessForSendMessage2(UUID uid1, UUID uid2) {
-        return forward(api -> api.checkAccessForSendMessage2(uid1, uid2));
+    public void checkAccessForSendMessage2(UUID uid1, UUID uid2) {
+        var up = client.upstreamClient();
+        if (up == null) return;
+        up.accessCheckCache.getFuture(new AccessCheckPair(uid1, uid2)).to(ok ->
+                safeRemoteApi.sendAccessCheckResult2(uid1, uid2, ok));
+        up.getAuthApi(api -> api.checkAccessForSendMessage2(uid1, uid2));
     }
 
     @Override
@@ -461,37 +471,57 @@ public class ProxyAuthorizedApiImpl
     }
 
     @Override
-    public ARFuture<ClientActivity[]> getClientActivity(UUID uid, long fromTime, long toTime, int limit) {
-        return forward(api -> api.getClientActivity(uid, fromTime, toTime, limit));
+    public void getClientActivity(UUID uid, long fromTime, long toTime, int limit) {
+        var up = client.upstreamClient();
+        if (up == null) return;
+        up.clientActivities.getFuture(uid).to(a -> safeRemoteApi.sendClientActivity(uid, a));
+        up.getAuthApi(api -> api.getClientActivity(uid, fromTime, toTime, limit));
     }
 
     @Override
-    public ARFuture<ClientLogEntry[]> searchClientLogs(UUID uid, String query, int limit) {
-        return forward(api -> api.searchClientLogs(uid, query, limit));
+    public void searchClientLogs(UUID uid, String query, int limit) {
+        var up = client.upstreamClient();
+        if (up == null) return;
+        up.clientLogs.getFuture(uid).to(l -> safeRemoteApi.sendClientLogs(uid, l));
+        up.getAuthApi(api -> api.searchClientLogs(uid, query, limit));
     }
 
     @Override
-    public ARFuture<ClientConnectionInfo[]> getClientConnections(UUID uid, int limit) {
-        return forward(api -> api.getClientConnections(uid, limit));
+    public void getClientConnections(UUID uid, int limit) {
+        var up = client.upstreamClient();
+        if (up == null) return;
+        up.clientConnections.getFuture(uid).to(c -> safeRemoteApi.sendClientConnections(uid, c));
+        up.getAuthApi(api -> api.getClientConnections(uid, limit));
     }
 
     @Override
-    public ARFuture<MessageInfo[]> getClientMessages(UUID uid, long fromTime, long toTime, int limit) {
-        return forward(api -> api.getClientMessages(uid, fromTime, toTime, limit));
+    public void getClientMessages(UUID uid, long fromTime, long toTime, int limit) {
+        var up = client.upstreamClient();
+        if (up == null) return;
+        up.clientMessages.getFuture(uid).to(m -> safeRemoteApi.sendClientMessages(uid, m));
+        up.getAuthApi(api -> api.getClientMessages(uid, fromTime, toTime, limit));
     }
 
     @Override
-    public ARFuture<Uap> getUap(UUID uid) {
-        return forward(api -> api.getUap(uid));
+    public void getUap(UUID uid) {
+        var up = client.upstreamClient();
+        if (up == null) return;
+        up.uaps.getFuture(uid).to(u -> safeRemoteApi.sendUap(uid, u));
+        up.getAuthApi(api -> api.getUap(uid));
     }
 
     @Override
-    public ARFuture<WebRtcSession> requestWebRtcSession(UUID uid) {
+    public void requestWebRtcSession(UUID uid) {
         if (service.clients().isLocal(uid)) {
             ProxyClientDescriptor local = service.clients().getByUid(uid);
-            return ARFuture.of(local == null ? null : local.webRtcSession);
+            safeRemoteApi.sendWebRtcSession(uid, local == null ? null : local.webRtcSession);
+            return;
         }
-        return forward(api -> api.requestWebRtcSession(uid));
+        var up = client.upstreamClient();
+        if (up == null) return;
+        up.webRtcSessionsMFuture.mapToARFuture().to(session ->
+                safeRemoteApi.sendWebRtcSession(uid, session));
+        up.getAuthApi(api -> api.requestWebRtcSession(uid));
     }
 
     @Override
@@ -501,19 +531,31 @@ public class ProxyAuthorizedApiImpl
     }
 
     @Override
-    public ARFuture<ClientTiming> getClientTiming(UUID uid) {
-        return forward(api -> api.getClientTiming(uid));
+    public void getClientTiming(UUID uid) {
+        var up = client.upstreamClient();
+        if (up == null) return;
+        up.clientTimings.getFuture(uid).to(t -> safeRemoteApi.sendClientTiming(uid, t));
+        up.getAuthApi(api -> api.getClientTiming(uid));
     }
 
 
     @Override
-    public ARFuture<UUID> getAlias() {
-        return forward(AuthorizedApi::getAlias);
+    public void getAlias() {
+        var up = client.upstreamClient();
+        if (up == null) return;
+        up.aliasMFuture.mapToARFuture().to(safeRemoteApi::sendAlias);
+        up.getAuthApi(AuthorizedApi::getAlias);
     }
 
     @Override
-    public AFuture setAlias(UUID alias) {
-        return forwardAFuture(api -> api.setAlias(alias));
+    public void setAlias(UUID alias) {
+        var up = client.upstreamClient();
+        if (up == null) {
+            safeRemoteApi.sendSetAliasAck();
+            return;
+        }
+        up.getAuthApi(api -> api.setAlias(alias));
+        safeRemoteApi.sendSetAliasAck();
     }
 
 
@@ -530,27 +572,5 @@ public class ProxyAuthorizedApiImpl
         up.getAuthApi(call::accept);
     }
 
-    private <T> ARFuture<T> forward(Function<AuthorizedApi, ARFuture<T>> call) {
-        var up = client.upstreamClient();
-        if (up == null) {
-            return ARFuture.ofThrow(new IllegalStateException(
-                    "No upstream client for uid " + client.uid()));
-        }
-        return up.getAuthApi1(call::apply);
-    }
 
-    private AFuture forwardAFuture(Function<AuthorizedApi, AFuture> call) {
-        AFuture result = AFuture.make();
-        var up = client.upstreamClient();
-        if (up == null) {
-            result.error(new IllegalStateException(
-                    "No upstream client for uid " + client.uid()));
-            return result;
-        }
-        up.getAuthApi1(api -> {
-            call.apply(api).to(result::done);
-            return ARFuture.of(null);
-        });
-        return result;
-    }
 }

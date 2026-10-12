@@ -60,13 +60,13 @@ public final class AetherCloudClient implements Destroyable {
     public final AFuture recoveryFuture = AFuture.make();
     final LNode logClientContext;
     final Map<Integer, ConnectionWork> connections = new ConcurrentHashMap<>();
-    final BMap<UUID, ClientCloud> clouds = RCol.bMap("CloudCache");
+    public final BMap<UUID, ClientCloud> clouds = RCol.bMap("CloudCache");
     final AtomicReference<RegStatus> regStatus = new AtomicReference<>(RegStatus.NO);
-    final BMap<Integer, ServerDescriptor> servers = RCol.bMap("ServerCache");
-    final BMap<UUID, Set<UUID>> clientGroups = RCol.bMap("ClientGroupsCache");
-    final BMap<UUID, AccessGroup> accessGroups = RCol.bMap("AccessGroupsCache");
-    final BMap<UUID, Set<UUID>> allAccessedClients = RCol.bMap("AllAccessedClientsCache");
-    final BMap<AccessCheckPair, Boolean> accessCheckCache = RCol.bMap("AccessCheckCache");
+    public final BMap<Integer, ServerDescriptor> servers = RCol.bMap("ServerCache");
+    public final BMap<UUID, Set<UUID>> clientGroups = RCol.bMap("ClientGroupsCache");
+    public final BMap<UUID, AccessGroup> accessGroups = RCol.bMap("AccessGroupsCache");
+    public final BMap<UUID, Set<UUID>> allAccessedClients = RCol.bMap("AllAccessedClientsCache");
+    public final BMap<AccessCheckPair, Boolean> accessCheckCache = RCol.bMap("AccessCheckCache");
     final long lastSecond;
     final Map<UUID, MessageNode> messageNodeMap = new ConcurrentHashMap<>();
     final EventConsumer<UUID> onNewChild = new EventConsumer<>();
@@ -85,8 +85,90 @@ public final class AetherCloudClient implements Destroyable {
     private final PeerIdentityManager peerIdentityManager;
 
 
-    final io.aether.utils.slots.AMFuture<io.aether.api.common.ServerDescriptorWithGeo[]> serversMFuture
+    public final io.aether.utils.slots.AMFuture<io.aether.api.common.ServerDescriptorWithGeo[]> serversMFuture
             = new io.aether.utils.slots.AMFuture<>();
+
+    public final io.aether.utils.slots.AMFuture<io.aether.api.clientserverapi.WebRtcSession> webRtcSessionsMFuture
+            = new io.aether.utils.slots.AMFuture<>();
+    public final io.aether.utils.slots.AMFuture<java.util.UUID> newAccessGroupIdMFuture
+            = new io.aether.utils.slots.AMFuture<>();
+    public final io.aether.utils.slots.AMFuture<IpInfo> myIpMFuture
+            = new io.aether.utils.slots.AMFuture<>();
+
+
+    public final io.aether.utils.slots.AMFuture<Boolean> pingAckMFuture
+            = new io.aether.utils.slots.AMFuture<>();
+
+
+    public final io.aether.utils.slots.AMFuture<Boolean> openReceiveWindowAckMFuture
+            = new io.aether.utils.slots.AMFuture<>();
+
+
+    public final io.aether.utils.slots.AMFuture<Boolean> addServersToCloudAckMFuture
+            = new io.aether.utils.slots.AMFuture<>();
+
+
+    public final io.aether.utils.slots.AMFuture<Boolean> removeServersFromCloudAckMFuture
+            = new io.aether.utils.slots.AMFuture<>();
+
+
+    public final io.aether.utils.slots.AMFuture<Boolean> selfDestructAckMFuture
+            = new io.aether.utils.slots.AMFuture<>();
+
+
+    public final io.aether.utils.slots.AMFuture<Boolean> setAliasAckMFuture
+            = new io.aether.utils.slots.AMFuture<>();
+
+
+    public final io.aether.utils.slots.AMFuture<Boolean> setParentAckMFuture
+            = new io.aether.utils.slots.AMFuture<>();
+
+
+    public final io.aether.utils.slots.AMFuture<Boolean> blockAckMFuture
+            = new io.aether.utils.slots.AMFuture<>();
+
+
+    public final io.aether.utils.slots.AMFuture<Boolean> unblockAckMFuture
+            = new io.aether.utils.slots.AMFuture<>();
+
+
+    public final io.aether.utils.slots.AMFuture<Boolean> setBeneficiaryAckMFuture
+            = new io.aether.utils.slots.AMFuture<>();
+
+
+    public final io.aether.utils.slots.AMFuture<Boolean> setMsgQueueLimitAckMFuture
+            = new io.aether.utils.slots.AMFuture<>();
+
+
+    public final io.aether.utils.slots.AMFuture<Boolean> setMsgTimeLimitAckMFuture
+            = new io.aether.utils.slots.AMFuture<>();
+
+    public final BMap<java.util.UUID, io.aether.api.common.CloudConfig> cloudPositions
+            = RCol.bMap("CloudPositionsCache");
+
+
+    public final io.aether.utils.slots.AMFuture<java.util.UUID> aliasMFuture
+            = new io.aether.utils.slots.AMFuture<>();
+    public final BMap<java.util.UUID, io.aether.api.clientserverapi.Uap> uaps
+            = RCol.bMap("UapsCache");
+    public final BMap<java.util.UUID, io.aether.api.clientserverapi.ClientTiming> clientTimings
+            = RCol.bMap("ClientTimingsCache");
+    public final BMap<java.util.UUID, io.aether.api.clientserverapi.ClientActivity[]> clientActivities
+            = RCol.bMap("ClientActivitiesCache");
+    public final BMap<java.util.UUID, io.aether.api.clientserverapi.ClientLogEntry[]> clientLogs
+            = RCol.bMap("ClientLogsCache");
+    public final BMap<java.util.UUID, io.aether.api.clientserverapi.ClientConnectionInfo[]> clientConnections
+            = RCol.bMap("ClientConnectionsCache");
+    public final BMap<java.util.UUID, io.aether.api.clientserverapi.MessageInfo[]> clientMessages
+            = RCol.bMap("ClientMessagesCache");
+    public final BMap<java.util.UUID, Boolean> accessCheckAcks
+            = RCol.bMap("AccessCheckAcksCache");
+    public final BMap<io.aether.utils.tuples.Tuple2<java.util.UUID, java.util.UUID>, Boolean> addToAccessGroupResults
+            = RCol.bMap("AddToAccessGroupResultsCache");
+    public final BMap<io.aether.utils.tuples.Tuple2<java.util.UUID, java.util.UUID>, Boolean> removeFromAccessGroupResults
+            = RCol.bMap("RemoveFromAccessGroupResultsCache");
+
+
 
 
 
@@ -639,6 +721,12 @@ public final class AetherCloudClient implements Destroyable {
 
 
 
+
+    public void withAuthApi(@NotNull AConsumer<AuthorizedApi> t) {
+        getAuthApiRemote(t::accept);
+    }
+
+
     public <T> ARFuture<T> getAuthApi1(@NotNull AFunction<AuthorizedApi, ARFuture<T>> t) {
         if (destroyer.isDestroyed())
             return ARFuture.canceled();
@@ -885,7 +973,12 @@ public final class AetherCloudClient implements Destroyable {
     }
 
     public ARFuture<AccessGroupI> createAccessGroupWithOwner(UUID owner, UUID... uids) {
-        return getAuthApi1(c -> c.createAccessGroup(owner, uids)).map(id -> new AccessGroupImpl(new AccessGroup(id, RU.timeSeconds(), owner, new UUID[0])) {
+        newAccessGroupIdMFuture.refresh();
+
+        withAuthApi(c -> c.createAccessGroup(owner, uids));
+
+        return newAccessGroupIdMFuture.mapToARFuture().map(id ->
+                new AccessGroupImpl(new AccessGroup(id, RU.timeSeconds(), owner, new UUID[0])) {
 
             @Override
             public ARFuture<Boolean> add(UUID uuid) {
@@ -912,21 +1005,23 @@ public final class AetherCloudClient implements Destroyable {
     }
 
     public ARFuture<io.aether.api.clientserverapi.WebRtcSession> requestWebRtcSession(UUID uid) {
-        ARFuture<io.aether.api.clientserverapi.WebRtcSession> res = ARFuture.make();
+        webRtcSessionsMFuture.refresh();
         getServerDescriptorForUid(uid, sd -> {
             ConnectionWork cw = connections.get(sd.getId());
             if (cw != null) {
-                cw.authorizedApi.requestWebRtcSession(uid).to(res::done).onError(res::error);
+                cw.authorizedApi.requestWebRtcSession(uid);
             } else {
-                getConnection(sd).authorizedApi.requestWebRtcSession(uid).to(res::done).onError(res::error);
+                getConnection(sd).authorizedApi.requestWebRtcSession(uid);
             }
         });
-        return res;
+        return webRtcSessionsMFuture.mapToARFuture();
     }
 
 
     public ARFuture<ServerDescriptorWithGeo[]> getServers() {
-        getAuthApi1(AuthorizedApi::getServers);
+
+        withAuthApi(AuthorizedApi::getServers);
+
         return serversMFuture.mapToARFuture();
     }
 
@@ -1058,57 +1153,24 @@ public final class AetherCloudClient implements Destroyable {
 
 
     public ARFuture<IpInfo> getMyIp() {
-        ARFuture<IpInfo> result = ARFuture.make();
-        getMyIp0(result);
-        return result;
-    }
-
-    private void getMyIp0(ARFuture<IpInfo> result) {
-        ARFuture<IpInfo> timeout = ARFuture.make();
-        timeout.timeoutMs(2000, () -> {
-            if (!result.isDone()) {
-                retryGetMyIp(result);
-            }
-        });
+        myIpMFuture.refresh();
         for (var conn : connections.values()) {
             if (conn.isWritable()) {
-                conn.getRootApi().getMyIp().to(r -> {
-                    if (result.tryDone(r)) timeout.cancel();
-                }).onError(e -> {
-                    if (!result.isDone()) retryGetMyIp(result);
-                });
-                return;
+                conn.getRootApi().getMyIp();
+                return myIpMFuture.mapToARFuture();
             }
         }
         getAnyConnection().to(c -> {
             if (c instanceof ConnectionWork cw && cw.isWritable()) {
-                cw.getRootApi().getMyIp().to(r -> {
-                    if (result.tryDone(r)) timeout.cancel();
-                }).onError(e -> {
-                    if (!result.isDone()) retryGetMyIp(result);
-                });
+                cw.getRootApi().getMyIp();
             } else if (c instanceof ConnectionRegistration cr && cr.isWritable()) {
-                cr.getRootApi().getMyIp().to(r -> {
-                    if (result.tryDone(r)) timeout.cancel();
-                }).onError(e -> {
-                    if (!result.isDone()) retryGetMyIp(result);
-                });
-            } else {
-                if (!result.isDone()) retryGetMyIp(result);
+                cr.getRootApi().getMyIp();
             }
-        }).onError(e -> {
-            if (!result.isDone()) retryGetMyIp(result);
         });
+        return myIpMFuture.mapToARFuture();
     }
 
-    private void retryGetMyIp(ARFuture<IpInfo> result) {
-        if (destroyer.isDestroyed()) return;
-        RU.schedule(500, () -> {
-            if (!result.isDone()) {
-                getMyIp0(result);
-            }
-        });
-    }
+
 
     public void reportAppliedConfig(AppliedConfig[] configs) {
         for (AppliedConfig ac : configs) {

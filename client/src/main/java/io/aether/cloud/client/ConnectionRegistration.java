@@ -2,9 +2,13 @@ package io.aether.cloud.client;
 
 import io.aether.api.CryptoUtils;
 import io.aether.api.clientserverapi.*;
+
 import io.aether.api.common.Cloud;
 import io.aether.api.common.KeySymmetric;
 import io.aether.api.common.PowMethod;
+import io.aether.api.common.ServerDescriptor;
+import io.aether.api.common.WorkProofDTO;
+
 import io.aether.crypto.AKey;
 import io.aether.crypto.CryptoEngine;
 import io.aether.crypto.CryptoProviderFactory;

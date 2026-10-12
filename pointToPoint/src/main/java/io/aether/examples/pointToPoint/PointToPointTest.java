@@ -555,16 +555,12 @@ public class PointToPointTest {
                         "open client2 cloud API"
                 );
 
-                awaitFutureSuccess(
-                        client1Api.addServersToCloud(sids),
-                        10_000,
-                        "add WORK servers to client1 cloud"
-                );
-                awaitFutureSuccess(
-                        client2Api.addServersToCloud(sids),
-                        10_000,
-                        "add WORK servers to client2 cloud"
-                );
+
+                client1Api.addServersToCloud(sids);
+
+
+                client2Api.addServersToCloud(sids);
+
 
                 waitForCloudSids(
                         client1,
@@ -1153,11 +1149,9 @@ public class PointToPointTest {
                     "open " + name + " auth API for self-destruct"
             );
 
-            awaitFutureSuccess(
-                    authApi.selfDestruct(),
-                    10_000,
-                    "self-destruct " + name
-            );
+
+            authApi.selfDestruct();
+
         } finally {
             awaitFutureSuccess(
                     client.destroy(true),
@@ -1178,11 +1172,9 @@ public class PointToPointTest {
                     "open " + name + " auth API for cleanup"
             );
 
-            awaitFutureSuccess(
-                    authApi.selfDestruct(),
-                    5_000,
-                    "self-destruct " + name
-            );
+
+            authApi.selfDestruct();
+
         } catch (Throwable cleanupError) {
             Log.error(
                     "Best-effort canary cleanup failed for " + name,
@@ -1348,10 +1340,15 @@ public class PointToPointTest {
             service.onNewChildren((u) -> {
                 groupFuture.to(group -> {
                     service.getClientApi(u, a -> {
-                        a.addAccessGroup(group.getId()).to(f -> {
+
+                        var ackFuture = service.addToAccessGroupResults.getFuture(
+                                io.aether.utils.tuples.Tuple2.of(group.getId(), u));
+                        a.addAccessGroup(group.getId());
+                        ackFuture.to(f -> {
                             allChildren.add(u);
                             Log.info("NEW CHILD DONE: $uid", "uid", u, "result", f);
                         }).onError(e -> Log.error("Failed to add access group: $e", "e", e));
+
                     });
                     Log.info("NEW CHILD: $uid", "uid", u);
                 });

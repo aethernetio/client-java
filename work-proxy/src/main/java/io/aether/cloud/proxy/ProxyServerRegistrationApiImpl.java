@@ -2,9 +2,9 @@
 package io.aether.cloud.proxy;
 
 import io.aether.api.CryptoUtils;
-import io.aether.api.clientserverapi.ClientApiRegUnsafeRemote;
-import io.aether.api.clientserverapi.GlobalApiStream;
-import io.aether.api.clientserverapi.GlobalRegClientApiStream;
+
+import io.aether.api.clientserverapi.ClientApiUnsafeRemote;
+
 import io.aether.api.clientserverapi.ServerRegistrationApi;
 
 import io.aether.api.clientserverapi.RecoveryResult;
@@ -43,7 +43,9 @@ public final class ProxyServerRegistrationApiImpl
     final AMFuture<CryptoEngine> backCryptoEngine;
 
     private final ProxyService service;
-    private final ClientApiRegUnsafeRemote remoteRootApi;
+
+    private final ClientApiUnsafeRemote remoteRootApi;
+
     private final IPAddress clientIp;
 
     private volatile ProxyUpstreamRegistrationSession upstream;
@@ -56,7 +58,9 @@ public final class ProxyServerRegistrationApiImpl
     private int[] cachedPasswords;
 
     public ProxyServerRegistrationApiImpl(
-            ClientApiRegUnsafeRemote remoteRootApi,
+
+            ClientApiUnsafeRemote remoteRootApi,
+
             ProxyService service,
             CryptoLib cryptoLib,
             AMFuture<CryptoEngine> backCryptoEngine,
@@ -80,30 +84,20 @@ public final class ProxyServerRegistrationApiImpl
 
 
     @Override
-    public ARFuture<WorkProofDTO> requestWorkProofData(
-            UUID parent,
-            PowMethod powMethods
-    ) {
+    public void requestWorkProofData(UUID parent, PowMethod powMethods) {
         if (this.parent != null && !this.parent.equals(parent)) {
-            return ARFuture.ofThrow(new IllegalStateException(
-                    "Registration parent changed from "
-                            + this.parent + " to " + parent
-            ));
+            Log.warn("Registration parent changed", "from", this.parent, "to", parent);
+            return;
         }
         this.parent = parent;
 
-
-        ARFuture<WorkProofDTO> result = ARFuture.make();
         try {
-
             ProxyUpstreamRegistrationSession session =
                     new ProxyUpstreamRegistrationSession(
                             service.upstreamRegistrationUris().get(0),
                             cryptoLib,
                             parent,
-                            service.rootSigners()
-                    );
-
+                            service.rootSigners());
             session.connect();
             this.upstream = session;
 
@@ -111,144 +105,73 @@ public final class ProxyServerRegistrationApiImpl
                     wpd -> {
                         originalWorkProof = wpd;
                         SignedKey proxyGlobalKey = CryptoUtils.of(
-                                service.registrationKey(cryptoLib)
-                                        .getPublicKeySigned()
-                        );
+                                service.registrationKey(cryptoLib).getPublicKeySigned());
                         proxyWorkProof = new WorkProofDTO(
                                 wpd.getSalt(),
                                 wpd.getSuffix(),
                                 wpd.getPoolSize(),
                                 wpd.getMaxHashVal(),
-                                proxyGlobalKey
-                        );
-                        result.done(proxyWorkProof);
+                                proxyGlobalKey);
+                        remoteRootApi.sendWorkProofData(parent, proxyWorkProof);
                     },
-                    error -> result.error(error)
-            );
+                    error -> Log.error("Proxy requestWorkProofData failed", error));
         } catch (RuntimeException error) {
-            result.error(error);
+            Log.error("Proxy requestWorkProofData failed", error);
         }
-        return result;
     }
 
     @Override
-    public ARFuture<ServerDescriptor[]> resolveServers(Cloud serverIds) {
-        short[] data = serverIds == null
-                ? new short[0]
-                : serverIds.getData();
+    public void resolveServers(Cloud serverIds) {
+        short[] data = serverIds == null ? new short[0] : serverIds.getData();
         for (short sid : data) {
             if (sid == service.proxySid()) {
-                return ARFuture.of(new ServerDescriptor[]{
+                remoteRootApi.sendResolvedServers(new ServerDescriptor[]{
                         service.proxyDescriptor()
                 });
+                return;
             }
         }
         if (upstream == null) {
-            return ARFuture.of(new ServerDescriptor[0]);
-        }
-        return upstream.resolveServers(serverIds);
-    }
-
-    @Override
-    public void registration(
-            String salt,
-            String suffix,
-            int[] passwords,
-            UUID parent,
-            GlobalApiStream globalApi
-    ) {
-        if (originalWorkProof == null) {
-            Log.error("ProxyServerRegistrationApiImpl: registration before WPD");
+            remoteRootApi.sendResolvedServers(new ServerDescriptor[0]);
             return;
         }
-        this.cachedSalt = salt;
-        this.cachedSuffix = suffix;
-        this.cachedPasswords = passwords;
-        this.parent = parent;
-
-
-
-        if (upstream == null) {
-            throw new IllegalStateException(
-                    "Upstream registration session is missing"
-            );
-        }
-
-        service.globalClientApi(
-                parent,
-                cryptoLib,
-                globalApi.asIn(),
-                clientIp,
-                upstream,
-                salt,
-                suffix,
-                passwords
-        ).to(
-                data ->
-                        remoteRootApi.enterGlobal(
-                                GlobalRegClientApiStream
-                                        .Out
-                                        .send(data)
-                        ),
-                error ->
-                        Log.error(
-                                "Proxy global registration failed",
-                                error,
-                                "parent",
-                                parent
-                        )
-        );
-
-
+        upstream.resolveServers(serverIds).to(
+                remoteRootApi::sendResolvedServers,
+                error -> Log.error("Proxy resolveServers failed", error));
     }
 
-    @Override
-    public ARFuture<RecoveryResult> recovery(
-            UUID uid,
-            Key oldMasterKey,
-            Key newMasterKey
-    ) {
-        ARFuture<RecoveryResult> result = ARFuture.make();
 
+    @Override
+    public void recovery(UUID uid, Key oldMasterKey, Key newMasterKey) {
         ProxyUpstreamRegistrationSession session = null;
         try {
             session = new ProxyUpstreamRegistrationSession(
                     service.upstreamRegistrationUris().get(0),
                     cryptoLib,
                     null,
-                    service.rootSigners()
-            );
+                    service.rootSigners());
             session.connect();
 
-            ProxyUpstreamRegistrationSession recoverySession = session;
-            session.recovery(
-                    uid,
-                    oldMasterKey,
-                    newMasterKey
-            ).to(
+            ProxyUpstreamRegistrationSession finalSession = session;
+            session.recovery(uid, oldMasterKey, newMasterKey).to(
                     recovered -> {
-                        recoverySession.close();
-                        result.done(recovered);
+                        finalSession.close();
+                        remoteRootApi.sendRecoveredClientState(recovered);
                     },
                     error -> {
-                        recoverySession.close();
-                        result.error(error);
-                    }
-            );
+                        finalSession.close();
+                        Log.error("Proxy recovery failed", error);
+                    });
         } catch (RuntimeException error) {
-            if (session != null) {
-                session.close();
-            }
-            result.error(error);
+            if (session != null) session.close();
+            Log.error("Proxy recovery failed", error);
         }
-
-        return result;
     }
 
 
 
             @Override
-            public ARFuture<RegistrationDirectResult> registrationDirect(
+            public void registrationDirect(
                     String salt,
                     String suffix,
                     int[] passwords,
@@ -256,57 +179,27 @@ public final class ProxyServerRegistrationApiImpl
                     Key masterKey
             ) {
                 if (originalWorkProof == null) {
-                    return ARFuture.ofThrow(
-                            new IllegalStateException(
-                                    "registrationDirect before WorkProofData"
-                            )
-                    );
+                    Log.error("Proxy registrationDirect before WorkProofData");
+                    return;
                 }
-
-                if (
-                        this.parent != null
-                                && !this.parent.equals(parent)
-                ) {
-                    return ARFuture.ofThrow(
-                            new IllegalStateException(
-                                    "Registration parent changed from "
-                                            + this.parent
-                                            + " to "
-                                            + parent
-                            )
-                    );
+                if (this.parent != null && !this.parent.equals(parent)) {
+                    Log.warn("Registration parent changed", "from", this.parent, "to", parent);
+                    return;
                 }
-
                 ProxyUpstreamRegistrationSession session = upstream;
                 if (session == null) {
-                    return ARFuture.ofThrow(
-                            new IllegalStateException(
-                                    "Upstream registration session is missing"
-                            )
-                    );
+                    Log.error("Upstream registration session is missing");
+                    return;
                 }
-
                 this.parent = parent;
 
-                ProxyGlobalRegServerApiImpl registration =
-                        new ProxyGlobalRegServerApiImpl(
-                                service,
-                                session,
-                                parent,
-                                cryptoLib,
-                                salt,
-                                suffix,
-                                passwords
-                        );
-
-                registration.setMasterKey(masterKey);
-
-                return registration.finish().map(result ->
-                        new RegistrationDirectResult(
-                                result.getAlias(),
-                                result.getUid(),
-                                result.getCloud()
-                        )
-                );
+                session.finish(CryptoUtils.of(masterKey).asSymmetric(), salt, suffix, passwords)
+                        .to(
+                                result -> remoteRootApi.sendRegistrationDirect(
+                                        new RegistrationDirectResult(
+                                                result.getAlias(),
+                                                result.getUid(),
+                                                result.getCloud())),
+                                error -> Log.error("Proxy registrationDirect failed", error));
             }
 }

@@ -367,9 +367,10 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                 );
 
                 try {
-                    a.sendMessageWithResult(outboundMessage)
-                            .to(messageFuture::tryDone)
-                            .onError(messageFuture::tryError);
+
+                    a.sendMessageWithResult(outboundMessage);
+                    messageFuture.tryDone();
+
                 } catch (Throwable error) {
                     messageFuture.tryError(error);
                 }
@@ -445,17 +446,9 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             long nextConnectMsDuration,
             long rxWindowMs
     ) {
-        AFuture result = api.ping(
-                nextConnectMsDuration,
-                rxWindowMs
-        );
-
-        api.setReceiveWindow(
-                nextConnectMsDuration,
-                rxWindowMs
-        );
-
-        return result;
+        api.ping(nextConnectMsDuration, rxWindowMs);
+        api.setReceiveWindow(nextConnectMsDuration, rxWindowMs);
+        return AFuture.completed();
     }
 
 
@@ -962,4 +955,46 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                 error
         );
     }
+
+
+    @Override
+    public void sendCurrentTimeUtc(long time) {
+        Log.warn("ConnectionWork: unexpected sendCurrentTimeUtc");
+    }
+
+    @Override
+    public void sendMyIpInfo(io.aether.api.common.IpInfo info) {
+        client.myIpMFuture.set(info);
+    }
+
+    @Override
+    public void enterRegistration(ClientApiRegSafeStream stream) {
+        Log.warn("ConnectionWork: unexpected enterRegistration");
+    }
+
+    @Override
+    public void sendAsymmetricPublicKey(io.aether.api.common.SignedKey key) {
+        Log.warn("ConnectionWork: unexpected sendAsymmetricPublicKey");
+    }
+
+    @Override
+    public void sendRegistrationDirect(RegistrationDirectResult result) {
+        Log.warn("ConnectionWork: unexpected sendRegistrationDirect");
+    }
+
+    @Override
+    public void sendWorkProofData(java.util.UUID parent, io.aether.api.common.WorkProofDTO dto) {
+        Log.warn("ConnectionWork: unexpected sendWorkProofData");
+    }
+
+    @Override
+    public void sendResolvedServers(io.aether.api.common.ServerDescriptor[] servers) {
+        Log.warn("ConnectionWork: unexpected sendResolvedServers");
+    }
+
+    @Override
+    public void sendRecoveredClientState(RecoveryResult result) {
+        Log.warn("ConnectionWork: unexpected sendRecoveredClientState");
+    }
+
 }

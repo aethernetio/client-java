@@ -168,8 +168,8 @@ public final class ProxyLoginApiImpl implements LoginApi {
 
 
     @Override
-    public ARFuture<Long> getTimeUTC() {
-        return ARFuture.of(System.currentTimeMillis());
+    public void getTimeUTC() {
+        remoteRootApi.sendCurrentTimeUtc(System.currentTimeMillis());
     }
 
 
@@ -180,16 +180,14 @@ public final class ProxyLoginApiImpl implements LoginApi {
 
 
     @Override
-    public ARFuture<IpInfo> getMyIp() {
+    public void getMyIp() {
         String ip = (String) ctx.getProperty(1);
         Integer port = (Integer) ctx.getProperty(2);
         if (ip == null) ip = "0.0.0.0";
         if (port == null) port = 0;
         var ipAddr = io.aether.api.common.IPAddressUtil.of(
-                java.net.URI.create("tcp://" + ip)
-        )[0];
-        short finalPort = port.shortValue();
-        return ARFuture.of(new IpInfo(ipAddr, finalPort, 0.0, 0.0));
+                java.net.URI.create("tcp://" + ip))[0];
+        remoteRootApi.sendMyIpInfo(new IpInfo(ipAddr, port.shortValue(), 0.0, 0.0));
     }
 
     @Override

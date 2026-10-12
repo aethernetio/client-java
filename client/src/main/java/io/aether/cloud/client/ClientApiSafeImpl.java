@@ -1,12 +1,8 @@
 package io.aether.cloud.client;
 
-import io.aether.api.clientserverapi.ClientApiSafe;
 
-import io.aether.api.clientserverapi.ClientInteractionClientStream;
-import io.aether.api.clientserverapi.ServerApiByUidClient;
+import io.aether.api.clientserverapi.*;
 
-import io.aether.api.clientserverapi.Message;
-import io.aether.api.clientserverapi.ProbeReport;
 import io.aether.api.common.*;
 import io.aether.logger.Log;
 import io.aether.utils.RU;
@@ -235,7 +231,7 @@ class ClientApiSafeImpl implements ClientApiSafe {
     }
 
     @Override
-    public void sendSignedUid(Sign[] signs) {
+    public void sendSignedUid(KeySignPublic[] keys, Sign[] signs) {
         client.peerIdentityManager().onSignedUid(signs);
     }
 
@@ -243,6 +239,204 @@ class ClientApiSafeImpl implements ClientApiSafe {
     @Override
     public void sendServers(ServerDescriptorWithGeo[] servers) {
         client.serversMFuture.set(servers);
+    }
+
+
+
+    // ===== Response handlers (new C-ABI-style) =====
+
+    @Override
+    public void sendPingAck() {
+        client.pingAckMFuture.set(Boolean.TRUE);
+    }
+
+    @Override
+    public void sendAddToAccessGroupResult(UUID groupId, UUID uid, boolean ok) {
+        client.addToAccessGroupResults.put(
+                io.aether.utils.tuples.Tuple2.of(groupId, uid), ok);
+    }
+
+    @Override
+    public void sendRemoveFromAccessGroupResult(UUID groupId, UUID uid, boolean ok) {
+        client.removeFromAccessGroupResults.put(
+                io.aether.utils.tuples.Tuple2.of(groupId, uid), ok);
+    }
+
+    @Override
+    public void sendAccessGroupsOfClient(UUID uid, UUID[] groupIds) {
+        Log.debug("Received AccessGroups of client $uid: $count", "uid", uid, "count", groupIds.length);
+        client.clientGroups.put(uid, Set.of(groupIds));
+    }
+
+    @Override
+    public void sendAccessGroup(AccessGroup group) {
+        if (group != null) {
+            client.accessGroups.put(group.getId(), group);
+        }
+    }
+
+    @Override
+    public void sendAccessedClients(UUID uid, UUID[] clients) {
+        Log.debug("Received $count accessed clients for $uid", "count", clients.length, "uid", uid);
+        client.allAccessedClients.put(uid, ObjectSet.of(clients));
+    }
+
+    @Override
+    public void sendAccessCheckResult2(UUID uid1, UUID uid2, boolean ok) {
+        client.accessCheckCache.put(new AccessCheckPair(uid1, uid2), ok);
+    }
+
+    @Override
+    public void sendAccessCheckAck(UUID uid) {
+        client.accessCheckAcks.put(uid, Boolean.TRUE);
+    }
+
+    @Override
+    public void sendWebRtcSession(UUID uid, WebRtcSession session) {
+        client.webRtcSessionsMFuture.set(session);
+    }
+
+    @Override
+    public void sendNewAccessGroupId(UUID owner, UUID groupId) {
+        client.newAccessGroupIdMFuture.set(groupId);
+    }
+
+    @Override
+    public void sendSelfDestructAck() {
+        client.selfDestructAckMFuture.set(Boolean.TRUE);
+    }
+
+    @Override
+    public void sendOpenReceiveWindowAck() {
+        client.openReceiveWindowAckMFuture.set(Boolean.TRUE);
+    }
+
+    @Override
+    public void sendAlias(UUID alias) {
+        client.aliasMFuture.set(alias);
+    }
+
+    @Override
+    public void sendSetAliasAck() {
+        client.setAliasAckMFuture.set(Boolean.TRUE);
+    }
+
+    @Override
+    public void sendBalance(long balance) {
+        Log.trace("ClientApiSafeImpl: sendBalance (unused)", "balance", balance);
+    }
+
+    @Override
+    public void sendSetParentAck() {
+        client.setParentAckMFuture.set(Boolean.TRUE);
+    }
+
+    @Override
+    public void sendBlockAck() {
+        client.blockAckMFuture.set(Boolean.TRUE);
+    }
+
+    @Override
+    public void sendParent(UUID uid) {
+        Log.trace("ClientApiSafeImpl: sendParent (unused)", "uid", uid);
+    }
+
+    @Override
+    public void sendBeneficiary(UUID uid) {
+        Log.trace("ClientApiSafeImpl: sendBeneficiary (unused)", "uid", uid);
+    }
+
+    @Override
+    public void sendSetBeneficiaryAck() {
+        client.setBeneficiaryAckMFuture.set(Boolean.TRUE);
+    }
+
+    @Override
+    public void sendBlockTime(java.util.Date time) {
+        Log.trace("ClientApiSafeImpl: sendBlockTime (unused)", "time", time);
+    }
+
+    @Override
+    public void sendUnblockAck() {
+        client.unblockAckMFuture.set(Boolean.TRUE);
+    }
+
+    @Override
+    public void sendCreateTime(java.util.Date time) {
+        Log.trace("ClientApiSafeImpl: sendCreateTime (unused)", "time", time);
+    }
+
+    @Override
+    public void sendOnlineTime(java.util.Date time) {
+        Log.trace("ClientApiSafeImpl: sendOnlineTime (unused)", "time", time);
+    }
+
+    @Override
+    public void sendAddAccessGroupResult(UUID groupId, boolean ok) {
+        Log.trace("ClientApiSafeImpl: sendAddAccessGroupResult", "groupId", groupId, "ok", ok);
+    }
+
+    @Override
+    public void sendRemoveAccessGroupResult(UUID groupId, boolean ok) {
+        Log.trace("ClientApiSafeImpl: sendRemoveAccessGroupResult", "groupId", groupId, "ok", ok);
+    }
+
+    @Override
+    public void sendSetMsgQueueLimitAck() {
+        client.setMsgQueueLimitAckMFuture.set(Boolean.TRUE);
+    }
+
+    @Override
+    public void sendSetMsgTimeLimitAck() {
+        client.setMsgTimeLimitAckMFuture.set(Boolean.TRUE);
+    }
+
+    @Override
+    public void sendAddServersToCloudAck() {
+        client.addServersToCloudAckMFuture.set(Boolean.TRUE);
+    }
+
+    @Override
+    public void sendRemoveServersFromCloudAck() {
+        client.removeServersFromCloudAckMFuture.set(Boolean.TRUE);
+    }
+
+    @Override
+    public void sendClientActivity(UUID uid, ClientActivity[] activities) {
+        client.clientActivities.put(uid, activities);
+    }
+
+    @Override
+    public void sendClientLogs(UUID uid, ClientLogEntry[] logs) {
+        client.clientLogs.put(uid, logs);
+    }
+
+    @Override
+    public void sendClientConnections(UUID uid, ClientConnectionInfo[] connections) {
+        client.clientConnections.put(uid, connections);
+    }
+
+    @Override
+    public void sendClientMessages(UUID uid, MessageInfo[] messages) {
+        client.clientMessages.put(uid, messages);
+    }
+
+    @Override
+    public void sendUap(UUID uid, Uap uap) {
+        client.uaps.put(uid, uap);
+    }
+
+    @Override
+    public void sendClientTiming(UUID uid, ClientTiming timing) {
+        client.clientTimings.put(uid, timing);
+    }
+
+    @Override
+    public void sendCloudPosition(CloudConfig config) {
+        if (config != null) {
+            client.cloudPositions.put(config.getSubjectUid(), config);
+            client.applyCloudConfig(config);
+        }
     }
 
 }

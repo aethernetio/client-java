@@ -3,7 +3,7 @@ package io.aether.cloud.proxy;
 
 import io.aether.api.CryptoUtils;
 import io.aether.api.clientserverapi.ClientApiRegSafeStream;
-import io.aether.api.clientserverapi.ClientApiRegUnsafeRemote;
+import io.aether.api.clientserverapi.ClientApiUnsafeRemote;
 import io.aether.api.clientserverapi.RegistrationRootApi;
 import io.aether.api.clientserverapi.ServerRegistrationApiStream;
 import io.aether.api.common.CryptoLib;
@@ -29,7 +29,7 @@ public final class ProxyRegistrationRootApiImpl
 
     final ProxyService service;
     final MetaContext ctx;
-    final ClientApiRegUnsafeRemote remoteApi;
+    final ClientApiUnsafeRemote remoteApi;
 
 
     public ProxyRegistrationRootApiImpl(
@@ -38,7 +38,7 @@ public final class ProxyRegistrationRootApiImpl
     ) {
         this.ctx = ctx;
         this.service = service;
-        this.remoteApi = ctx.makeRemote(ClientApiRegUnsafeRemote.META);
+        this.remoteApi = ctx.makeRemote(ClientApiUnsafeRemote.META);
     }
 
     @Override
@@ -74,7 +74,7 @@ public final class ProxyRegistrationRootApiImpl
                 )
                 .onFlushData(data ->
                         backCryptoEngine.once(engine ->
-                                remoteApi.enter(
+                                remoteApi.enterRegistration(
                                         ClientApiRegSafeStream
                                                 .Out
                                                 .send(
@@ -87,27 +87,16 @@ public final class ProxyRegistrationRootApiImpl
     }
 
     @Override
-    public ARFuture<io.aether.api.common.SignedKey>
-    getAsymmetricPublicKey(CryptoLib cryptoLib) {
+    public void getAsymmetricPublicKey(CryptoLib cryptoLib) {
         var key = service.registrationKey(cryptoLib);
-        return ARFuture.of(CryptoUtils.of(key.getPublicKeySigned()));
+        remoteApi.sendAsymmetricPublicKey(CryptoUtils.of(key.getPublicKeySigned()));
     }
 
     @Override
-    public ARFuture<IpInfo> getMyIp() {
+    public void getMyIp() {
         IPAddress ipAddress = service.clientIpFromContext(ctx);
-
         Integer port = (Integer) ctx.getProperty(2);
-        if (port == null) {
-            port = 0;
-        }
-        int finalPort = port;
-
-        return ARFuture.of(new IpInfo(
-                ipAddress,
-                (short) finalPort,
-                0.0,
-                0.0
-        ));
+        if (port == null) port = 0;
+        remoteApi.sendMyIpInfo(new IpInfo(ipAddress, port.shortValue(), 0.0, 0.0));
     }
 }
