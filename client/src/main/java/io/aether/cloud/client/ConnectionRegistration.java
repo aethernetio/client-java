@@ -16,21 +16,36 @@ import io.aether.utils.futures.ARFuture;
 import java.net.URI;
 import java.util.Arrays;
 
-public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, RegistrationRootApiRemote> implements ClientApiRegUnsafe {
+public class ConnectionRegistration extends Connection<ClientApiUnsafe, RegistrationRootApiRemote> implements ClientApiUnsafe {
     final AFuture connectFuture = AFuture.make();
     private final AKey.Symmetric tempKey = CryptoProviderFactory.getProvider(client.getCryptLib().name()).createSymmetricKey();
     private final KeySymmetric tempKeyNative = CryptoUtils.of(tempKey);
     private final CryptoEngine tempKeyCp = tempKey.toCryptoEngine();
+
+
+    private final io.aether.utils.slots.AMFuture<io.aether.api.common.SignedKey> asymmetricPublicKeyMFuture
+            = new io.aether.utils.slots.AMFuture<>();
+    private final io.aether.utils.slots.AMFuture<ServerDescriptor[]> resolvedServersMFuture
+            = new io.aether.utils.slots.AMFuture<>();
+
+
+    private final io.aether.utils.slots.AMFuture<WorkProofDTO> workProofMFuture
+            = new io.aether.utils.slots.AMFuture<>();
+    private final io.aether.utils.slots.AMFuture<RegistrationDirectResult> registrationDirectMFuture
+            = new io.aether.utils.slots.AMFuture<>();
+
+
     volatile ServerRegistrationApiRemote safeApi;
 
 
     public ConnectionRegistration(AetherCloudClient client, URI uri) {
-        super(client, uri, ClientApiRegUnsafe.META, RegistrationRootApi.META);
+        super(client, uri, ClientApiUnsafe.META, RegistrationRootApi.META);
     }
 
     private ARFuture<CryptoEngine> getAsymmetricPublicKey() {
         Log.debug("RegConn: TCP connection successful, requesting asymmetric key.", "uri", uri);
-        return rootApi.getAsymmetricPublicKey(client.getCryptLib()).map(k -> {
+        rootApi.getAsymmetricPublicKey(client.getCryptLib());
+        return asymmetricPublicKeyMFuture.mapToARFuture().map(k -> {
             var kk = CryptoUtils.of(k);
             if (!client.verifySign(kk)) {
                 Log.error("RegConn: Key verification failed.", "signedKey", kk);
@@ -57,64 +72,30 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
         Log.info("RegConn: Asym public key was received.");
 
         safeApi.setReturnKey(tempKeyNative);
-        safeApi.requestWorkProofData(
-                        client.getParent(),
-                        PowMethod.AE_BCRYPT_CRC32
-                )
-                .to(wpd -> {
-                    Log.info(
-                            "RegConn: WorkProofData has been received. "
-                                    + "Starting PoW calculation."
-                    );
+        safeApi.requestWorkProofData(client.getParent(), PowMethod.AE_BCRYPT_CRC32);
 
-                    var passwords =
-                            WorkProofUtil.generateProofOfWorkPool(
-                                    wpd.getSalt(),
-                                    wpd.getSuffix(),
-                                    wpd.getMaxHashVal(),
-                                    wpd.getPoolSize(),
-                                    5300
-                            );
+        workProofMFuture.mapToARFuture().to(wpd -> {
+            Log.info("RegConn: WorkProofData received. Starting PoW calculation.");
 
-                    safeApi.registrationDirect(
-                                    wpd.getSalt(),
-                                    wpd.getSuffix(),
-                                    passwords,
-                                    client.getParent(),
-                                    CryptoUtils.of(client.getMasterKey())
-                            )
-                            .to(d -> {
-                                Log.trace(
-                                        "RegConn: registration step finish."
-                                );
-                                Log.info(
-                                        "RegConn: Registration confirmed."
-                                );
+            var passwords = WorkProofUtil.generateProofOfWorkPool(
+                    wpd.getSalt(), wpd.getSuffix(),
+                    wpd.getMaxHashVal(), wpd.getPoolSize(), 5300);
 
-                                resolveCloud(
-                                        d.getCloud(),
-                                        asymCE
-                                ).to(() -> {
-                                    Log.info("RegConn: resolve cloud.");
-                                    client.confirmRegistration(d);
-                                });
-                            })
-                            .addListener(f -> {
-                                if (!f.isDone()) {
-                                    Log.error(
-                                            "flush task canceled 1! $f",
-                                            "f",
-                                            f
-                                    );
-                                } else {
-                                    connectFuture.done();
-                                }
-                            });
-                }, 6, () ->
-                        Log.warn(
-                                "RegConn: timeout requestWorkProofData"
-                        )
-                );
+            safeApi.registrationDirect(
+                    wpd.getSalt(), wpd.getSuffix(), passwords,
+                    client.getParent(), CryptoUtils.of(client.getMasterKey()));
+
+            registrationDirectMFuture.mapToARFuture().to(d -> {
+                Log.trace("RegConn: registration step finish.");
+                Log.info("RegConn: Registration confirmed.");
+                resolveCloud(d.getCloud(), asymCE).to(() -> {
+                    Log.info("RegConn: resolve cloud.");
+                    client.confirmRegistration(d);
+                });
+            }, error -> Log.error("RegConn: registrationDirect failed", error));
+
+            connectFuture.done();
+        }, error -> Log.error("RegConn: requestWorkProofData failed", error));
     }
 
 
@@ -137,8 +118,10 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
         AFuture result = client.recoveryFuture;
         Log.debug("Resolving cloud: " + cloud);
         Log.trace("RegConn: registration step resolve servers: $servers", "servers", cloud);
-        safeApi.resolveServers(cloud)
-                .to(ss -> {
+
+        safeApi.resolveServers(cloud);
+        resolvedServersMFuture.mapToARFuture().to(
+                ss -> {
                     Log.debug("Received server descriptors: " + Arrays.toString(ss));
                     for (var s : ss) {
                         Log.debug("Putting server descriptor: " + s);
@@ -146,26 +129,69 @@ public class ConnectionRegistration extends Connection<ClientApiRegUnsafe, Regis
                     }
                     result.tryDone();
                     Log.info("RegConn: Server descriptors resolved.");
-                })
-                .onError(e -> {
+                },
+                e -> {
                     Log.error("Failed to resolve servers", e);
                     result.tryError(e);
                 });
+
         return result;
     }
 
 
-    @Override
-    public void enterGlobal(GlobalRegClientApiStream stream) {
-        // Legacy ClientApiRegUnsafe compatibility.
-        // registrationDirect does not open GlobalApi.
-    }
 
     @Override
-    public void enter(ClientApiRegSafeStream stream) {
+    public void enterRegistration(ClientApiRegSafeStream stream) {
         stream.asIn()
                 .ctx(safeApi.getFastMetaContext())
                 .convert(tempKeyCp::decrypt)
                 .accept();
     }
+
+
+    @Override
+    public void sendSafeApiDataMulti(short backId, LoginClientStream data) {
+        throw new UnsupportedOperationException("ConnectionRegistration: no multi-backId support");
+    }
+
+    @Override
+    public void sendSafeApiData(LoginClientStream data) {
+        throw new UnsupportedOperationException("ConnectionRegistration: not logged in");
+    }
+
+    @Override
+    public void sendCurrentTimeUtc(long time) {
+        Log.warn("ConnectionRegistration: unexpected sendCurrentTimeUtc");
+    }
+
+    @Override
+    public void sendMyIpInfo(io.aether.api.common.IpInfo info) {
+        Log.warn("ConnectionRegistration: unexpected sendMyIpInfo");
+    }
+
+    @Override
+    public void sendAsymmetricPublicKey(io.aether.api.common.SignedKey key) {
+        asymmetricPublicKeyMFuture.set(key);
+    }
+
+    @Override
+    public void sendWorkProofData(java.util.UUID parent, io.aether.api.common.WorkProofDTO dto) {
+        workProofMFuture.set(dto);
+    }
+
+    @Override
+    public void sendResolvedServers(ServerDescriptor[] servers) {
+        resolvedServersMFuture.set(servers);
+    }
+
+    @Override
+    public void sendRegistrationDirect(RegistrationDirectResult result) {
+        registrationDirectMFuture.set(result);
+    }
+
+    @Override
+    public void sendRecoveredClientState(RecoveryResult result) {
+        Log.warn("ConnectionRegistration: unexpected sendRecoveredClientState");
+    }
+
 }

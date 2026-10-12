@@ -85,6 +85,11 @@ public final class AetherCloudClient implements Destroyable {
     private final PeerIdentityManager peerIdentityManager;
 
 
+    final io.aether.utils.slots.AMFuture<io.aether.api.common.ServerDescriptorWithGeo[]> serversMFuture
+            = new io.aether.utils.slots.AMFuture<>();
+
+
+
 
 
 
@@ -921,7 +926,8 @@ public final class AetherCloudClient implements Destroyable {
 
 
     public ARFuture<ServerDescriptorWithGeo[]> getServers() {
-        return getAuthApi1(AuthorizedApi::getServers);
+        getAuthApi1(AuthorizedApi::getServers);
+        return serversMFuture.mapToARFuture();
     }
 
 

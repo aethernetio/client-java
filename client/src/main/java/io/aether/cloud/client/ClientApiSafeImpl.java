@@ -239,4 +239,10 @@ class ClientApiSafeImpl implements ClientApiSafe {
         client.peerIdentityManager().onSignedUid(signs);
     }
 
+
+    @Override
+    public void sendServers(ServerDescriptorWithGeo[] servers) {
+        client.serversMFuture.set(servers);
+    }
+
 }
