@@ -14,7 +14,7 @@ import java.util.*;
 /**
  * Implements the ClientApiSafe interface to handle responses from the server.
  */
-class ClientApiSafeImpl implements ClientApiSafe {
+class ClientApiSafeImpl implements ClientApiSafe, ServerApiByUidClient {
 
 
     private final AetherCloudClient client;
@@ -217,7 +217,7 @@ class ClientApiSafeImpl implements ClientApiSafe {
         stream
                 .asIn()
                 .keys(
-                        ctx -> ServerApiByUidClient.EMPTY,
+                        ctx -> this,
                         "byClient",
                         uid
                 )

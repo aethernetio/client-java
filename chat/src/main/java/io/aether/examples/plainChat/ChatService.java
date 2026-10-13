@@ -61,7 +61,7 @@ public class ChatService {
         }
 
         @Override
-        public AFuture registration(String name) {
+        public void registration(String name) {
             Log.info("registration: $name", "name", name);
             var u = new UserDescriptor(uid, name);
             users.put(uid, u);
@@ -73,7 +73,6 @@ public class ChatService {
             }
             remoteApi.addNewUsers(Flow.flow(users.values()).toArray(UserDescriptor.class));
             remoteApi.newMessages(Flow.flow(allMessages).toArray(MessageDescriptor.class));
-            return AFuture.completed();
         }
 
         @Override

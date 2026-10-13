@@ -32,7 +32,7 @@ public class ChatClient implements ServiceClientApi {
                             return this;
                         });
                 service.to(a -> {
-                    a.registration(name).timeout(3, () -> Log.warn("registration timeout: $name", "name", name));
+                    a.registration(name);
                 });
             } catch (Exception e) {
                 Log.error(e);

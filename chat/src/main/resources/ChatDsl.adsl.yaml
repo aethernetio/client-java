@@ -21,7 +21,6 @@ api:
   ServiceServerApi:
     methods:
       registration:
-        returns: void
         params:
           name: string
       sendMessage:
