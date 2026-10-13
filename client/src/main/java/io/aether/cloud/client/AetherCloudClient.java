@@ -1044,7 +1044,7 @@ public final class AetherCloudClient implements Destroyable {
         getAuthApiRemote(api -> callback.accept(
                 api.openClient(
                         uid,
-                        remote -> ServerApiByUidClient.EMPTY,
+                        remote -> new ClientApiSafeImpl(null, this),
                         data -> data,
                         "byClient",
                         uid

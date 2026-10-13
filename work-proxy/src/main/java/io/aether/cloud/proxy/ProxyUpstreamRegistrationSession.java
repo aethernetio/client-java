@@ -8,7 +8,6 @@ import io.aether.api.clientserverapi.ClientApiRegSafeStream;
 import io.aether.api.clientserverapi.ClientApiUnsafe;
 
 import io.aether.api.clientserverapi.FinishResult;
-import io.aether.api.clientserverapi.GlobalRegClientApiStream;
 
 import io.aether.api.clientserverapi.RecoveryResult;
 

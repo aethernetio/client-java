@@ -35,8 +35,6 @@ import io.aether.utils.interfaces.Destroyable;
 import java.util.ArrayList;
 
 
-import io.aether.api.clientserverapi.GlobalApiStream;
-import io.aether.api.clientserverapi.GlobalRegClientApiStream;
 import io.aether.api.common.CryptoLib;
 import io.aether.crypto.AKey;
 
