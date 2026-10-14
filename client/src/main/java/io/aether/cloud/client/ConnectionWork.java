@@ -41,14 +41,13 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
 
 
     private static final long PING_RESPONSE_TIMEOUT_MS = 5_000L;
-    private static final long PING_ACQUIRE_TIMEOUT_MS =
-            PING_RESPONSE_TIMEOUT_MS + 1_000L;
+    private static final long PROBE_REPORT_TIMEOUT_MS = 120_000L;
 
-    private static final long RX_WINDOW_MS =
-            PING_RESPONSE_TIMEOUT_MS;
+    private static final long RX_WINDOW_MS = 60_000L;
 
 
     private static final class PingAttempt {
+        private final AFuture ack = AFuture.make();
     }
 
     private record ProbeReportKey(
@@ -135,7 +134,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         negotiateLoginApiVersion();
     }
 
-    private synchronized void negotiateLoginApiVersion() {
+    private void negotiateLoginApiVersion() {
         if (negotiatedLoginApiVersion != -1) {
             return;
         }
@@ -177,11 +176,11 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             }
         }
 
-        if (cryptoEngine == null) {
+        if (cryptoEngine == null && isWritable) {
             Log.warn(
                     "onConnectionStateChanged called before cryptoEngine initialized, deferring flush"
             );
-            stateListeners.fire(isWritable);
+            stateListeners.fire(true);
             return;
         }
 
@@ -197,8 +196,26 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                     negotiatedLoginApiVersion
             );
         } else {
-            activePing.set(null);
+            PingAttempt attempt = activePing.getAndSet(null);
+            if (attempt != null) {
+                attempt.ack.tryError(
+                        new IllegalStateException("Connection lost during ping")
+                );
+            }
         }
+
+        if (!isWritable) {
+            pendingProbeReports.forEach((key, pending) -> {
+                if (pendingProbeReports.remove(key, pending)) {
+                    pending.tryError(
+                            new IllegalStateException(
+                                    "Connection lost while waiting for probe report"
+                            )
+                    );
+                }
+            });
+        }
+
 
         stateListeners.fire(isWritable);
     }
@@ -446,11 +463,36 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             long nextConnectMsDuration,
             long rxWindowMs
     ) {
-        api.ping(nextConnectMsDuration, rxWindowMs);
-        api.setReceiveWindow(nextConnectMsDuration, rxWindowMs);
-        return AFuture.completed();
+        PingAttempt attempt = activePing.get();
+        if (attempt == null) {
+            AFuture failed = AFuture.make();
+            failed.tryError(
+                    new IllegalStateException("No active ping attempt")
+            );
+            return failed;
+        }
+
+        try {
+            api.ping(nextConnectMsDuration, rxWindowMs);
+            api.setReceiveWindow(nextConnectMsDuration, rxWindowMs);
+        } catch (Throwable error) {
+            attempt.ack.tryError(error);
+        }
+
+        return attempt.ack;
     }
 
+
+
+    /**
+     * Handles a server ping acknowledgement for this connection.
+     */
+    void onPingAck() {
+        PingAttempt attempt = activePing.get();
+        if (attempt != null && activePing.compareAndSet(attempt, null)) {
+            attempt.ack.tryDone();
+        }
+    }
 
 
     private void sendPingIfNeeded(AuthorizedApiRemote api) {
@@ -503,8 +545,6 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                     fullPingIntervalMs,
                     rxWindowMs
             ).to(() -> completeBackgroundPing(
-
-                    pingAttempt,
                     startedNs,
                     sentAtMs,
                     fullPingIntervalMs,
@@ -582,29 +622,13 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         PingAttempt pingAttempt =
                 new PingAttempt();
 
-        long waitDeadline =
-                RU.time() + PING_ACQUIRE_TIMEOUT_MS;
-
-        while (!activePing.compareAndSet(
-                null,
-                pingAttempt
-        )) {
-            if (RU.time() >= waitDeadline) {
-                result.tryError(
-                        new IllegalStateException(
-                                "Timeout waiting for idle connection before measured ping"
-                        )
-                );
-                return null;
-            }
-
-            try {
-                Thread.sleep(1L);
-            } catch (InterruptedException error) {
-                Thread.currentThread().interrupt();
-                result.tryError(error);
-                return null;
-            }
+        if (!activePing.compareAndSet(null, pingAttempt)) {
+            result.tryError(
+                    new IllegalStateException(
+                            "Another ping is already in progress"
+                    )
+            );
+            return null;
         }
 
         if (!isWritable()) {
@@ -629,50 +653,28 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             PingAttempt pingAttempt,
             ARFuture<Long> result
     ) {
-        Thread.startVirtualThread(() -> {
-            try {
-                Thread.sleep(
-                        PING_RESPONSE_TIMEOUT_MS
-                );
-            } catch (InterruptedException error) {
-                Thread.currentThread().interrupt();
-                return;
-            }
-
-            if (activePing.compareAndSet(
-                    pingAttempt,
-                    null
-            )) {
+        java.util.concurrent.CompletableFuture.delayedExecutor(
+                PING_RESPONSE_TIMEOUT_MS,
+                java.util.concurrent.TimeUnit.MILLISECONDS
+        ).execute(() -> {
+            if (activePing.compareAndSet(pingAttempt, null)) {
                 firstAuth = false;
+                IllegalStateException error =
+                        new IllegalStateException("Measured ping ACK timeout");
+                pingAttempt.ack.tryError(error);
+                result.tryError(error);
             }
-
-            result.tryError(
-                    new IllegalStateException(
-                            "Timeout waiting for measured ping response"
-                    )
-            );
         });
     }
 
 
     private void completeMeasuredPing(
-            PingAttempt pingAttempt,
             ARFuture<Long> result,
             long startedNs,
             long sentAtMs,
             long fullPingIntervalMs
     ) {
-        if (!activePing.compareAndSet(
-                pingAttempt,
-                null
-        )) {
-            result.tryError(
-                    new IllegalStateException(
-                            "Measured ping attempt is no longer active"
-                    )
-            );
-            return;
-        }
+        // The ACK handler has already claimed and completed this attempt.
 
         long rttNs =
                 recordSuccessfulPingRtt(
@@ -692,14 +694,11 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             ARFuture<Long> result,
             Throwable error
     ) {
-        if (activePing.compareAndSet(
-                pingAttempt,
-                null
-        )) {
+        if (activePing.compareAndSet(pingAttempt, null)) {
             firstAuth = false;
+            pingAttempt.ack.tryError(error);
+            result.tryError(error);
         }
-
-        result.tryError(error);
     }
 
 
@@ -740,8 +739,6 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                     fullPingIntervalMs,
                     rxWindowMs
             ).to(() -> completeMeasuredPing(
-
-                    pingAttempt,
                     result,
                     startedNs,
                     sentAtMs,
@@ -826,6 +823,16 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             return existing;
         }
 
+        if (!isWritable()) {
+            pendingProbeReports.remove(key, result);
+            result.tryError(
+                    new IllegalStateException(
+                            "Connection is not writable for probe report request"
+                    )
+            );
+            return result;
+        }
+
         try {
             AuthorizedApiRemote api = authorizedApi;
             api.requestProbeReport(testId, firstSequence, count);
@@ -833,7 +840,22 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         } catch (Throwable error) {
             pendingProbeReports.remove(key, result);
             result.tryError(error);
+            return result;
         }
+
+        java.util.concurrent.CompletableFuture.delayedExecutor(
+                PROBE_REPORT_TIMEOUT_MS,
+                java.util.concurrent.TimeUnit.MILLISECONDS
+        ).execute(() -> {
+            if (pendingProbeReports.remove(key, result)) {
+                result.tryError(
+                        new IllegalStateException(
+                                "Timeout waiting for probe report: " + key
+                        )
+                );
+            }
+        });
+
 
         return result;
     }
@@ -867,53 +889,34 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
 
     public ARFuture<Long> measurePingNs() {
         ARFuture<Long> result = ARFuture.make();
-
-        Thread.startVirtualThread(
-                () -> runMeasuredPing(result)
-        );
-
+        runMeasuredPing(result);
         return result;
     }
     private void startBackgroundPingTimeout(
             PingAttempt pingAttempt
     ) {
-        Thread.startVirtualThread(() -> {
-            try {
-                Thread.sleep(
-                        PING_RESPONSE_TIMEOUT_MS
-                );
-            } catch (InterruptedException error) {
-                Thread.currentThread().interrupt();
-                return;
-            }
-
-            if (!activePing.compareAndSet(
-                    pingAttempt,
-                    null
-            )) {
+        java.util.concurrent.CompletableFuture.delayedExecutor(
+                PING_RESPONSE_TIMEOUT_MS,
+                java.util.concurrent.TimeUnit.MILLISECONDS
+        ).execute(() -> {
+            if (!activePing.compareAndSet(pingAttempt, null)) {
                 return;
             }
 
             firstAuth = false;
-
-            Log.warn(
-                    "Ping response timed out, will retry after ping interval"
+            pingAttempt.ack.tryError(
+                    new IllegalStateException("Background ping ACK timeout")
             );
+            Log.warn("Ping response timed out, will retry after ping interval");
         });
     }
     private void completeBackgroundPing(
-            PingAttempt pingAttempt,
             long startedNs,
             long sentAtMs,
             long fullPingIntervalMs,
             long rxWindowMs
     ) {
-        if (!activePing.compareAndSet(
-                pingAttempt,
-                null
-        )) {
-            return;
-        }
+        // Invoked only after successful completion of the ACK future.
 
         long rttNs =
                 recordSuccessfulPingRtt(
@@ -941,19 +944,13 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             Throwable error,
             String message
     ) {
-        if (!activePing.compareAndSet(
-                pingAttempt,
-                null
-        )) {
+        if (!activePing.compareAndSet(pingAttempt, null)) {
             return;
         }
 
         firstAuth = false;
-
-        Log.warn(
-                message,
-                error
-        );
+        pingAttempt.ack.tryError(error);
+        Log.warn(message, error);
     }
 
 

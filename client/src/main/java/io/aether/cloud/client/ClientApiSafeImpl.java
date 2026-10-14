@@ -247,6 +247,7 @@ class ClientApiSafeImpl implements ClientApiSafe, ServerApiByUidClient {
 
     @Override
     public void sendPingAck() {
+        connection.onPingAck();
         client.pingAckMFuture.set(Boolean.TRUE);
     }
 
