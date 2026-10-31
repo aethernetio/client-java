@@ -131,7 +131,10 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                 );
 
         authorizedApi = authorizedApiV0;
+
         negotiateLoginApiVersion();
+        markReady();
+
     }
 
     private void negotiateLoginApiVersion() {
@@ -184,9 +187,13 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             return;
         }
 
+
         if (isWritable) {
-            nextPingAtMs.set(0L);
+            if (nextPingAtMs != null) {
+                nextPingAtMs.set(0L);
+            }
             negotiateLoginApiVersion();
+
 
             Log.info(
                     "Network restored. Resetting auth state and forcing flush.",
@@ -196,7 +203,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                     negotiatedLoginApiVersion
             );
         } else {
-            PingAttempt attempt = activePing.getAndSet(null);
+            PingAttempt attempt = activePing == null ? null : activePing.getAndSet(null);
             if (attempt != null) {
                 attempt.ack.tryError(
                         new IllegalStateException("Connection lost during ping")
@@ -204,7 +211,7 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             }
         }
 
-        if (!isWritable) {
+        if (!isWritable && pendingProbeReports != null) {
             pendingProbeReports.forEach((key, pending) -> {
                 if (pendingProbeReports.remove(key, pending)) {
                     pending.tryError(
