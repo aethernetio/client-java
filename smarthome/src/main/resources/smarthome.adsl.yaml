@@ -121,7 +121,6 @@ api:
       getSystemStructure:
         doc: Запрашивает список всех физических устройств на этом коммутаторе.
         id: 10
-        returns: HardwareDevice[]
 
       executeActorCommand:
         doc: Отправить команду на конкретный актуатор.
@@ -129,14 +128,12 @@ api:
         params:
           localActorId: int
           command: VariantData
-        returns: DeviceStateData
 
       queryState:
         doc: Запросить текущее состояние конкретного устройства.
         id: 5
         params:
           localDeviceId: int
-        returns: DeviceStateData
 
       queryAllSensorStates:
         doc: Попросить коммутатор прислать PUSH-уведомления о состоянии всех датчиков.
@@ -171,14 +168,12 @@ api:
           localDeviceId: int
           state: DeviceStateData
           deviceUid: uuid
-        returns: bool
       
       getPendingCommands:
         doc: Устройство запрашивает команды, которые были отправлены, пока оно было офлайн.
         id: 22
         params:
           deviceUid: uuid
-        returns: Command[]
   
   # -----------------------------------------------------------------
   # API Implemented by the SERVICE HUB for CLIENTS
@@ -190,7 +185,6 @@ api:
       getAllDevices:
         doc: Получить список всех зарегистрированных устройств.
         id: 30
-        returns: HardwareDevice[]
       
       getDeviceHistory:
         doc: Получить историю состояний устройства.
@@ -200,7 +194,6 @@ api:
           localDeviceId: int
           fromTime: Date?
           toTime: Date?
-        returns: DeviceStateData[]
       
       subscribeToDevice:
         doc: Подписаться на обновления устройства.
@@ -208,7 +201,6 @@ api:
         params:
           deviceUid: uuid
           localDeviceId: int
-        returns: bool
       
       sendCommand:
         doc: Отправить команду устройству (через сервис).
@@ -217,4 +209,3 @@ api:
           deviceUid: uuid
           localActorId: int
           command: VariantData
-        returns: void  # будущий результат, когда устройство ответит

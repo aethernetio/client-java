@@ -10,21 +10,17 @@ api:
         id: 10
         params:
           deviceUid: uuid
-        returns: bool
       reportState:
         id: 11
         params:
           deviceUid: uuid
           value: Record[]
-        returns: bool
       getDevices:
         id: 12
-        returns: uuid[]
       subscribeToDevice:
         id: 13
         params:
           deviceUid: uuid
-        returns: bool
   SimpleDeviceApi:
     methods:
       requestRecords:
@@ -37,3 +33,19 @@ api:
         id: 3
         params:
           value: Record[]
+      onRegisterDeviceResult:
+        id: 20
+        params:
+          result: bool
+      onReportStateResult:
+        id: 21
+        params:
+          result: bool
+      onGetDevicesResult:
+        id: 22
+        params:
+          devices: uuid[]
+      onSubscribeToDeviceResult:
+        id: 23
+        params:
+          result: bool
