@@ -11,13 +11,20 @@ dependencies {
 
 
 
+
+    runtimeOnly "io.aether:net-nio:+"
+    runtimeOnly "io.aether:net-netty:+"
+    runtimeOnly "io.aether:net-virtual:+"
+    runtimeOnly "io.aether.crypto:sodium:+"
+    runtimeOnly "io.aether.crypto:hydrogen-fast:+"
+    runtimeOnly "io.aether.crypto:p256-aes-gcm:+"
+
     testImplementation "io.aether.crypto:sodium:+"
     testImplementation "io.aether.crypto:hydrogen-fast:+"
     testImplementation "io.aether.crypto:p256-aes-gcm:+"
 
-
-
     implementation "com.fasterxml.jackson.core:jackson-databind:2.15.0"
+
 }
 
 
