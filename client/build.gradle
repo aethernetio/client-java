@@ -12,8 +12,6 @@ dependencies {
 
 
 
-    runtimeOnly "io.aether:net-nio:+"
-    runtimeOnly "io.aether:net-netty:+"
     runtimeOnly "io.aether:net-virtual:+"
     runtimeOnly "io.aether.crypto:sodium:+"
     runtimeOnly "io.aether.crypto:hydrogen-fast:+"
