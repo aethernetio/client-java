@@ -34,4 +34,12 @@ publishing {
             artifactId = "cloud-client"
         }
     }
+
+jar {
+    from(rootProject.file('README.md')) {
+        into 'META-INF'
+    }
+}
+
+
 }
