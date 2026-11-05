@@ -119,15 +119,45 @@ final class PeerIdentityManager implements Destroyable {
             return;
         }
         try {
+
             CryptoLib[] all = CryptoLib.values();
-            KeySignPublic[] publics = new KeySignPublic[all.length];
-            AKey.SignPrivate[] privs = new AKey.SignPrivate[all.length];
+            java.util.List<KeySignPublic> publicsList = new java.util.ArrayList<>(all.length);
+            java.util.List<AKey.SignPrivate> privsList = new java.util.ArrayList<>(all.length);
+            StringBuilder providerNames = new StringBuilder();
             for (int i = 0; i < all.length; i++) {
-                CryptoProvider provider = CryptoProviderFactory.getProvider(all[i].name());
-                PairSignKeys pair = provider.createSignKeys();
-                publics[i] = CryptoUtils.of(pair.getPublicKey());
-                privs[i] = pair.getPrivateKey();
+                CryptoProvider provider;
+                try {
+                    provider = CryptoProviderFactory.getProvider(all[i].name());
+                } catch (RuntimeException e) {
+                    Log.debug("PeerIdentity: provider unavailable",
+                            "lib", all[i].name(), "error", String.valueOf(e));
+                    continue;
+                }
+                PairSignKeys pair;
+                try {
+                    pair = provider.createSignKeys();
+                } catch (RuntimeException e) {
+                    Log.debug("PeerIdentity: provider cannot create sign keys",
+                            "lib", all[i].name(), "error", String.valueOf(e));
+                    continue;
+                }
+                publicsList.add(CryptoUtils.of(pair.getPublicKey()));
+                privsList.add(pair.getPrivateKey());
+                if (providerNames.length() > 0) {
+                    providerNames.append(',');
+                }
+                providerNames.append(all[i].name());
             }
+            if (publicsList.isEmpty()) {
+                failAttempt(attempt, new IllegalStateException(
+                        "No crypto provider supports signing on this platform"));
+                return;
+            }
+            KeySignPublic[] publics = publicsList.toArray(new KeySignPublic[0]);
+            AKey.SignPrivate[] privs = privsList.toArray(new AKey.SignPrivate[0]);
+            Log.info("PeerIdentity: issuing with providers",
+                    "count", publics.length, "names", providerNames.toString());
+
 
             ARFuture<Sign[]> pending = ARFuture.make();
             attempt.pendingSignedUids = pending;
