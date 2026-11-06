@@ -23,24 +23,19 @@ def onvoidNativeClassifier() {
 
 
 
+
 dependencies {
-    api "io.aether:client-server-work-api:+"
-    api "io.aether:core:+"
+    api "io.aether:client-server-work-api:0.0.101"
+    api "io.aether:core:0.0.101"
 
+    runtimeOnly "io.aether:net-virtual:0.0.101"
+    runtimeOnly "io.aether.crypto:sodium:0.0.101"
+    runtimeOnly "io.aether.crypto:hydrogen-fast:0.0.99"
+    runtimeOnly "io.aether.crypto:p256-aes-gcm:0.0.2"
 
-
-
-    runtimeOnly "io.aether:net-virtual:+"
-    runtimeOnly "io.aether.crypto:sodium:+"
-    runtimeOnly "io.aether.crypto:hydrogen-fast:+"
-    runtimeOnly "io.aether.crypto:p256-aes-gcm:+"
-
-    testImplementation "io.aether.crypto:sodium:+"
-    testImplementation "io.aether.crypto:hydrogen-fast:+"
-    testImplementation "io.aether.crypto:p256-aes-gcm:+"
-
-
-
+    testImplementation "io.aether.crypto:sodium:0.0.101"
+    testImplementation "io.aether.crypto:hydrogen-fast:0.0.99"
+    testImplementation "io.aether.crypto:p256-aes-gcm:0.0.2"
 
     implementation "dev.onvoid.webrtc:webrtc-java:0.20.0"
     def webrtcNativeClassifier = onvoidNativeClassifier()
@@ -49,17 +44,13 @@ dependencies {
         testRuntimeOnly "dev.onvoid.webrtc:webrtc-java:0.20.0:${webrtcNativeClassifier}"
     }
 
-
-
-
     testImplementation "org.mockito:mockito-core:5.18.0"
     testImplementation "net.bytebuddy:byte-buddy:1.17.5"
     testImplementation "net.bytebuddy:byte-buddy-agent:1.17.5"
 
-
     implementation "com.fasterxml.jackson.core:jackson-databind:2.15.0"
-
 }
+
 
 
 publishing {
