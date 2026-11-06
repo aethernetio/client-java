@@ -64,6 +64,14 @@ public class MessageNode implements ToString {
     private volatile boolean webRtcStarted;
 
 
+    /** Diagnostics: payloads handed to / received from the direct WebRTC channel. */
+    private final java.util.concurrent.atomic.AtomicLong webRtcSentMessages =
+            new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong webRtcReceivedMessages =
+            new java.util.concurrent.atomic.AtomicLong();
+
+
+
     public MessageNode(AetherCloudClient client, UUID consumer, MessageEventListener strategy) {
         Log.trace("open message node ($client) from $uidFrom to $uidTo", "client", client.getName(), "uidTo", consumer, "uidFrom", client.getUid());
         this.client = client;
@@ -110,9 +118,12 @@ public class MessageNode implements ToString {
 
         startWebRtc();
         MessageNodeWebRtcPeer direct = webRtcPeer;
+
         if (direct != null && direct.isOpen() && direct.send(msg)) {
+            webRtcSentMessages.incrementAndGet();
             return AFuture.completed();
         }
+
 
 
         AFuture peerAttempt = trySendViaPeer(msg);
@@ -178,6 +189,24 @@ public class MessageNode implements ToString {
     public boolean isPeerProbeGraceActive() {
         return System.currentTimeMillis() < peerProbeGraceUntilMs;
     }
+
+
+    /** @return {@code true} when the direct WebRTC channel to this peer is open. */
+    public boolean isWebRtcOpen() {
+        MessageNodeWebRtcPeer peer = webRtcPeer;
+        return peer != null && peer.isOpen();
+    }
+
+    /** Diagnostics: payloads handed to the direct WebRTC channel (not LAN, not cloud). */
+    public long getWebRtcSentCount() {
+        return webRtcSentMessages.get();
+    }
+
+    /** Diagnostics: payloads received over the direct WebRTC channel (not LAN, not cloud). */
+    public long getWebRtcReceivedCount() {
+        return webRtcReceivedMessages.get();
+    }
+
 
     /**
      * Attempt to flush every queued message via the peer link in one pass.
@@ -366,7 +395,12 @@ public class MessageNode implements ToString {
                             return client.requestWebRtcSession(uid);
                         }
                     },
-                    data -> sendMessageFromServerToClient(data),
+
+                    data -> {
+                        webRtcReceivedMessages.incrementAndGet();
+                        sendMessageFromServerToClient(data);
+                    },
+
                     this::flushBufferedToWebRtc
             );
             webRtcPeer = peer;
@@ -388,7 +422,10 @@ public class MessageNode implements ToString {
                 bufferOut.addFirst(message);
                 break;
             }
+
+            webRtcSentMessages.incrementAndGet();
             message.val2().tryDone();
+
         }
     }
 

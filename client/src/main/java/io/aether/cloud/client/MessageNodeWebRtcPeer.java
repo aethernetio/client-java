@@ -50,6 +50,15 @@ public class MessageNodeWebRtcPeer implements Destroyable {
             Pattern.compile("(?:^|\\r?\\n)a=setup:(?:active|passive)(?:\\r?\\n|$)");
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
+
+    /**
+     * Global kill-switch. Tests that assert the ordinary cloud delivery path
+     * set this flag so the WebRTC transport does not take precedence over the
+     * cloud route. Production code never sets it.
+     */
+    public static final String DISABLE_PROPERTY = "aether.webrtc.disabled";
+
+
     // ------------------------------------------------------------------
     // Signaling seam
     // ------------------------------------------------------------------
@@ -160,6 +169,9 @@ public class MessageNodeWebRtcPeer implements Destroyable {
     static volatile PeerProvider peerProvider;
 
     public static boolean isSupported() {
+
+        if (Boolean.getBoolean(DISABLE_PROPERTY)) return false;
+
         if (peerProvider != null) return true;
         try {
             Class.forName("dev.onvoid.webrtc.PeerConnectionFactory");
