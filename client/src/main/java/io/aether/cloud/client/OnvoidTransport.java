@@ -3,6 +3,9 @@ package io.aether.cloud.client;
 
 import dev.onvoid.webrtc.*;
 
+
+import java.util.concurrent.atomic.AtomicBoolean;
+
 import java.nio.ByteBuffer;
 
 /**
@@ -36,9 +39,13 @@ final class OnvoidTransport implements MessageNodeWebRtcPeer.PeerProvider {
     @Override
     public MessageNodeWebRtcPeer.Peer create(MessageNodeWebRtcPeer.PeerListener listener) {
         RTCConfiguration config = new RTCConfiguration();
-        RTCIceServer stun = new RTCIceServer();
-        stun.urls.add("stun:stun.l.google.com:19302");
-        config.iceServers.add(stun);
+
+        if (System.getProperty("webrtc.noStun") == null) {
+            RTCIceServer stun = new RTCIceServer();
+            stun.urls.add("stun:stun.l.google.com:19302");
+            config.iceServers.add(stun);
+        }
+
 
         OnvoidPeer peer = new OnvoidPeer(listener);
         RTCPeerConnection pc = factory().createPeerConnection(config, peer.observer());
@@ -196,6 +203,9 @@ final class OnvoidChannel implements MessageNodeWebRtcPeer.Channel {
     private final RTCDataChannel ch;
     private volatile MessageNodeWebRtcPeer.ChannelListener listener;
 
+
+    private final AtomicBoolean openFired = new AtomicBoolean(false);
+
     OnvoidChannel(RTCDataChannel ch) {
         this.ch = ch;
     }
@@ -206,17 +216,21 @@ final class OnvoidChannel implements MessageNodeWebRtcPeer.Channel {
             public void onBufferedAmountChange(long previousAmount) {
             }
 
+
             @Override
             public void onStateChange() {
                 MessageNodeWebRtcPeer.ChannelListener l = listener;
                 if (l == null) return;
                 RTCDataChannelState state = ch.getState();
                 if (state == RTCDataChannelState.OPEN) {
-                    l.onOpen();
+                    if (openFired.compareAndSet(false, true)) {
+                        l.onOpen();
+                    }
                 } else if (state == RTCDataChannelState.CLOSED || state == RTCDataChannelState.CLOSING) {
                     l.onClosed();
                 }
             }
+
 
             @Override
             public void onMessage(RTCDataChannelBuffer buffer) {
@@ -251,10 +265,15 @@ final class OnvoidChannel implements MessageNodeWebRtcPeer.Channel {
         }
     }
 
+
     @Override
     public void setListener(MessageNodeWebRtcPeer.ChannelListener listener) {
         this.listener = listener;
+        if (listener != null && isOpen() && openFired.compareAndSet(false, true)) {
+            listener.onOpen();
+        }
     }
+
 }
 
 final class OnvoidSdp implements MessageNodeWebRtcPeer.Sdp {

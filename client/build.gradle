@@ -5,6 +5,24 @@ plugins {
 
 }
 
+
+def onvoidNativeClassifier() {
+    def osName = System.getProperty("os.name").toLowerCase()
+    def osArch = System.getProperty("os.arch").toLowerCase()
+    if (osName.contains("linux")) {
+        return (osArch.contains("aarch64") || osArch.contains("arm64")) ? "linux-aarch64" : "linux-x86_64"
+    }
+    if (osName.contains("mac") || osName.contains("darwin")) {
+        return (osArch.contains("aarch64") || osArch.contains("arm64")) ? "macos-aarch64" : "macos-x86_64"
+    }
+    if (osName.contains("windows")) {
+        return (osArch.contains("aarch64") || osArch.contains("arm64")) ? "windows-aarch64" : "windows-x86_64"
+    }
+    return null
+}
+
+
+
 dependencies {
     api "io.aether:client-server-work-api:+"
     api "io.aether:core:+"
@@ -22,7 +40,16 @@ dependencies {
     testImplementation "io.aether.crypto:p256-aes-gcm:+"
 
 
-    implementation "dev.onvoid.webrtc:webrtc-java:0.8.0"
+
+
+    implementation "dev.onvoid.webrtc:webrtc-java:0.20.0"
+    def webrtcNativeClassifier = onvoidNativeClassifier()
+    if (webrtcNativeClassifier != null) {
+        runtimeOnly "dev.onvoid.webrtc:webrtc-java:0.20.0:${webrtcNativeClassifier}"
+        testRuntimeOnly "dev.onvoid.webrtc:webrtc-java:0.20.0:${webrtcNativeClassifier}"
+    }
+
+
 
 
     testImplementation "org.mockito:mockito-core:5.18.0"
