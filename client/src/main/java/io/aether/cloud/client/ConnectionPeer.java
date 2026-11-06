@@ -8,9 +8,23 @@ import io.aether.api.peerapi.PeerRootApi;
 import io.aether.api.peerapi.PeerRootApiLocal;
 import io.aether.api.peerapi.PeerRootApiRemote;
 import io.aether.api.peerapi.PeerSessionStream;
+
+import io.aether.api.peerapi.PeerAuthorizedApi;
+import io.aether.api.peerapi.PeerAuthorizedApiLocal;
+import io.aether.api.peerapi.PeerAuthorizedApiRemote;
+
 import io.aether.crypto.AKey;
 import io.aether.crypto.SignChecker;
+
+import io.aether.crypto.CryptoEngine;
+import io.aether.crypto.CryptoProvider;
+import io.aether.crypto.CryptoProviderFactory;
+import io.aether.crypto.PairSymKeys;
+
 import io.aether.logger.Log;
+
+import io.aether.utils.interfaces.AFunction;
+
 
 import io.aether.net.fastMeta.FastMetaBroadcast;
 import io.aether.net.fastMeta.FastMetaNet;
@@ -65,7 +79,21 @@ final class ConnectionPeer implements AutoCloseable {
     private volatile int myNonce = 0;
 
 
+
     private final Map<UUID, PeerRootApiRemote> remotes = new ConcurrentHashMap<>();
+
+    /** Established peer sessions keyed by remote uid (direct delivery path). */
+    private final Map<UUID, PeerAuthorizedApiRemote> sessions = new ConcurrentHashMap<>();
+    /** Underlying unicast FastMeta contexts backing our sessions (initiator side). */
+    private final Map<UUID, MetaContext> peerCtxs = new ConcurrentHashMap<>();
+    /** Encrypt/decrypt engines of the established sessions, reused on replies. */
+    private final Map<UUID, CryptoEngine> sessionEnc = new ConcurrentHashMap<>();
+    private final Map<UUID, CryptoEngine> sessionDec = new ConcurrentHashMap<>();
+    /** Reverse lookup: ip → uid (to find the peer uid on an inbound enter). */
+    private final Map<String, UUID> uidByIp = new ConcurrentHashMap<>();
+    /** Verified peer signatures by ip (used to derive the shared session key). */
+    private final Map<String, SignedKey[]> peerSignsByIp = new ConcurrentHashMap<>();
+
 
 
 
@@ -155,9 +183,11 @@ final class ConnectionPeer implements AutoCloseable {
             }
 
             @Override
+
             public void enter(PeerSessionStream stream) {
-                Log.info("ConnectionPeer: incoming enter is not implemented yet");
+                onIncomingEnter(ctx, stream);
             }
+
 
 
             @Override
@@ -231,15 +261,21 @@ final class ConnectionPeer implements AutoCloseable {
                 }
             }
         }
+
         if (theyWantUs) {
             Log.info("ConnectionPeer: hello is addressed to us, replying with our keys",
                     "theirHash", uidHash, "endpoint", endpoint);
+            String callerIp = ipOf(ctx);
+            if (callerIp != null && peerSigns != null && peerSigns.length > 0) {
+                peerSignsByIp.put(callerIp, peerSigns);
+            }
             try {
                 answerHello();
             } catch (RuntimeException e) {
                 Log.warn("ConnectionPeer: failed to reply to hello", e);
             }
         }
+
 
         // Case 2: this is a reply to a probe we sent — we know the uid of
         // the responder from wantedHashes, and can now verify his chain.
@@ -254,9 +290,22 @@ final class ConnectionPeer implements AutoCloseable {
                         "theirUid", remoteUid, "error", String.valueOf(e));
                 return;
             }
+
             Log.info("ConnectionPeer: hello chain verified",
                     "theirUid", remoteUid, "theirHash", uidHash);
-            // Session opening goes here (next step).
+            String remoteIp = ipOf(ctx);
+            int remotePort = portOf(ctx);
+            if (remoteIp != null && remotePort > 0) {
+                uidByIp.put(remoteIp, remoteUid);
+                if (peerSigns != null && peerSigns.length > 0) {
+                    peerSignsByIp.put(remoteIp, peerSigns);
+                }
+                openPeerSession(remoteUid, remoteIp, remotePort, peerSigns);
+            } else {
+                Log.warn("ConnectionPeer: remote endpoint unknown, cannot open session",
+                        "theirUid", remoteUid);
+            }
+
         } else {
             Log.info("ConnectionPeer: hello does not match any known peer; ignoring",
                     "theirHash", uidHash);
@@ -418,13 +467,27 @@ final class ConnectionPeer implements AutoCloseable {
     }
 
 
+
     boolean isConnected(UUID remoteUid) {
-        return remotes.containsKey(remoteUid);
+        if (remoteUid == null) return false;
+        return sessions.containsKey(remoteUid);
     }
 
     boolean sendMessage(UUID remoteUid, byte[] data) {
-        return false;
+        if (remoteUid == null || data == null || data.length == 0) return false;
+        PeerAuthorizedApiRemote remote = sessions.get(remoteUid);
+        if (remote == null) return false;
+        try {
+            remote.sendMessage(data);
+            return true;
+        } catch (RuntimeException e) {
+            Log.warn("ConnectionPeer.sendMessage: peer session rejected message",
+                    "theirUid", remoteUid, "error", String.valueOf(e));
+            sessions.remove(remoteUid, remote);
+            return false;
+        }
     }
+
 
 
 
@@ -475,6 +538,207 @@ final class ConnectionPeer implements AutoCloseable {
         Log.info("ConnectionPeer.probeFor: hello sent",
                 "targetHash", uidHash);
     }
+
+
+    private String ipOf(MetaContext ctx) {
+        Object ip = ctx.getProperty(1);
+        return ip == null ? null : String.valueOf(ip);
+    }
+
+    private int portOf(MetaContext ctx) {
+        Object port = ctx.getProperty(2);
+        if (port instanceof Integer i) return i;
+        if (port == null) return -1;
+        try {
+            return Integer.parseInt(String.valueOf(port));
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    private byte[] myPeerSignKeyData() {
+        if (creds == null || creds.length == 0) return null;
+        return creds[0].getPublicKey().getData();
+    }
+
+    private static byte[] firstPeerSignKeyData(SignedKey[] signs) {
+        if (signs == null) return null;
+        for (SignedKey sk : signs) {
+            if (sk != null && sk.getKey() != null) return sk.getKey().getData();
+        }
+        return null;
+    }
+
+    private static int compareBytes(byte[] a, byte[] b) {
+        int n = Math.min(a.length, b.length);
+        for (int i = 0; i < n; i++) {
+            int d = (a[i] & 0xFF) - (b[i] & 0xFF);
+            if (d != 0) return d;
+        }
+        return Integer.compare(a.length, b.length);
+    }
+
+    private PairSymKeys deriveSessionKeys(byte[] a, byte[] b) {
+        byte[] lo = compareBytes(a, b) <= 0 ? a : b;
+        byte[] hi = (lo == a) ? b : a;
+        byte[] digest;
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            md.update(lo);
+            md.update(hi);
+            digest = md.digest();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 not available", e);
+        }
+        String providerName = client.getCryptLib().name();
+        CryptoProvider provider = CryptoProviderFactory.getProvider(providerName);
+        AKey.Symmetric master = provider.createSymmetricKey(digest);
+        return provider.deriveSymmetricKeys(master, 0, 0);
+    }
+
+    private PeerAuthorizedApi newPeerLocalApi(PeerAuthorizedApiRemote remote) {
+        return new PeerAuthorizedApiLocal<PeerAuthorizedApiRemote>(remote) {
+            @Override
+            public void sendMessage(byte[] data) {
+                if (data == null) return;
+                Log.info("P2P: RECEIVED", "bytes", data.length);
+            }
+
+            @Override
+            public void toServer(java.util.UUID forUid, short backId, byte[] data) {
+                // relay stage not implemented yet
+            }
+
+            @Override
+            public void fromServer(short backId, byte[] data) {
+                // relay stage not implemented yet
+            }
+
+            @Override
+            public void setReceiveWindow(long startsInMs, long durationMs) {
+            }
+
+            @Override
+            public void sentUid() {
+            }
+
+            @Override
+            public void requestUid() {
+            }
+        };
+    }
+
+    private void openPeerSession(UUID remoteUid, String ip, int port, SignedKey[] theirPeerSigns) {
+        if (remoteUid == null || ip == null || port <= 0) return;
+        if (closed.get()) return;
+        if (sessions.containsKey(remoteUid)) {
+            Log.info("ConnectionPeer.openPeerSession: already connected", "theirUid", remoteUid);
+            return;
+        }
+        FastMetaNet net = FastMetaNet.INSTANCE.get();
+        if (net == null) {
+            Log.warn("ConnectionPeer.openPeerSession: FastMetaNet not initialized");
+            return;
+        }
+        byte[] myPeerSign = myPeerSignKeyData();
+        byte[] theirPeerSign = firstPeerSignKeyData(theirPeerSigns);
+        if (myPeerSign == null || theirPeerSign == null) {
+            Log.warn("ConnectionPeer.openPeerSession: missing peer sign material",
+                    "theirUid", remoteUid,
+                    "mySign", myPeerSign == null ? "null" : "present",
+                    "theirSign", theirPeerSign == null ? "null" : "present");
+            return;
+        }
+        try {
+            URI uri = URI.create("udp://" + ip + ":" + port);
+            MetaContext peerCtx = net.makeClient(uri, PeerRootApi.META, this::makeLocal);
+            peerCtxs.put(remoteUid, peerCtx);
+            PeerRootApiRemote rootRemote = peerCtx.makeRemote(PeerRootApi.META);
+
+            PairSymKeys pair = deriveSessionKeys(myPeerSign, theirPeerSign);
+            String providerName = client.getCryptLib().name();
+            CryptoProvider provider = CryptoProviderFactory.getProvider(providerName);
+            CryptoEngine enc = provider.createSymmetricEngine(pair.getClientToServer());
+            CryptoEngine dec = provider.createSymmetricEngine(pair.getServerToClient());
+            sessionEnc.put(remoteUid, enc);
+            sessionDec.put(remoteUid, dec);
+
+            String sessionKey = "peer-session:" + remoteUid;
+            AFunction<PeerAuthorizedApiRemote, PeerAuthorizedApi> factory = this::newPeerLocalApi;
+            PeerAuthorizedApiRemote session = rootRemote.openEnter(factory, enc::encrypt, sessionKey);
+            sessions.put(remoteUid, session);
+            uidByIp.put(ip, remoteUid);
+            Log.info("ConnectionPeer: peer session established (initiator)",
+                    "theirUid", remoteUid, "endpoint", uri.toString());
+        } catch (RuntimeException e) {
+            Log.warn("ConnectionPeer.openPeerSession: failed",
+                    "theirUid", remoteUid, "error", String.valueOf(e));
+        }
+    }
+
+    private void onIncomingEnter(MetaContext ctx, PeerSessionStream stream) {
+        if (stream == null) return;
+        if (!(stream instanceof PeerSessionStream.In in)) {
+            Log.warn("ConnectionPeer.onIncomingEnter: unexpected stream type",
+                    "type", stream.getClass().getName());
+            return;
+        }
+        String ip = ipOf(ctx);
+        if (ip == null) {
+            Log.warn("ConnectionPeer.onIncomingEnter: no caller ip in context");
+            return;
+        }
+        UUID remoteUid = uidByIp.get(ip);
+        SignedKey[] theirPeerSigns = peerSignsByIp.get(ip);
+
+        byte[] myPeerSign = myPeerSignKeyData();
+        byte[] theirPeerSign = firstPeerSignKeyData(theirPeerSigns);
+        if (myPeerSign == null || theirPeerSign == null) {
+            Log.warn("ConnectionPeer.onIncomingEnter: no peer sign material",
+                    "endpoint", endpointOf(ctx), "theirUid", remoteUid);
+            return;
+        }
+        try {
+            CryptoEngine enc;
+            CryptoEngine dec;
+            if (remoteUid != null && sessionDec.containsKey(remoteUid)) {
+                enc = sessionEnc.get(remoteUid);
+                dec = sessionDec.get(remoteUid);
+            } else {
+                PairSymKeys pair = deriveSessionKeys(myPeerSign, theirPeerSign);
+                String providerName = client.getCryptLib().name();
+                CryptoProvider provider = CryptoProviderFactory.getProvider(providerName);
+                enc = provider.createSymmetricEngine(pair.getServerToClient());
+                dec = provider.createSymmetricEngine(pair.getClientToServer());
+                if (remoteUid != null) {
+                    sessionEnc.put(remoteUid, enc);
+                    sessionDec.put(remoteUid, dec);
+                }
+            }
+
+            Object[] keys = remoteUid != null
+                    ? new Object[]{"peer-session", remoteUid}
+                    : new Object[]{"peer-session", ip};
+            in.keys(c -> newPeerLocalApi(c.makeRemote(PeerAuthorizedApi.META)), keys)
+                    .convert(dec::decrypt)
+                    .onFlushData(raw -> {
+                        try {
+                            ctx.makeRemote(PeerRootApi.META)
+                                    .enter(PeerSessionStream.Out.send(enc.encrypt(raw)));
+                        } catch (RuntimeException e) {
+                            Log.warn("ConnectionPeer.onIncomingEnter: reply failed",
+                                    "endpoint", endpointOf(ctx), "error", String.valueOf(e));
+                        }
+                    })
+                    .accept();
+            Log.info("ConnectionPeer: peer session established (responder)",
+                    "theirUid", remoteUid, "endpoint", endpointOf(ctx));
+        } catch (RuntimeException e) {
+            Log.warn("ConnectionPeer.onIncomingEnter: failed",
+                    "endpoint", endpointOf(ctx), "error", String.valueOf(e));
+        }
+    }
+
 
 
     static short shortHash(UUID uid) {
