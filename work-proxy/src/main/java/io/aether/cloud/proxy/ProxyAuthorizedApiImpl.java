@@ -519,9 +519,10 @@ public class ProxyAuthorizedApiImpl
         }
         var up = client.upstreamClient();
         if (up == null) return;
-        up.webRtcSessionsMFuture.mapToARFuture().to(session ->
+
+        up.requestWebRtcSession(uid).to(session ->
                 safeRemoteApi.sendWebRtcSession(uid, session));
-        up.getAuthApi(api -> api.requestWebRtcSession(uid));
+
     }
 
     @Override

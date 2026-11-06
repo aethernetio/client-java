@@ -293,9 +293,11 @@ class ClientApiSafeImpl implements ClientApiSafe, ServerApiByUidClient {
     }
 
     @Override
+
     public void sendWebRtcSession(UUID uid, WebRtcSession session) {
-        client.webRtcSessionsMFuture.set(session);
+        client.onWebRtcSessionReceived(uid, session);
     }
+
 
     @Override
     public void sendNewAccessGroupId(UUID owner, UUID groupId) {

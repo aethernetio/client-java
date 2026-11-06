@@ -21,6 +21,15 @@ dependencies {
     testImplementation "io.aether.crypto:hydrogen-fast:+"
     testImplementation "io.aether.crypto:p256-aes-gcm:+"
 
+
+    implementation "dev.onvoid.webrtc:webrtc-java:0.8.0"
+
+
+    testImplementation "org.mockito:mockito-core:5.18.0"
+    testImplementation "net.bytebuddy:byte-buddy:1.17.5"
+    testImplementation "net.bytebuddy:byte-buddy-agent:1.17.5"
+
+
     implementation "com.fasterxml.jackson.core:jackson-databind:2.15.0"
 
 }

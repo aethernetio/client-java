@@ -60,6 +60,10 @@ public class MessageNode implements ToString {
 
     private volatile MessageEventListener strategy;
 
+    private volatile MessageNodeWebRtcPeer webRtcPeer;
+    private volatile boolean webRtcStarted;
+
+
     public MessageNode(AetherCloudClient client, UUID consumer, MessageEventListener strategy) {
         Log.trace("open message node ($client) from $uidFrom to $uidTo", "client", client.getName(), "uidTo", consumer, "uidFrom", client.getUid());
         this.client = client;
@@ -69,6 +73,10 @@ public class MessageNode implements ToString {
         consumerCloud.to(c -> {
             this.strategy.setConsumerCloud(this, c);
         });
+
+        this.client.startFuture.to(this::startWebRtc);
+        this.startWebRtc();
+
     }
 
     @Override
@@ -99,6 +107,13 @@ public class MessageNode implements ToString {
                 "bytes", msg.length);
 
         if (msg == null || msg.length == 0) return AFuture.completed();
+
+        startWebRtc();
+        MessageNodeWebRtcPeer direct = webRtcPeer;
+        if (direct != null && direct.isOpen() && direct.send(msg)) {
+            return AFuture.completed();
+        }
+
 
         AFuture peerAttempt = trySendViaPeer(msg);
 
@@ -323,4 +338,58 @@ public class MessageNode implements ToString {
         toApi(ctx, metaLt);
         return ctx;
     }
+
+    /**
+     * Lazily boots the WebRTC transport for this peer. Transparent: if WebRTC is
+     * unavailable (no native library) or the peer is ourselves, this is a no-op.
+     */
+    private void startWebRtc() {
+        if (webRtcStarted) return;
+        if (client.destroyer.isDestroyed()) return;
+        if (!MessageNodeWebRtcPeer.isSupported()) return;
+        UUID localUid = client.getUid();
+        if (localUid == null) return;
+        if (localUid.equals(consumer)) return;
+        webRtcStarted = true;
+        try {
+            MessageNodeWebRtcPeer peer = new MessageNodeWebRtcPeer(
+                    localUid,
+                    consumer,
+                    new MessageNodeWebRtcPeer.WebRtcSignaling() {
+                        @Override
+                        public AFuture publish(io.aether.api.clientserverapi.WebRtcSession session) {
+                            return client.publishWebRtcSession(session);
+                        }
+
+                        @Override
+                        public ARFuture<io.aether.api.clientserverapi.WebRtcSession> request(UUID uid) {
+                            return client.requestWebRtcSession(uid);
+                        }
+                    },
+                    data -> sendMessageFromServerToClient(data),
+                    this::flushBufferedToWebRtc
+            );
+            webRtcPeer = peer;
+            client.destroyer.add(force -> peer.destroy(force));
+            peer.start();
+        } catch (RuntimeException e) {
+            Log.warn("MessageNode: WebRTC bootstrap failed", "to", consumer, "error", String.valueOf(e));
+        }
+    }
+
+    /** Flush everything currently queued through the direct WebRTC channel, if open. */
+    private void flushBufferedToWebRtc() {
+        MessageNodeWebRtcPeer peer = webRtcPeer;
+        if (peer == null || !peer.isOpen()) return;
+        while (true) {
+            Tuple2<byte[], AFuture> message = bufferOut.pollFirst();
+            if (message == null) break;
+            if (!peer.send(message.val1())) {
+                bufferOut.addFirst(message);
+                break;
+            }
+            message.val2().tryDone();
+        }
+    }
+
 }

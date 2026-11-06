@@ -88,8 +88,10 @@ public final class AetherCloudClient implements Destroyable {
     public final io.aether.utils.slots.AMFuture<io.aether.api.common.ServerDescriptorWithGeo[]> serversMFuture
             = new io.aether.utils.slots.AMFuture<>();
 
-    public final io.aether.utils.slots.AMFuture<io.aether.api.clientserverapi.WebRtcSession> webRtcSessionsMFuture
-            = new io.aether.utils.slots.AMFuture<>();
+
+    private final java.util.Map<java.util.UUID, io.aether.utils.slots.AMFuture<io.aether.api.clientserverapi.WebRtcSession>> webRtcSessionsByUid
+            = new java.util.concurrent.ConcurrentHashMap<>();
+
     public final io.aether.utils.slots.AMFuture<java.util.UUID> newAccessGroupIdMFuture
             = new io.aether.utils.slots.AMFuture<>();
     public final io.aether.utils.slots.AMFuture<IpInfo> myIpMFuture
@@ -1021,18 +1023,66 @@ public final class AetherCloudClient implements Destroyable {
         return CryptoUtils.verifySign(signedKey, clientState.getRootSigners());
     }
 
+
     public ARFuture<io.aether.api.clientserverapi.WebRtcSession> requestWebRtcSession(UUID uid) {
-        webRtcSessionsMFuture.refresh();
+        io.aether.utils.slots.AMFuture<io.aether.api.clientserverapi.WebRtcSession> future =
+                webRtcSessionsByUid.computeIfAbsent(uid, k -> new io.aether.utils.slots.AMFuture<>());
+        ARFuture<io.aether.api.clientserverapi.WebRtcSession> result = future.mapToARFuture();
+        result.timeoutError(timeout1, "Timeout WebRTC session " + uid);
+        result.onError(e -> webRtcSessionsByUid.remove(uid, future));
         getServerDescriptorForUid(uid, sd -> {
-            ConnectionWork cw = connections.get(sd.getId());
-            if (cw != null) {
-                cw.authorizedApi.requestWebRtcSession(uid);
-            } else {
-                getConnection(sd).authorizedApi.requestWebRtcSession(uid);
-            }
+            ConnectionWork connection = connections.get(sd.getId());
+            if (connection == null) connection = getConnection(sd);
+            connection.authorizedApi.requestWebRtcSession(uid);
         });
-        return webRtcSessionsMFuture.mapToARFuture();
+        return result;
     }
+
+    /** Called from {@code ClientApiSafeImpl.sendWebRtcSession}: routes an incoming
+     *  signaling message to the request that is waiting for it. */
+    void onWebRtcSessionReceived(UUID fromUid, io.aether.api.clientserverapi.WebRtcSession session) {
+        webRtcSessionsByUid.computeIfPresent(fromUid, (k, f) -> {
+            if (!f.isDone()) f.set(session);
+            return null;
+        });
+    }
+
+    /** Publishes our local WebRTC session to every server in our own cloud. */
+    public AFuture publishWebRtcSession(io.aether.api.clientserverapi.WebRtcSession session) {
+        AFuture result = AFuture.make();
+        UUID uid = getUid();
+        if (uid == null) {
+            result.error(new IllegalStateException("Client is not registered"));
+            return result;
+        }
+        getCloud(uid).to(cloud -> {
+            if (cloud == null || cloud.getData().length == 0) {
+                result.error(new IllegalStateException("Client cloud is empty"));
+                return;
+            }
+            List<AFuture> publishes = new ArrayList<>();
+            for (short serverIdShort : cloud.getData()) {
+                int serverId = (int) serverIdShort;
+                AFuture published = AFuture.make();
+                publishes.add(published);
+                servers.getFuture(serverId).to(descriptor -> {
+                    try {
+                        ConnectionWork connection = connections.get(serverId);
+                        if (connection == null) connection = getConnection(descriptor);
+                        connection.authorizedApi.publishWebRtcSession(session);
+                        published.done();
+                    } catch (RuntimeException ex) {
+                        published.error(ex);
+                    }
+                }, timeout1, () -> published.error(
+                        new java.util.concurrent.TimeoutException("publish timeout server=" + serverId)));
+            }
+            AFuture.all(publishes.toArray(new AFuture[0])).to(result::done, result::error);
+        }, timeout1, () -> result.error(
+                new java.util.concurrent.TimeoutException("Cloud lookup for publishWebRtcSession")));
+        return result;
+    }
+
 
 
     public ARFuture<ServerDescriptorWithGeo[]> getServers() {
