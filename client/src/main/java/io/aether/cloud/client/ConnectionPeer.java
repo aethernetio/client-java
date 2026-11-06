@@ -295,10 +295,9 @@ final class ConnectionPeer implements AutoCloseable {
                 verifyChain(remoteUid, serverKeys, peerSigns, peerKeys);
             } catch (RuntimeException e) {
 
-                StringBuilder stb = new StringBuilder("ConnectionPeer: hello chain verification failed uid=" + remoteUid + " err=" + e + " :: ");
-                StackTraceElement[] stes = e.getStackTrace();
-                for (int si = 0; si < Math.min(8, stes.length); si++) stb.append(stes[si]).append(" | ");
-                Log.warn(stb.toString());
+                Log.warn("ConnectionPeer: hello chain verification failed for known peer",
+                        "theirUid", remoteUid, "error", String.valueOf(e));
+
 
                 return;
             }
@@ -701,7 +700,7 @@ final class ConnectionPeer implements AutoCloseable {
                     Log.warn("P2P: peer->MessageNode dispatch failed",
                             "from", fromUid, "error", String.valueOf(e));
                 }
-                Log.info("P2P: RECEIVED via peer", "from", fromUid, "bytes", payload.length);
+                Log.info("P2P: HANDSHAKE — RECEIVED via peer", "from", fromUid, "bytes", payload.length);
             }
 
             @Override
