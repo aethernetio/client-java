@@ -233,14 +233,16 @@ public class MessageNode implements ToString {
 
         if (owner == null) return null;
 
+
         ConnectionPeer manager = owner.getConnectionPeer();
+
+        Log.info("MessageNode.trySendViaPeer: connectionPeer state to=" + consumer
+                + " manager=" + (manager == null ? "null" : "present")
+                + " connected=" + (manager != null && manager.isConnected(consumer)));
+
         if (manager == null) return null;
         if (!manager.isConnected(consumer)) return null;
 
-        Log.info("MessageNode.trySendViaPeer: connectionPeer state",
-                "to", consumer,
-                "manager", manager == null ? "null" : "present",
-                "connected", manager != null && manager.isConnected(consumer));
 
         try {
             if (!manager.sendMessage(consumer, msg)) {

@@ -177,6 +177,10 @@ public final class AetherCloudClient implements Destroyable {
 
     private final AtomicReference<ConnectionPeer> connectionPeer = new AtomicReference<>();
 
+    /** uids for which a LAN probe was requested before the peer stack started. */
+    private final java.util.Set<UUID> pendingProbes = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+
     public ConnectionPeer getConnectionPeer() {
         return connectionPeer.get();
     }
@@ -219,7 +223,17 @@ public final class AetherCloudClient implements Destroyable {
         if (connectionPeer.compareAndSet(null, fresh)) {
             try {
                 fresh.start();
+
                 destroyer.add(fresh::close);
+                for (UUID pending : pendingProbes) {
+                    try {
+                        fresh.ensureProbing(pending);
+                    } catch (RuntimeException e) {
+                        Log.warn("pending LAN probe failed", e);
+                    }
+                }
+                pendingProbes.clear();
+
             } catch (RuntimeException error) {
                 connectionPeer.compareAndSet(fresh, null);
                 try {
@@ -238,6 +252,7 @@ public final class AetherCloudClient implements Destroyable {
 
 
 
+
     public void probeLanFor(UUID targetUid) {
         ConnectionPeer peer = connectionPeer.get();
         Log.info("probeLanFor: called",
@@ -245,11 +260,13 @@ public final class AetherCloudClient implements Destroyable {
                 "connectionPeer", peer == null ? "null" : "present",
                 "myUid", clientState.getUid());
         if (peer != null) {
-            peer.probeFor(targetUid);
+            peer.ensureProbing(targetUid);
         } else {
-            Log.info("probeLanFor: skipped — ConnectionPeer not started yet");
+            pendingProbes.add(targetUid);
+            Log.info("probeLanFor: queued until ConnectionPeer starts", "targetUid", targetUid);
         }
     }
+
 
 
 
