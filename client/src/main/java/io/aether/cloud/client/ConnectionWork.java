@@ -48,6 +48,15 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
 
     private static final long RX_WINDOW_MS = 60_000L;
 
+    private static final long AUTO_TAG_THRESHOLD_MS = 5_000L;
+    private static final long AUTO_TAG_MAX = 1_000_000L;
+    private final java.util.concurrent.atomic.AtomicLong lastRequestAtMs =
+            new java.util.concurrent.atomic.AtomicLong(0L);
+    private final java.util.concurrent.atomic.AtomicLong autoTagCounter =
+            new java.util.concurrent.atomic.AtomicLong(0L);
+    private volatile boolean autoTagActive = false;
+
+
 
     private static final class PingAttempt {
         private final AFuture ack = AFuture.make();
@@ -134,7 +143,13 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                 );
 
 
-        authorizedApi = authorizedApiV0;
+
+        authorizedApi = wrapForAutoTag(authorizedApiV0);
+
+
+        this.rootApi = wrapRootForAutoTag(this.rootApi);
+
+
 
         negotiateLoginApiVersion();
         markReady();
@@ -159,7 +174,9 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             );
         }
 
-        authorizedApi = v0;
+
+        authorizedApi = wrapForAutoTag(v0);
+
         negotiatedLoginApiVersion = 0;
     }
 
@@ -179,7 +196,9 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
             negotiatedLoginApiVersion = -1;
 
             if (authorizedApiV0 != null) {
-                authorizedApi = authorizedApiV0;
+
+                authorizedApi = wrapForAutoTag(authorizedApiV0);
+
             }
         }
 
@@ -1022,6 +1041,112 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         ClientApiSafeImpl safe = clientApiSafe;
         return safe == null ? 0L : safe.getCurrentResponseSessionId();
     }
+
+
+
+
+    /**
+     * Enables or disables wire tagging automatically based on request rate.
+     * When two consecutive outbound requests are closer than
+     * {@link #AUTO_TAG_THRESHOLD_MS}, tagging turns on and the counter advances.
+     * A quieter gap resets the tag back to zero exactly once.
+     * Never throws: any failure is logged and ignored.
+     */
+    private void maybeAutoTag() {
+        try {
+            long now = RU.time();
+            long prev = lastRequestAtMs.getAndSet(now);
+            boolean frequent = prev != 0L && (now - prev) < AUTO_TAG_THRESHOLD_MS;
+            AuthorizedApiRemote api = authorizedApi;
+            if (api == null) {
+                return;
+            }
+            if (frequent) {
+                long next = autoTagCounter.incrementAndGet();
+                if (next >= AUTO_TAG_MAX) {
+                    autoTagCounter.set(1L);
+                    next = 1L;
+                }
+                api.setSessionId(next);
+                api.getFastMetaContext().flush();
+                autoTagActive = true;
+            } else if (autoTagActive) {
+                api.setSessionId(0L);
+                api.getFastMetaContext().flush();
+                autoTagCounter.set(0L);
+                autoTagActive = false;
+            }
+        } catch (Throwable t) {
+            Log.warn("autoTag failed", "error", t);
+        }
+    }
+
+
+
+    /**
+     * Wraps the authorized remote API so every outbound application call funnels
+     * through {@link #maybeAutoTag()}. Service calls are passed through untouched
+     * to avoid recursion.
+     */
+    private AuthorizedApiRemote wrapForAutoTag(AuthorizedApiRemote original) {
+        if (original == null) {
+            return null;
+        }
+        if (java.lang.reflect.Proxy.isProxyClass(original.getClass())) {
+            return original;
+        }
+        return (AuthorizedApiRemote) java.lang.reflect.Proxy.newProxyInstance(
+                ConnectionWork.class.getClassLoader(),
+                new Class<?>[]{AuthorizedApiRemote.class},
+                (proxy, method, args) -> {
+                    String n = method.getName();
+                    boolean isService = "setSessionId".equals(n) || "getFastMetaContext".equals(n)
+                            || "flush".equals(n) || "isActive".equals(n)
+                            || "destroy".equals(n) || "as".equals(n);
+                    if (!isService) {
+                        maybeAutoTag();
+                    }
+                    try {
+                        return method.invoke(original, args);
+                    } catch (java.lang.reflect.InvocationTargetException e) {
+                        throw e.getCause();
+                    }
+                });
+    }
+
+    /**
+     * Wraps the login (root) remote API. Root API carries transport-level requests
+     * such as {@code getMyIp} and {@code getTimeUTC}; these are application requests
+     * for the purposes of rate counting, so they must feed the same auto-tag logic.
+     * Handshake helpers that open the authorized API are treated as service calls.
+     */
+    private LoginApiRemote wrapRootForAutoTag(LoginApiRemote original) {
+        if (original == null) {
+            return null;
+        }
+        if (java.lang.reflect.Proxy.isProxyClass(original.getClass())) {
+            return original;
+        }
+        return (LoginApiRemote) java.lang.reflect.Proxy.newProxyInstance(
+                ConnectionWork.class.getClassLoader(),
+                new Class<?>[]{LoginApiRemote.class},
+                (proxy, method, args) -> {
+                    String n = method.getName();
+                    boolean isService = n.startsWith("open")
+                            || "getFastMetaContext".equals(n)
+                            || "flush".equals(n) || "isActive".equals(n)
+                            || "destroy".equals(n) || "as".equals(n);
+                    if (!isService) {
+                        maybeAutoTag();
+                    }
+                    try {
+                        return method.invoke(original, args);
+                    } catch (java.lang.reflect.InvocationTargetException e) {
+                        throw e.getCause();
+                    }
+                });
+    }
+
 
 
     /**
