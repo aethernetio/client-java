@@ -561,6 +561,17 @@ public class ProxyAuthorizedApiImpl
 
 
 
+    @Override
+    public void setSessionId(long sessionId) {
+        try {
+            forwardVoid(api -> api.setSessionId(sessionId));
+        } catch (Throwable t) {
+            Log.warn("ProxyAuthorizedApiImpl.setSessionId failed", "sessionId", sessionId, "error", t);
+        }
+    }
+
+
+
     // ---------------- Helpers ----------------
 
     private void forwardVoid(Consumer<AuthorizedApi> call) {

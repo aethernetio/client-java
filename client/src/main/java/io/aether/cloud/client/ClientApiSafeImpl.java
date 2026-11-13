@@ -21,6 +21,19 @@ class ClientApiSafeImpl implements ClientApiSafe, ServerApiByUidClient {
 
     private final ConnectionWork connection;
 
+    private volatile long sessionId = 0L;
+
+    private volatile long currentResponseSessionId = 0L;
+
+    public long getSessionId() {
+        return sessionId;
+    }
+
+    public long getCurrentResponseSessionId() {
+        return currentResponseSessionId;
+    }
+
+
     public ClientApiSafeImpl(ConnectionWork connection, AetherCloudClient client) {
         this.client = client;
         this.connection = connection;
@@ -439,6 +452,26 @@ class ClientApiSafeImpl implements ClientApiSafe, ServerApiByUidClient {
         if (config != null) {
             client.cloudPositions.put(config.getSubjectUid(), config);
             client.applyCloudConfig(config);
+        }
+    }
+
+
+    @Override
+    public void onSessionId(long sessionId) {
+        try {
+            this.sessionId = sessionId;
+            Log.debug("SessionId received", "sessionId", sessionId);
+        } catch (Throwable t) {
+            Log.warn("onSessionId failed", "sessionId", sessionId, "error", t);
+        }
+    }
+
+    @Override
+    public void onResponseFor(long sessionId) {
+        try {
+            this.currentResponseSessionId = sessionId;
+        } catch (Throwable t) {
+            Log.warn("onResponseFor failed", "sessionId", sessionId, "error", t);
         }
     }
 

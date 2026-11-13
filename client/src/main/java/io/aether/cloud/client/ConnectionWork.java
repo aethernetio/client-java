@@ -35,6 +35,9 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
 
     final CryptoEngine cryptoEngine;
     final AuthorizedApiRemote authorizedApiV0;
+
+    final ClientApiSafeImpl clientApiSafe;
+
     volatile AuthorizedApiRemote authorizedApi;
     private volatile int negotiatedLoginApiVersion = -1;
     private final ServerDescriptor serverDescriptor;
@@ -119,16 +122,17 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         serverDescriptor = s;
         this.basicStatus = false;
 
+
+        ClientApiSafeImpl safe = new ClientApiSafeImpl(this, client);
+        clientApiSafe = safe;
         authorizedApiV0 =
                 getRootApi().openLoginByAlias(
                         client.getAlias(),
-                        c -> new ClientApiSafeImpl(
-                                this,
-                                client
-                        ),
+                        c -> safe,
                         cryptoEngine::encrypt,
                         "loginByAlias"
                 );
+
 
         authorizedApi = authorizedApiV0;
 
@@ -1000,5 +1004,45 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
     public void sendRecoveredClientState(RecoveryResult result) {
         Log.warn("ConnectionWork: unexpected sendRecoveredClientState");
     }
+
+
+
+    /**
+     * Session id assigned to this connection (0 means "no session tagging").
+     */
+    public long getSessionId() {
+        ClientApiSafeImpl safe = clientApiSafe;
+        return safe == null ? 0L : safe.getSessionId();
+    }
+
+    /**
+     * Session id of the most recently received response (0 if untagged).
+     */
+    public long getCurrentResponseSessionId() {
+        ClientApiSafeImpl safe = clientApiSafe;
+        return safe == null ? 0L : safe.getCurrentResponseSessionId();
+    }
+
+
+    /**
+     * Assigns a logical session identifier to this connection. All outbound responses
+     * will then be prefixed with onResponseFor(sessionId) so the peer can attribute them.
+     * Never throws: any failure is logged and tagging is simply disabled/kept unchanged.
+     */
+    public void setSessionId(long sessionId) {
+        try {
+            AuthorizedApiRemote api = authorizedApi;
+            if (api == null) api = authorizedApiV0;
+            if (api == null) {
+                Log.warn("setSessionId: authorized api is null, tag ignored", "sessionId", sessionId);
+                return;
+            }
+            api.setSessionId(sessionId);
+            api.getFastMetaContext().flush();
+        } catch (Throwable t) {
+            Log.warn("setSessionId failed", "sessionId", sessionId, "error", t);
+        }
+    }
+
 
 }
