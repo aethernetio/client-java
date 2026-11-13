@@ -144,7 +144,9 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
 
 
 
-        authorizedApi = wrapForAutoTag(authorizedApiV0);
+
+        authorizedApi = authorizedApiV0;
+
 
 
         this.rootApi = wrapRootForAutoTag(this.rootApi);
@@ -175,7 +177,9 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
         }
 
 
-        authorizedApi = wrapForAutoTag(v0);
+
+        authorizedApi = v0;
+
 
         negotiatedLoginApiVersion = 0;
     }
@@ -197,7 +201,9 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
 
             if (authorizedApiV0 != null) {
 
-                authorizedApi = wrapForAutoTag(authorizedApiV0);
+
+                authorizedApi = authorizedApiV0;
+
 
             }
         }
@@ -1083,36 +1089,6 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
 
 
 
-    /**
-     * Wraps the authorized remote API so every outbound application call funnels
-     * through {@link #maybeAutoTag()}. Service calls are passed through untouched
-     * to avoid recursion.
-     */
-    private AuthorizedApiRemote wrapForAutoTag(AuthorizedApiRemote original) {
-        if (original == null) {
-            return null;
-        }
-        if (java.lang.reflect.Proxy.isProxyClass(original.getClass())) {
-            return original;
-        }
-        return (AuthorizedApiRemote) java.lang.reflect.Proxy.newProxyInstance(
-                ConnectionWork.class.getClassLoader(),
-                new Class<?>[]{AuthorizedApiRemote.class},
-                (proxy, method, args) -> {
-                    String n = method.getName();
-                    boolean isService = "setSessionId".equals(n) || "getFastMetaContext".equals(n)
-                            || "flush".equals(n) || "isActive".equals(n)
-                            || "destroy".equals(n) || "as".equals(n);
-                    if (!isService) {
-                        maybeAutoTag();
-                    }
-                    try {
-                        return method.invoke(original, args);
-                    } catch (java.lang.reflect.InvocationTargetException e) {
-                        throw e.getCause();
-                    }
-                });
-    }
 
     /**
      * Wraps the login (root) remote API. Root API carries transport-level requests
@@ -1136,14 +1112,18 @@ public class ConnectionWork extends Connection<ClientApiUnsafe, LoginApiRemote> 
                             || "getFastMetaContext".equals(n)
                             || "flush".equals(n) || "isActive".equals(n)
                             || "destroy".equals(n) || "as".equals(n);
-                    if (!isService) {
-                        maybeAutoTag();
-                    }
+
+                    Object result;
                     try {
-                        return method.invoke(original, args);
+                        result = method.invoke(original, args);
                     } catch (java.lang.reflect.InvocationTargetException e) {
                         throw e.getCause();
                     }
+                    if (!isService) {
+                        maybeAutoTag();
+                    }
+                    return result;
+
                 });
     }
 
