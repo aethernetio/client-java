@@ -654,7 +654,8 @@ final class ConnectionPeer implements AutoCloseable {
         return Integer.compare(a.length, b.length);
     }
 
-    private PairSymKeys deriveSessionKeys(byte[] a, byte[] b) {
+
+    private PairSymKeys deriveSessionKeys(SignedKey peerSign, byte[] a, byte[] b) {
         byte[] lo = compareBytes(a, b) <= 0 ? a : b;
         byte[] hi = (lo == a) ? b : a;
         byte[] digest;
@@ -666,11 +667,12 @@ final class ConnectionPeer implements AutoCloseable {
         } catch (java.security.NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 not available", e);
         }
-        String providerName = client.getCryptLib().name();
+        String providerName = providerOf(peerSign);
         CryptoProvider provider = CryptoProviderFactory.getProvider(providerName);
         AKey.Symmetric master = provider.createSymmetricKey(digest);
         return provider.deriveSymmetricKeys(master, 0, 0);
     }
+
 
 
     private PeerAuthorizedApi newPeerLocalApi(PeerAuthorizedApiRemote remote) {
@@ -755,8 +757,8 @@ final class ConnectionPeer implements AutoCloseable {
             peerCtxs.put(remoteUid, peerCtx);
             PeerRootApiRemote rootRemote = peerCtx.makeRemote(PeerRootApi.META);
 
-            PairSymKeys pair = deriveSessionKeys(myPeerSign, theirPeerSign);
-            String providerName = client.getCryptLib().name();
+            PairSymKeys pair = deriveSessionKeys(theirPeerSigns[0], myPeerSign, theirPeerSign);
+            String providerName = providerOf(theirPeerSigns[0]);
             CryptoProvider provider = CryptoProviderFactory.getProvider(providerName);
             CryptoEngine enc = provider.createSymmetricEngine(pair.getClientToServer());
             CryptoEngine dec = provider.createSymmetricEngine(pair.getServerToClient());
@@ -811,8 +813,8 @@ final class ConnectionPeer implements AutoCloseable {
                 enc = sessionEnc.get(remoteUid);
                 dec = sessionDec.get(remoteUid);
             } else {
-                PairSymKeys pair = deriveSessionKeys(myPeerSign, theirPeerSign);
-                String providerName = client.getCryptLib().name();
+                PairSymKeys pair = deriveSessionKeys(theirPeerSigns[0], myPeerSign, theirPeerSign);
+                String providerName = providerOf(theirPeerSigns[0]);
                 CryptoProvider provider = CryptoProviderFactory.getProvider(providerName);
                 enc = provider.createSymmetricEngine(pair.getServerToClient());
                 dec = provider.createSymmetricEngine(pair.getClientToServer());
