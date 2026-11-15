@@ -5,6 +5,15 @@ plugins {
 
 }
 
+// Keep the published default unchanged. The WebRTC-free artifact has a distinct
+// coordinate so it cannot overwrite the WebRTC-enabled client in Maven caches.
+def withWebRtc = providers.gradleProperty('withWebRtc')
+        .map { it.toBoolean() }.getOrElse(true)
+if (!withWebRtc) {
+    sourceSets.main.java.exclude 'io/aether/cloud/client/OnvoidTransport.java'
+    sourceSets.test.java.exclude 'io/aether/cloud/client/OnvoidTransportIntegrationTest.java'
+}
+
 
 def onvoidNativeClassifier() {
     def osName = System.getProperty("os.name").toLowerCase()
@@ -28,7 +37,11 @@ dependencies {
     api "io.aether:client-server-work-api:0.0.101"
     api "io.aether:core:0.0.101"
 
-    runtimeOnly "io.aether:net-virtual:0.0.101"
+    runtimeOnly("io.aether:net-virtual:0.0.101") {
+        if (!withWebRtc) {
+            exclude group: 'dev.onvoid.webrtc', module: 'webrtc-java'
+        }
+    }
     runtimeOnly "io.aether.crypto:sodium:0.0.101"
     runtimeOnly "io.aether.crypto:hydrogen-fast:0.0.99"
     runtimeOnly "io.aether.crypto:p256-aes-gcm:0.0.2"
@@ -37,11 +50,13 @@ dependencies {
     testImplementation "io.aether.crypto:hydrogen-fast:0.0.99"
     testImplementation "io.aether.crypto:p256-aes-gcm:0.0.2"
 
-    implementation "dev.onvoid.webrtc:webrtc-java:0.20.0"
-    def webrtcNativeClassifier = onvoidNativeClassifier()
-    if (webrtcNativeClassifier != null) {
-        runtimeOnly "dev.onvoid.webrtc:webrtc-java:0.20.0:${webrtcNativeClassifier}"
-        testRuntimeOnly "dev.onvoid.webrtc:webrtc-java:0.20.0:${webrtcNativeClassifier}"
+    if (withWebRtc) {
+        implementation "dev.onvoid.webrtc:webrtc-java:0.20.0"
+        def webrtcNativeClassifier = onvoidNativeClassifier()
+        if (webrtcNativeClassifier != null) {
+            runtimeOnly "dev.onvoid.webrtc:webrtc-java:0.20.0:${webrtcNativeClassifier}"
+            testRuntimeOnly "dev.onvoid.webrtc:webrtc-java:0.20.0:${webrtcNativeClassifier}"
+        }
     }
 
     testImplementation "org.mockito:mockito-core:5.18.0"
@@ -51,6 +66,21 @@ dependencies {
     implementation "com.fasterxml.jackson.core:jackson-databind:2.15.0"
 }
 
+tasks.register('verifyWebRtcConfiguration') {
+    doLast {
+        def resolved = configurations.runtimeClasspath.resolvedConfiguration.resolvedArtifacts
+        def hasLibrary = resolved.any {
+            it.moduleVersion.id.group == 'dev.onvoid.webrtc' && it.name == 'webrtc-java'
+        }
+        def hasBackend = sourceSets.main.allJava.files.any {
+            it.name == 'OnvoidTransport.java'
+        }
+        if (hasLibrary != withWebRtc || hasBackend != withWebRtc) {
+            throw new GradleException('WebRTC dependency and source must match -PwithWebRtc')
+        }
+    }
+}
+
 
 
 publishing {
@@ -58,7 +88,7 @@ publishing {
         mavenPublication(MavenPublication) {
             from components.java
             groupId = "io.aether"
-            artifactId = "cloud-client"
+            artifactId = withWebRtc ? "cloud-client" : "cloud-client-no-webrtc"
         }
     }
 

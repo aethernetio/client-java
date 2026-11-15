@@ -14,6 +14,15 @@ It handles registration, end-to-end encryption, connection recovery, binary seri
 
 ## Installation
 
+The `:client` build includes WebRTC by default. Build the variant without its
+native backend or dependencies with `-PwithWebRtc=false`, for example
+`gradle :client:build -PwithWebRtc=false`. The variants publish under distinct
+coordinates: `io.aether:cloud-client` and
+`io.aether:cloud-client-no-webrtc`. Consumers of the latter do not need a
+WebRTC runtime. `:client:verifyWebRtcConfiguration -PwithWebRtc=false` checks
+the resolved runtime dependencies and source selection. This switch concerns
+WebRTC only; it does not change other peer or cloud routing in the SDK.
+
 Packages are currently served from the Æthernet Maven repository:
 
 ```groovy

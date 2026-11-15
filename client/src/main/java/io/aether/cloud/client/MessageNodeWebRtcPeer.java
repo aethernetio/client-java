@@ -175,6 +175,7 @@ public class MessageNodeWebRtcPeer implements Destroyable {
         if (peerProvider != null) return true;
         try {
             Class.forName("dev.onvoid.webrtc.PeerConnectionFactory");
+            Class.forName("io.aether.cloud.client.OnvoidTransport");
             return true;
         } catch (ClassNotFoundException e) {
             return false;
@@ -351,7 +352,14 @@ public class MessageNodeWebRtcPeer implements Destroyable {
         };
 
         PeerProvider provider = peerProvider;
-        if (provider == null) provider = OnvoidTransport.INSTANCE;
+        if (provider == null) {
+            try {
+                Class<?> backend = Class.forName("io.aether.cloud.client.OnvoidTransport");
+                provider = (PeerProvider) backend.getDeclaredField("INSTANCE").get(null);
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException("WebRTC backend is unavailable", e);
+            }
+        }
         return provider.create(listener);
     }
 
